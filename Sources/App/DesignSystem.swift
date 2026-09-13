@@ -6,7 +6,14 @@ enum SolfinDesign {
     static let sectionSpacing: CGFloat = 32
     static let posterRadius: CGFloat = 12
     static let controlRadius: CGFloat = 14
-    static let accent = Color.accentColor
+    static let accent = solarOrange
+    static let solarOrange = Color(red: 1.0, green: 0.31, blue: 0.06)
+    static let solarRed = Color(red: 0.95, green: 0.08, blue: 0.06)
+    static let solarGold = Color(red: 1.0, green: 0.68, blue: 0.16)
+    static let nebulaPurple = Color(red: 0.44, green: 0.08, blue: 0.68)
+    static let spaceBlack = Color(red: 0.004, green: 0.004, blue: 0.012)
+
+    static var solarBackground: some View { SolarThemeBackground() }
 }
 
 struct GlassSurface: ViewModifier {

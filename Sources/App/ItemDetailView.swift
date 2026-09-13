@@ -25,7 +25,7 @@ struct ItemDetailView: View {
                     .padding(SolfinDesign.pagePadding)
             } else { detailSkeleton }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(SolfinDesign.solarBackground)
         .navigationTitle(item?.name ?? "Details")
         .task(id: itemId) { await load() }
     }
@@ -47,6 +47,7 @@ struct ItemDetailView: View {
         GeometryReader { proxy in
             ZStack {
                 backdrop(item, size: proxy.size)
+                solarAura
                 cinematicScrim
 
                 VStack(alignment: .leading, spacing: 0) {
@@ -92,18 +93,28 @@ struct ItemDetailView: View {
                 }.padding(.vertical, 40)
             }
         } else {
-            LinearGradient(colors: [Color.accentColor.opacity(0.22), Color(nsColor: .windowBackgroundColor)],
+            LinearGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.38), SolfinDesign.spaceBlack],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
         }
     }
 
     private var cinematicScrim: some View {
         ZStack {
-            LinearGradient(colors: [.black.opacity(0.16), .clear, .black.opacity(0.84)],
+            LinearGradient(colors: [.black.opacity(0.08), .clear, SolfinDesign.spaceBlack.opacity(0.62)],
                            startPoint: .top, endPoint: .bottom)
-            LinearGradient(colors: [.black.opacity(0.22), .clear, .black.opacity(0.2)],
+            LinearGradient(colors: [.black.opacity(0.18), .clear, .black.opacity(0.08)],
                            startPoint: .leading, endPoint: .trailing)
         }
+    }
+
+    private var solarAura: some View {
+        ZStack {
+            RadialGradient(colors: [SolfinDesign.solarGold.opacity(0.62), SolfinDesign.solarOrange.opacity(0.28), .clear],
+                           center: .topTrailing, startRadius: 0, endRadius: 760)
+            RadialGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.32), .clear],
+                           center: .bottomLeading, startRadius: 40, endRadius: 780)
+        }
+        .blendMode(.screen)
     }
 
     private func identity(_ item: BaseItem, availableWidth: CGFloat) -> some View {

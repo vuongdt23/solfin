@@ -36,6 +36,8 @@ struct SearchView: View {
                 }
             }.padding(SolfinDesign.pagePadding)
         }
+        .background(SolfinDesign.solarBackground)
+        .scrollContentBackground(.hidden)
         .navigationTitle("Search")
         .searchable(text: $searchText, placement: .toolbar, prompt: "Movies, series, episodes")
         .toolbar {
