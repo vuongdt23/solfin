@@ -52,6 +52,11 @@ public final class MPVProcess {
             "--title=${media-title}",
         ]
         if let configDir { args.append("--config-dir=\(configDir)") }
+        if let logPath = ProcessInfo.processInfo.environment["SOLFIN_MPV_LOG"],
+           !logPath.isEmpty {
+            args.append("--log-file=\(logPath)")
+            args.append("--msg-level=all=debug")
+        }
         // Load after the bundled mpv.conf so user values override bundled defaults.
         if let additionalConfigPath, !additionalConfigPath.isEmpty {
             args.append("--include=\(additionalConfigPath)")

@@ -57,10 +57,15 @@ final class NowPlaying: ObservableObject {
         positionSeconds = Ticks.toSeconds(item.userData?.playbackPositionTicks)
         durationSeconds = Ticks.toSeconds(item.runTimeTicks)
         artworkURL = api.playablePosterURL(for: item, maxHeight: 160)
-        mediaStreams = item.mediaSources?.first?.mediaStreams ?? []
-        selectedAudioTrack = defaultTrackIndex(type: "Audio")
-        selectedVideoTrack = defaultTrackIndex(type: "Video")
-        selectedSubtitleTrack = defaultTrackIndex(type: "Subtitle")
+        let itemSource = item.mediaSources?.first
+        mediaStreams = itemSource?.mediaStreams ?? []
+        selectedAudioTrack = audioTrack
+            ?? defaultTrackIndex(type: "Audio", serverDefault: itemSource?.defaultAudioStreamIndex)
+        selectedVideoTrack = videoTrack ?? defaultTrackIndex(type: "Video")
+        selectedSubtitleTrack = subtitleTrack == -1
+            ? nil
+            : (subtitleTrack ?? defaultTrackIndex(type: "Subtitle",
+                                                  serverDefault: itemSource?.defaultSubtitleStreamIndex))
         isSeekable = durationSeconds > 0
 
         var appliedInitialTracks = false
@@ -74,7 +79,7 @@ final class NowPlaying: ObservableObject {
                     if let audioTrack { c.selectAudioTrack(id: audioTrack) }
                     if let videoTrack { c.selectVideoTrack(id: videoTrack) }
                     if let subtitleTrack {
-                        c.selectSubtitleTrack(id: subtitleTrack == 0 ? nil : subtitleTrack)
+                        c.selectSubtitleTrack(id: subtitleTrack == -1 ? nil : subtitleTrack)
                     }
                 }
             }
@@ -83,6 +88,19 @@ final class NowPlaying: ObservableObject {
             Task { @MainActor in
                 if duration > 0 { self?.durationSeconds = duration }
                 self?.isSeekable = seekable
+            }
+        }
+        c.onPlaybackStreams = { [weak self] streams, defaultAudio, defaultSubtitle in
+            Task { @MainActor in
+                guard let self else { return }
+                self.mediaStreams = streams
+                self.selectedAudioTrack = audioTrack
+                    ?? self.defaultTrackIndex(type: "Audio", serverDefault: defaultAudio)
+                self.selectedVideoTrack = videoTrack ?? self.defaultTrackIndex(type: "Video")
+                self.selectedSubtitleTrack = subtitleTrack == -1
+                    ? nil
+                    : (subtitleTrack ?? self.defaultTrackIndex(type: "Subtitle",
+                                                               serverDefault: defaultSubtitle))
             }
         }
         c.onError = { err in
@@ -122,12 +140,20 @@ final class NowPlaying: ObservableObject {
     var subtitleTracks: [(id: Int, stream: MediaStream)] { tracks(type: "Subtitle") }
 
     private func tracks(type: String) -> [(id: Int, stream: MediaStream)] {
-        mediaStreams.filter { $0.type == type }.enumerated().map { index, stream in
-            (index + 1, stream)
+        mediaStreams.filter { $0.type == type }.enumerated().map { ordinal, stream in
+            // Index is Jellyfin's stable stream identity. The ordinal fallback keeps
+            // compatibility with old/incomplete server responses.
+            (stream.index ?? ordinal + 1, stream)
         }
     }
-    private func defaultTrackIndex(type: String) -> Int? {
+    private func defaultTrackIndex(type: String, serverDefault: Int? = nil) -> Int? {
         let matching = tracks(type: type)
+        if let serverDefault, matching.contains(where: { $0.id == serverDefault }) {
+            return serverDefault
+        }
+        if type == "Subtitle" {
+            return matching.first(where: { $0.stream.isDefault == true })?.id
+        }
         return matching.first(where: { $0.stream.isDefault == true })?.id ?? matching.first?.id
     }
 

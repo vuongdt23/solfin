@@ -14,7 +14,7 @@ struct ItemDetailView: View {
     @State private var overviewExpanded = false
     @State private var selectedAudioTrack: Int?
     @State private var selectedVideoTrack: Int?
-    @State private var selectedSubtitleTrack: Int? = 0
+    @State private var selectedSubtitleTrack: Int? = -1
 
     var body: some View {
         ScrollView {
@@ -241,7 +241,7 @@ struct ItemDetailView: View {
                 .frame(width: 76, alignment: .leading)
             Spacer(minLength: 12)
             Menu {
-                if includesOff { Button("Off") { selection.wrappedValue = 0 } }
+                if includesOff { Button("Off") { selection.wrappedValue = -1 } }
                 ForEach(tracks, id: \.id) { track in
                     Button { selection.wrappedValue = track.id } label: {
                         if selection.wrappedValue == track.id { Label(trackLabel(track), systemImage: "checkmark") }
@@ -302,13 +302,13 @@ struct ItemDetailView: View {
 
     private func tracks(_ item: BaseItem, type: String) -> [(id: Int, stream: MediaStream)] {
         (item.mediaSources?.first?.mediaStreams ?? []).filter { $0.type == type }
-            .enumerated().map { ($0.offset + 1, $0.element) }
+            .enumerated().map { ($0.element.index ?? $0.offset + 1, $0.element) }
     }
     private func trackLabel(_ track: (id: Int, stream: MediaStream)) -> String {
         track.stream.displayTitle ?? track.stream.language ?? "Track \(track.id)"
     }
     private func selectedTrackLabel(_ id: Int?, tracks: [(id: Int, stream: MediaStream)], includesOff: Bool) -> String {
-        if includesOff && (id == nil || id == 0) { return "Off" }
+        if includesOff && (id == nil || id == -1) { return "Off" }
         guard let id, let track = tracks.first(where: { $0.id == id }) else { return "Default" }
         return trackLabel(track)
     }
@@ -349,8 +349,13 @@ struct ItemDetailView: View {
     }
     private func configureTrackDefaults(for item: BaseItem) {
         let audio = tracks(item, type: "Audio"), video = tracks(item, type: "Video"), subtitles = tracks(item, type: "Subtitle")
-        selectedAudioTrack = audio.first(where: { $0.stream.isDefault == true })?.id ?? audio.first?.id
+        let source = item.mediaSources?.first
+        selectedAudioTrack = source?.defaultAudioStreamIndex
+            ?? audio.first(where: { $0.stream.isDefault == true })?.id
+            ?? audio.first?.id
         selectedVideoTrack = video.first(where: { $0.stream.isDefault == true })?.id ?? video.first?.id
-        selectedSubtitleTrack = subtitles.first(where: { $0.stream.isDefault == true })?.id ?? 0
+        selectedSubtitleTrack = source?.defaultSubtitleStreamIndex
+            ?? subtitles.first(where: { $0.stream.isDefault == true })?.id
+            ?? -1
     }
 }

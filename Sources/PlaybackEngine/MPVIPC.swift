@@ -136,6 +136,24 @@ public final class MPVIPC {
         command(["set_property", name, value])
     }
 
+    /// Build the `sub-add` arguments used for Jellyfin sidecars.
+    public static func addSubtitleArgs(url: String, title: String? = nil,
+                                       language: String? = nil) -> [Any] {
+        ["sub-add", url, "auto", title ?? "", language ?? ""]
+    }
+
+    /// Add a subtitle without selecting it. Jellyfin sidecars are loaded this way,
+    /// then matched to mpv's assigned track ID through `track-list`.
+    @discardableResult
+    public func addSubtitle(url: String, title: String? = nil,
+                            language: String? = nil) -> Int {
+        command(Self.addSubtitleArgs(url: url, title: title, language: language))
+    }
+
+    public func getProperty(_ name: String) -> Int {
+        command(["get_property", name])
+    }
+
     public func loadFile(_ url: String, startSeconds: Double? = nil) {
         command(Self.loadFileArgs(url: url, startSeconds: startSeconds))
     }

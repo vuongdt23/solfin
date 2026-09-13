@@ -31,6 +31,24 @@ public final class PlaybackController {
     private var ipc: MPVIPC?
     private var plan: DirectPlayPlan?
 
+    /// UI selections use Jellyfin's source-wide MediaStream.Index. mpv assigns
+    /// per-type IDs, and separately loaded subtitle files get new IDs at runtime.
+    private var audioTrackIDs: [Int: Int] = [:]
+    private var videoTrackIDs: [Int: Int] = [:]
+    private var embeddedSubtitleTrackIDs: [Int: Int] = [:]
+    private var externalSubtitleTrackIDs: [Int: Int] = [:]
+    private var requestedAudioStreamIndex: Int?
+    private var requestedVideoStreamIndex: Int?
+    private var requestedSubtitleStreamIndex: Int?
+    private var didRequestAudioSelection = false
+    private var didRequestVideoSelection = false
+    private var didRequestSubtitleSelection = false
+    private var needsApplyAudioSelection = false
+    private var needsApplyVideoSelection = false
+    private var needsApplySubtitleSelection = false
+    private var pendingExternalSubtitleURLs: [Int: String] = [:]
+    private var loadingExternalSubtitleIndexes: Set<Int> = []
+
     private let queue = DispatchQueue(label: "dev.solfin.playback.controller")
     private var positionSeconds: Double = 0
     private var durationSeconds: Double = 0
@@ -45,11 +63,17 @@ public final class PlaybackController {
     private let pauseId = 2
     private let durationId = 3
     private let seekableId = 4
+    private let trackListId = 5
 
     /// Delivered on the main queue: (state, positionSeconds).
     public var onStateChange: ((State, Double) -> Void)?
     /// Delivered on the main queue as mpv reports duration and seek capability.
     public var onMediaInfoChange: ((_ durationSeconds: Double, _ isSeekable: Bool) -> Void)?
+    /// The selected PlaybackInfo source; unlike browse metadata this includes
+    /// device-specific subtitle DeliveryUrl values.
+    public var onPlaybackStreams: ((_ streams: [MediaStream],
+                                    _ defaultAudioStreamIndex: Int?,
+                                    _ defaultSubtitleStreamIndex: Int?) -> Void)?
     public var onError: ((Error) -> Void)?
     /// Delivered on the main queue when playback ends. `naturalEnd` is true only when
     /// mpv reported an "eof" end-file reason (the file played to completion) — the
@@ -79,6 +103,12 @@ public final class PlaybackController {
                 var plan = try await api.directPlayPlan(for: item)
                 if let startOverride { plan.resumeSeconds = startOverride }
                 self.plan = plan
+                self.prepareTrackMaps(for: plan)
+                DispatchQueue.main.async {
+                    self.onPlaybackStreams?(plan.mediaStreams,
+                                            plan.defaultAudioStreamIndex,
+                                            plan.defaultSubtitleStreamIndex)
+                }
 
                 // Launch mpv already pointed at the file with the resume position.
                 try mpv.launch(binaryPath: binary, configDir: config.configDir,
@@ -135,12 +165,32 @@ public final class PlaybackController {
         ipc?.command(["seek", max(0, seconds), "absolute+exact"])
     }
 
-    /// mpv stream selectors are 1-based track IDs. A nil subtitle disables subtitles.
-    public func selectAudioTrack(id: Int) { ipc?.setProperty("aid", id) }
-    public func selectVideoTrack(id: Int) { ipc?.setProperty("vid", id) }
+    /// Track selectors take Jellyfin's `MediaStream.Index`, not mpv's unrelated ID.
+    public func selectAudioTrack(id: Int) {
+        queue.async {
+            self.didRequestAudioSelection = true
+            self.requestedAudioStreamIndex = id
+            self.needsApplyAudioSelection = true
+            self.applyRequestedAudioSelection()
+        }
+    }
+
+    public func selectVideoTrack(id: Int) {
+        queue.async {
+            self.didRequestVideoSelection = true
+            self.requestedVideoStreamIndex = id
+            self.needsApplyVideoSelection = true
+            self.applyRequestedVideoSelection()
+        }
+    }
+
     public func selectSubtitleTrack(id: Int?) {
-        if let id { ipc?.setProperty("sid", id) }
-        else { ipc?.setProperty("sid", "no") }
+        queue.async {
+            self.didRequestSubtitleSelection = true
+            self.requestedSubtitleStreamIndex = id
+            self.needsApplySubtitleSelection = true
+            self.applyRequestedSubtitleSelection()
+        }
     }
 
     // MARK: - IPC
@@ -157,7 +207,33 @@ public final class PlaybackController {
         ipc.observeProperty("pause", id: pauseId)
         ipc.observeProperty("duration", id: durationId)
         ipc.observeProperty("seekable", id: seekableId)
+        ipc.observeProperty("track-list", id: trackListId)
         self.ipc = ipc
+
+        queue.async {
+            if !self.didRequestAudioSelection {
+                self.requestedAudioStreamIndex = self.plan?.defaultAudioStreamIndex
+                self.needsApplyAudioSelection = self.requestedAudioStreamIndex != nil
+            }
+            if !self.didRequestVideoSelection {
+                self.needsApplyVideoSelection = self.requestedVideoStreamIndex != nil
+            }
+            if !self.didRequestSubtitleSelection {
+                self.requestedSubtitleStreamIndex = self.plan?.defaultSubtitleStreamIndex
+                // Apply once even when the server default is nil so mpv does not
+                // auto-select a subtitle behind the app's back.
+                self.needsApplySubtitleSelection = true
+            }
+            self.applyRequestedAudioSelection()
+            self.applyRequestedVideoSelection()
+            self.applyRequestedSubtitleSelection()
+
+            // Sidecars are separate HTTP resources, so explicitly add every one to
+            // mpv. "auto" keeps the current/default subtitle selection unchanged.
+            for subtitle in self.plan?.externalSubtitles ?? [] {
+                self.loadExternalSubtitle(streamIndex: subtitle.streamIndex)
+            }
+        }
     }
 
     private func handle(_ msg: [String: Any]) {
@@ -189,6 +265,8 @@ public final class PlaybackController {
                         self.isSeekable = seekable
                         self.emitMediaInfo()
                     }
+                case self.trackListId:
+                    self.updateExternalSubtitleTracks(from: msg["data"])
                 default:
                     break
                 }
@@ -201,6 +279,115 @@ public final class PlaybackController {
             default:
                 break
             }
+        }
+    }
+
+    // MARK: - Track mapping
+
+    /// Jellyfin indexes every stream in one source-wide sequence. mpv IDs are
+    /// 1-based within each media type and omit sidecars from the main file.
+    private func prepareTrackMaps(for plan: DirectPlayPlan) {
+        audioTrackIDs.removeAll()
+        videoTrackIDs.removeAll()
+        embeddedSubtitleTrackIDs.removeAll()
+        externalSubtitleTrackIDs.removeAll()
+        pendingExternalSubtitleURLs.removeAll()
+        loadingExternalSubtitleIndexes.removeAll()
+        requestedAudioStreamIndex = nil
+        requestedVideoStreamIndex = nil
+        requestedSubtitleStreamIndex = nil
+        didRequestAudioSelection = false
+        didRequestVideoSelection = false
+        didRequestSubtitleSelection = false
+        needsApplyAudioSelection = false
+        needsApplyVideoSelection = false
+        needsApplySubtitleSelection = false
+
+        var audioID = 1
+        var videoID = 1
+        var subtitleID = 1
+        for stream in plan.mediaStreams {
+            guard let index = stream.index else { continue }
+            switch stream.type {
+            case "Audio" where stream.isExternal != true:
+                audioTrackIDs[index] = audioID
+                audioID += 1
+            case "Video" where stream.isExternal != true:
+                videoTrackIDs[index] = videoID
+                videoID += 1
+            case "Subtitle" where stream.isExternal != true:
+                embeddedSubtitleTrackIDs[index] = subtitleID
+                subtitleID += 1
+            default:
+                break
+            }
+        }
+        for subtitle in plan.externalSubtitles {
+            pendingExternalSubtitleURLs[subtitle.streamIndex] = subtitle.url.absoluteString
+        }
+    }
+
+    private func applyRequestedAudioSelection() {
+        guard needsApplyAudioSelection,
+              let ipc,
+              let requestedAudioStreamIndex,
+              let mpvID = audioTrackIDs[requestedAudioStreamIndex] else { return }
+        ipc.setProperty("aid", mpvID)
+        needsApplyAudioSelection = false
+    }
+
+    private func applyRequestedVideoSelection() {
+        guard needsApplyVideoSelection,
+              let ipc,
+              let requestedVideoStreamIndex,
+              let mpvID = videoTrackIDs[requestedVideoStreamIndex] else { return }
+        ipc.setProperty("vid", mpvID)
+        needsApplyVideoSelection = false
+    }
+
+    private func applyRequestedSubtitleSelection() {
+        guard needsApplySubtitleSelection, let ipc else { return }
+        guard let id = requestedSubtitleStreamIndex else {
+            ipc.setProperty("sid", "no")
+            needsApplySubtitleSelection = false
+            return
+        }
+        if let mpvID = embeddedSubtitleTrackIDs[id]
+            ?? externalSubtitleTrackIDs[id] {
+            ipc.setProperty("sid", mpvID)
+            needsApplySubtitleSelection = false
+            return
+        }
+        loadExternalSubtitle(streamIndex: id)
+    }
+
+    /// Load one external subtitle on demand. `sub-add auto` does not disturb the
+    /// current selection; the track-list observer discovers mpv's new ID.
+    private func loadExternalSubtitle(streamIndex: Int) {
+        guard externalSubtitleTrackIDs[streamIndex] == nil,
+              !loadingExternalSubtitleIndexes.contains(streamIndex),
+              let subtitle = plan?.externalSubtitles.first(where: {
+                  $0.streamIndex == streamIndex
+              }) else { return }
+        loadingExternalSubtitleIndexes.insert(streamIndex)
+        ipc?.addSubtitle(url: subtitle.url.absoluteString,
+                         title: subtitle.title, language: subtitle.language)
+    }
+
+    private func updateExternalSubtitleTracks(from value: Any?) {
+        guard let tracks = value as? [[String: Any]] else { return }
+        for track in tracks where track["type"] as? String == "sub" {
+            guard Self.boolValue(track["external"]) == true,
+                  let filename = track["external-filename"] as? String,
+                  let mpvID = Self.intValue(track["id"]),
+                  let streamIndex = pendingExternalSubtitleURLs.first(where: {
+                      $0.value == filename
+                  })?.key else { continue }
+            externalSubtitleTrackIDs[streamIndex] = mpvID
+            loadingExternalSubtitleIndexes.remove(streamIndex)
+        }
+        if needsApplySubtitleSelection {
+            applyRequestedSubtitleSelection()
         }
     }
 

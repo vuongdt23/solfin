@@ -135,6 +135,8 @@ public struct MediaSource: Codable, Sendable, Hashable {
     public let container: String?
     public let supportsDirectPlay: Bool?
     public let supportsDirectStream: Bool?
+    public let defaultAudioStreamIndex: Int?
+    public let defaultSubtitleStreamIndex: Int?
     public let mediaStreams: [MediaStream]?
 
     enum CodingKeys: String, CodingKey {
@@ -143,23 +145,37 @@ public struct MediaSource: Codable, Sendable, Hashable {
         case container = "Container"
         case supportsDirectPlay = "SupportsDirectPlay"
         case supportsDirectStream = "SupportsDirectStream"
+        case defaultAudioStreamIndex = "DefaultAudioStreamIndex"
+        case defaultSubtitleStreamIndex = "DefaultSubtitleStreamIndex"
         case mediaStreams = "MediaStreams"
     }
 }
 
 public struct MediaStream: Codable, Sendable, Hashable {
     public let type: String?               // "Video", "Audio", "Subtitle"
+    public let index: Int?                 // Jellyfin's source-wide stream index
     public let codec: String?
     public let displayTitle: String?
     public let language: String?
     public let isDefault: Bool?
+    public let isForced: Bool?
+    public let isExternal: Bool?
+    public let deliveryMethod: String?     // "Embed", "External", "Encode", ...
+    public let deliveryURL: String?
+    public let isExternalURL: Bool?
 
     enum CodingKeys: String, CodingKey {
         case type = "Type"
+        case index = "Index"
         case codec = "Codec"
         case displayTitle = "DisplayTitle"
         case language = "Language"
         case isDefault = "IsDefault"
+        case isForced = "IsForced"
+        case isExternal = "IsExternal"
+        case deliveryMethod = "DeliveryMethod"
+        case deliveryURL = "DeliveryUrl"
+        case isExternalURL = "IsExternalUrl"
     }
 }
 
