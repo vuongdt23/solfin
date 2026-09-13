@@ -56,14 +56,21 @@ public struct BaseItem: Codable, Sendable, Identifiable, Hashable {
     public let overview: String?
     public let productionYear: Int?
     public let runTimeTicks: Int64?
+    public let dateCreated: String?
+    public let officialRating: String?
+    public let communityRating: Double?
+    public let genres: [String]?
     public let indexNumber: Int?
     public let parentIndexNumber: Int?
     public let seriesName: String?
     public let seriesId: String?
     public let seasonId: String?
+    public let seriesPrimaryImageTag: String?
     public let childCount: Int?
     public let imageTags: [String: String]?
     public let backdropImageTags: [String]?
+    public let parentBackdropItemId: String?
+    public let parentBackdropImageTags: [String]?
     public let userData: UserItemData?
     public let mediaSources: [MediaSource]?
 
@@ -75,14 +82,21 @@ public struct BaseItem: Codable, Sendable, Identifiable, Hashable {
         case overview = "Overview"
         case productionYear = "ProductionYear"
         case runTimeTicks = "RunTimeTicks"
+        case dateCreated = "DateCreated"
+        case officialRating = "OfficialRating"
+        case communityRating = "CommunityRating"
+        case genres = "Genres"
         case indexNumber = "IndexNumber"
         case parentIndexNumber = "ParentIndexNumber"
         case seriesName = "SeriesName"
         case seriesId = "SeriesId"
         case seasonId = "SeasonId"
+        case seriesPrimaryImageTag = "SeriesPrimaryImageTag"
         case childCount = "ChildCount"
         case imageTags = "ImageTags"
         case backdropImageTags = "BackdropImageTags"
+        case parentBackdropItemId = "ParentBackdropItemId"
+        case parentBackdropImageTags = "ParentBackdropImageTags"
         case userData = "UserData"
         case mediaSources = "MediaSources"
     }

@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 public enum JellyfinError: Error, LocalizedError {
     case badURL
@@ -14,7 +15,9 @@ public enum JellyfinError: Error, LocalizedError {
         case .http(let code, let msg): return "Server error \(code): \(msg)"
         case .notAuthenticated: return "Not signed in."
         case .decoding(let d): return "Failed to decode response: \(d)"
-        case .keychain(let s): return "Keychain error \(s)."
+        case .keychain(let status):
+            let detail = SecCopyErrorMessageString(status, nil) as String? ?? "Unknown Keychain error"
+            return "Could not securely save your session: \(detail) (\(status))."
         case .noDirectPlaySource: return "No direct-play source available for this item."
         }
     }

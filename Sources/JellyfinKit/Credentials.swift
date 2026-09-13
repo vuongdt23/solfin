@@ -37,11 +37,12 @@ public struct CredentialStore {
     }
 
     public func save(_ session: ServerSession) throws {
-        // Non-secret metadata (without the token) in UserDefaults.
+        // Store the secret first so a Keychain failure cannot leave metadata that
+        // looks like a persisted session but has no usable token.
+        try setToken(session.accessToken, account: session.userId)
         var meta = session
         meta.accessToken = ""
         defaults.set(try JSONEncoder().encode(meta), forKey: sessionKey)
-        try setToken(session.accessToken, account: session.userId)
     }
 
     public func loadSession() -> ServerSession? {
@@ -64,16 +65,35 @@ public struct CredentialStore {
     // MARK: - Keychain
 
     private func setToken(_ token: String, account: String) throws {
-        deleteToken(account: account)
-        let query: [String: Any] = [
+        let identity: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
+        ]
+        let values: [String: Any] = [
             kSecValueData as String: Data(token.utf8),
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
         ]
-        let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else { throw JellyfinError.keychain(status) }
+
+        // Update in place first. Delete-then-add is vulnerable to stale/duplicate
+        // Keychain items left by earlier signed or ad-hoc builds and surfaced as
+        // errSecDuplicateItem (-25299).
+        let updateStatus = SecItemUpdate(identity as CFDictionary, values as CFDictionary)
+        if updateStatus == errSecSuccess { return }
+        guard updateStatus == errSecItemNotFound else {
+            throw JellyfinError.keychain(updateStatus)
+        }
+
+        var item = identity
+        values.forEach { item[$0.key] = $0.value }
+        let addStatus = SecItemAdd(item as CFDictionary, nil)
+        if addStatus == errSecDuplicateItem {
+            // Another process/build may have inserted it between update and add.
+            let retryStatus = SecItemUpdate(identity as CFDictionary, values as CFDictionary)
+            guard retryStatus == errSecSuccess else { throw JellyfinError.keychain(retryStatus) }
+            return
+        }
+        guard addStatus == errSecSuccess else { throw JellyfinError.keychain(addStatus) }
     }
 
     private func getToken(account: String) -> String? {

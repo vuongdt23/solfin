@@ -9,7 +9,7 @@ public extension APIClient {
 
     // Common set of fields we want back on items.
     private static let itemFields =
-        "Overview,MediaSources,MediaStreams,ProductionYear,IndexNumber,ParentIndexNumber"
+        "Overview,MediaSources,MediaStreams,ProductionYear,IndexNumber,ParentIndexNumber,DateCreated,OfficialRating,CommunityRating,Genres,ParentBackdropItemId,ParentBackdropImageTags,SeriesPrimaryImageTag"
 
     /// Top-level libraries ("Views") for the signed-in user.
     func views() async throws -> [BaseItem] {
@@ -20,23 +20,87 @@ public extension APIClient {
 
     /// Children of a folder/library, paged.
     func items(parentId: String, startIndex: Int = 0, limit: Int = 100,
-               sortBy: String = "SortName", includeItemTypes: String? = nil) async throws -> ItemsResponse {
+               sortBy: String = "SortName", sortOrder: String = "Ascending",
+               includeItemTypes: String? = nil, recursive: Bool = false,
+               filters: String? = nil) async throws -> ItemsResponse {
         let uid = try requireUser()
         var q = [
             URLQueryItem(name: "ParentId", value: parentId),
             URLQueryItem(name: "StartIndex", value: String(startIndex)),
             URLQueryItem(name: "Limit", value: String(limit)),
             URLQueryItem(name: "SortBy", value: sortBy),
-            URLQueryItem(name: "SortOrder", value: "Ascending"),
+            URLQueryItem(name: "SortOrder", value: sortOrder),
             URLQueryItem(name: "Fields", value: Self.itemFields),
-            URLQueryItem(name: "Recursive", value: "false"),
+            URLQueryItem(name: "Recursive", value: recursive || includeItemTypes != nil ? "true" : "false"),
+            URLQueryItem(name: "EnableUserData", value: "true"),
         ]
         if let includeItemTypes {
             q.append(URLQueryItem(name: "IncludeItemTypes", value: includeItemTypes))
-            q.append(URLQueryItem(name: "Recursive", value: "true"))
+        }
+        if let filters { q.append(URLQueryItem(name: "Filters", value: filters)) }
+        let req = try makeRequest(path: "Users/\(uid)/Items", query: q)
+        return try decode(ItemsResponse.self, from: try await send(req))
+    }
+
+    /// Artwork-rich, unplayed titles for the home feature carousel.
+    func featuredItems(limit: Int = 20) async throws -> [BaseItem] {
+        let uid = try requireUser()
+        let q = [
+            URLQueryItem(name: "UserId", value: uid),
+            URLQueryItem(name: "Recursive", value: "true"),
+            URLQueryItem(name: "IncludeItemTypes", value: "Movie,Series"),
+            URLQueryItem(name: "SortBy", value: "Random"),
+            URLQueryItem(name: "Filters", value: "IsUnplayed"),
+            URLQueryItem(name: "HasOverview", value: "true"),
+            URLQueryItem(name: "ImageTypes", value: "Logo,Backdrop"),
+            URLQueryItem(name: "EnableUserData", value: "true"),
+            URLQueryItem(name: "Limit", value: String(limit)),
+            URLQueryItem(name: "Fields", value: Self.itemFields),
+        ]
+        let req = try makeRequest(path: "Users/\(uid)/Items", query: q)
+        return try decode(ItemsResponse.self, from: try await send(req)).items
+    }
+
+    /// Recently added videos across all visible libraries.
+    func latestItems(limit: Int = 20, parentId: String? = nil,
+                     includeItemTypes: String = "Movie,Series") async throws -> [BaseItem] {
+        let uid = try requireUser()
+        var q = [
+            URLQueryItem(name: "UserId", value: uid),
+            URLQueryItem(name: "Limit", value: String(limit)),
+            URLQueryItem(name: "Fields", value: Self.itemFields),
+            URLQueryItem(name: "IncludeItemTypes", value: includeItemTypes),
+            URLQueryItem(name: "EnableImages", value: "true"),
+            URLQueryItem(name: "ImageTypeLimit", value: "1"),
+        ]
+        if let parentId { q.append(URLQueryItem(name: "ParentId", value: parentId)) }
+        let req = try makeRequest(path: "Users/\(uid)/Items/Latest", query: q)
+        return try decode([BaseItem].self, from: try await send(req))
+    }
+
+    /// Search the user's video libraries by title.
+    func searchItems(term: String, includeItemTypes: String? = nil,
+                     startIndex: Int = 0, limit: Int = 60) async throws -> ItemsResponse {
+        let uid = try requireUser()
+        var q = [
+            URLQueryItem(name: "SearchTerm", value: term),
+            URLQueryItem(name: "Recursive", value: "true"),
+            URLQueryItem(name: "StartIndex", value: String(startIndex)),
+            URLQueryItem(name: "Limit", value: String(limit)),
+            URLQueryItem(name: "Fields", value: Self.itemFields),
+            URLQueryItem(name: "MediaTypes", value: "Video"),
+            URLQueryItem(name: "SortBy", value: "SortName"),
+        ]
+        if let includeItemTypes {
+            q.append(URLQueryItem(name: "IncludeItemTypes", value: includeItemTypes))
         }
         let req = try makeRequest(path: "Users/\(uid)/Items", query: q)
         return try decode(ItemsResponse.self, from: try await send(req))
+    }
+
+    /// Recently added episodes, useful for following currently-updating series.
+    func latestEpisodes(limit: Int = 20) async throws -> [BaseItem] {
+        try await latestItems(limit: limit, includeItemTypes: "Episode")
     }
 
     /// Continue Watching.
@@ -74,28 +138,68 @@ public extension APIClient {
     // MARK: - Image / stream URLs
 
     /// Primary image URL for an item (nil if it has no primary image tag).
-    func primaryImageURL(for item: BaseItem, maxHeight: Int = 480) -> URL? {
+    func primaryImageURL(for item: BaseItem, maxHeight: Int? = 720, quality: Int = 96) -> URL? {
         guard let tag = item.imageTags?["Primary"] else { return nil }
         var comps = URLComponents(url: baseURL.appendingPathComponent("Items/\(item.id)/Images/Primary"),
                                   resolvingAgainstBaseURL: false)
-        comps?.queryItems = [
-            URLQueryItem(name: "fillHeight", value: String(maxHeight)),
-            URLQueryItem(name: "tag", value: tag),
-            URLQueryItem(name: "quality", value: "90"),
-        ]
+        var query = [URLQueryItem(name: "tag", value: tag),
+                     URLQueryItem(name: "quality", value: String(quality))]
+        if let maxHeight { query.append(URLQueryItem(name: "maxHeight", value: String(maxHeight))) }
+        comps?.queryItems = query
         return comps?.url
     }
 
-    /// Backdrop (wide) image URL for an item, if it has one.
-    func backdropImageURL(for item: BaseItem, maxWidth: Int = 1280) -> URL? {
+    /// Transparent title treatment used by featured media when Jellyfin has one.
+    func logoImageURL(for item: BaseItem, maxWidth: Int? = 1000) -> URL? {
+        guard let tag = item.imageTags?["Logo"] else { return nil }
+        var comps = URLComponents(url: baseURL.appendingPathComponent("Items/\(item.id)/Images/Logo"),
+                                  resolvingAgainstBaseURL: false)
+        var query = [URLQueryItem(name: "tag", value: tag),
+                     URLQueryItem(name: "quality", value: "100")]
+        if let maxWidth { query.append(URLQueryItem(name: "maxWidth", value: String(maxWidth))) }
+        comps?.queryItems = query
+        return comps?.url
+    }
+
+    /// Backdrop image. Pass nil to request the server's original resolution.
+    func backdropImageURL(for item: BaseItem, maxWidth: Int? = 1920) -> URL? {
         guard let tag = item.backdropImageTags?.first else { return nil }
         var comps = URLComponents(url: baseURL.appendingPathComponent("Items/\(item.id)/Images/Backdrop/0"),
                                   resolvingAgainstBaseURL: false)
-        comps?.queryItems = [
-            URLQueryItem(name: "maxWidth", value: String(maxWidth)),
-            URLQueryItem(name: "tag", value: tag),
-            URLQueryItem(name: "quality", value: "80"),
-        ]
+        var query = [URLQueryItem(name: "tag", value: tag),
+                     URLQueryItem(name: "quality", value: "100")]
+        if let maxWidth { query.append(URLQueryItem(name: "maxWidth", value: String(maxWidth))) }
+        comps?.queryItems = query
+        return comps?.url
+    }
+
+    /// Poster artwork for a playable item. Pass nil for original resolution.
+    /// Episodes use their series poster when present.
+    func playablePosterURL(for item: BaseItem, maxHeight: Int? = 1200) -> URL? {
+        guard item.type == "Episode", let seriesId = item.seriesId,
+              let tag = item.seriesPrimaryImageTag else {
+            return primaryImageURL(for: item, maxHeight: maxHeight, quality: 100)
+        }
+        var comps = URLComponents(url: baseURL.appendingPathComponent("Items/\(seriesId)/Images/Primary"),
+                                  resolvingAgainstBaseURL: false)
+        var query = [URLQueryItem(name: "tag", value: tag),
+                     URLQueryItem(name: "quality", value: "100")]
+        if let maxHeight { query.append(URLQueryItem(name: "maxHeight", value: String(maxHeight))) }
+        comps?.queryItems = query
+        return comps?.url
+    }
+
+    /// Episode backdrop, falling back to its series backdrop. Pass nil for original resolution.
+    func episodeBackdropURL(for item: BaseItem, maxWidth: Int? = 2400) -> URL? {
+        if let own = backdropImageURL(for: item, maxWidth: maxWidth) { return own }
+        guard let parentId = item.parentBackdropItemId,
+              let tag = item.parentBackdropImageTags?.first else { return nil }
+        var comps = URLComponents(url: baseURL.appendingPathComponent("Items/\(parentId)/Images/Backdrop/0"),
+                                  resolvingAgainstBaseURL: false)
+        var query = [URLQueryItem(name: "tag", value: tag),
+                     URLQueryItem(name: "quality", value: "100")]
+        if let maxWidth { query.append(URLQueryItem(name: "maxWidth", value: String(maxWidth))) }
+        comps?.queryItems = query
         return comps?.url
     }
 

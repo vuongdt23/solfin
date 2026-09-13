@@ -56,7 +56,24 @@ final class StreamURLTests: XCTestCase {
         let q = Dictionary(uniqueKeysWithValues: (comps.queryItems ?? []).map { ($0.name, $0.value) })
         XCTAssertEqual(comps.path, "/Items/i1/Images/Primary")
         XCTAssertEqual(q["tag"], "tagABC")
-        XCTAssertEqual(q["fillHeight"], "300")
+        XCTAssertEqual(q["maxHeight"], "300")
+        XCTAssertEqual(q["quality"], "96")
+    }
+
+    func testOriginalResolutionImageURLsOmitResizeParameters() throws {
+        let client = makeClient()
+        let item = try decodeItem(#"{"Id":"i1","Name":"Movie","ImageTags":{"Primary":"p"},"BackdropImageTags":["b"]}"#)
+
+        let poster = try XCTUnwrap(client.primaryImageURL(for: item, maxHeight: nil, quality: 100))
+        let backdrop = try XCTUnwrap(client.backdropImageURL(for: item, maxWidth: nil))
+        let posterQuery = Dictionary(uniqueKeysWithValues: (URLComponents(url: poster, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value) })
+        let backdropQuery = Dictionary(uniqueKeysWithValues: (URLComponents(url: backdrop, resolvingAgainstBaseURL: false)?.queryItems ?? []).map { ($0.name, $0.value) })
+
+        XCTAssertNil(posterQuery["maxHeight"])
+        XCTAssertNil(posterQuery["fillHeight"])
+        XCTAssertEqual(posterQuery["quality"], "100")
+        XCTAssertNil(backdropQuery["maxWidth"])
+        XCTAssertEqual(backdropQuery["quality"], "100")
     }
 
     private func decodeItem(_ json: String) throws -> BaseItem {

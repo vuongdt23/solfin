@@ -1,69 +1,55 @@
 import SwiftUI
 import JellyfinKit
 
-/// Async poster image with a placeholder; uses AsyncImage (URLs already carry the token).
 struct PosterImage: View {
     let url: URL?
     var body: some View {
         AsyncImage(url: url) { phase in
             switch phase {
-            case .success(let image):
-                image.resizable().aspectRatio(contentMode: .fill)
-            case .failure:
-                placeholder(systemName: "film")
-            case .empty:
-                if url == nil { placeholder(systemName: "film") }
-                else { ZStack { Color.gray.opacity(0.15); ProgressView().controlSize(.small) } }
-            @unknown default:
-                placeholder(systemName: "film")
+            case .success(let image): image.resizable().aspectRatio(contentMode: .fill)
+            case .failure: placeholder
+            case .empty: ZStack { Color.secondary.opacity(0.1); if url != nil { ProgressView().controlSize(.small) } else { icon } }
+            @unknown default: placeholder
             }
         }
     }
-
-    private func placeholder(systemName: String) -> some View {
-        ZStack {
-            Color.gray.opacity(0.15)
-            Image(systemName: systemName).font(.largeTitle).foregroundStyle(.secondary)
-        }
-    }
+    private var placeholder: some View { ZStack { Color.secondary.opacity(0.1); icon } }
+    private var icon: some View { Image(systemName: "film").font(.largeTitle).foregroundStyle(.tertiary) }
 }
 
-/// Poster + label used in shelves and grids. Lifts and highlights on hover.
 struct PosterCard: View {
-    @EnvironmentObject var appState: AppState
+    @EnvironmentObject private var appState: AppState
     let item: BaseItem
     @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 9) {
             PosterImage(url: appState.api.primaryImageURL(for: item))
-                .frame(width: 160, height: 240)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .frame(width: 160, height: 240).clipped()
+                .clipShape(RoundedRectangle(cornerRadius: SolfinDesign.posterRadius))
                 .overlay(alignment: .bottom) { progressBar }
                 .overlay {
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(.tint, lineWidth: hovering ? 2.5 : 0)
+                    RoundedRectangle(cornerRadius: SolfinDesign.posterRadius)
+                        .strokeBorder(hovering ? Color.accentColor : .white.opacity(0.1), lineWidth: hovering ? 2 : 1)
                 }
                 .overlay {
                     if hovering {
-                        Image(systemName: "play.circle.fill")
-                            .font(.system(size: 40))
-                            .foregroundStyle(.white, .black.opacity(0.5))
-                            .shadow(radius: 6)
-                            .transition(.opacity)
+                        Image(systemName: "play.fill").font(.title2).foregroundStyle(.white)
+                            .frame(width: 48, height: 48).background(.black.opacity(0.48), in: Circle())
+                            .transition(.scale.combined(with: .opacity))
                     }
                 }
-                .shadow(color: .black.opacity(hovering ? 0.35 : 0.15),
-                        radius: hovering ? 12 : 4, y: hovering ? 6 : 2)
-                .scaleEffect(hovering ? 1.04 : 1.0)
-
-            Text(item.name).font(.callout).lineLimit(1)
-                .foregroundStyle(.primary.opacity(hovering ? 1.0 : 0.9))
-            if let sub = subtitle { Text(sub).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                .shadow(color: .black.opacity(hovering ? 0.28 : 0.14), radius: hovering ? 16 : 6, y: hovering ? 8 : 3)
+                .scaleEffect(hovering ? 1.025 : 1)
+            Text(item.name).font(.callout.weight(.medium)).lineLimit(1)
+            if let subtitle { Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
         }
-        .frame(width: 160)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: hovering)
+        .frame(width: 160, alignment: .leading)
+        .contentShape(Rectangle())
+        .animation(.spring(response: 0.28, dampingFraction: 0.78), value: hovering)
         .onHover { hovering = $0 }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel)
     }
 
     private var subtitle: String? {
@@ -74,81 +60,200 @@ struct PosterCard: View {
         }
         return item.productionYear.map(String.init)
     }
-
-    @ViewBuilder
-    private var progressBar: some View {
+    private var accessibilityLabel: String {
+        [item.name, subtitle, item.userData?.played == true ? "Watched" : nil].compactMap { $0 }.joined(separator: ", ")
+    }
+    @ViewBuilder private var progressBar: some View {
         if let pct = item.userData?.playedPercentage, pct > 0 {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Rectangle().fill(.black.opacity(0.4)).frame(height: 4)
-                    Rectangle().fill(.tint).frame(width: geo.size.width * pct / 100, height: 4)
+                    Rectangle().fill(.black.opacity(0.5))
+                    Rectangle().fill(.tint).frame(width: geo.size.width * min(pct, 100) / 100)
                 }
-            }
-            .frame(height: 4)
+            }.frame(height: 4)
         }
     }
 }
 
-/// Full-width backdrop hero with a gradient scrim, used atop detail screens.
-/// Falls back gracefully to a plain background when the item has no backdrop.
+struct LandscapeCard: View {
+    @EnvironmentObject private var appState: AppState
+    let item: BaseItem
+    @State private var hovering = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ZStack(alignment: .bottom) {
+                PosterImage(url: appState.api.backdropImageURL(for: item, maxWidth: 640)
+                            ?? appState.api.primaryImageURL(for: item, maxHeight: 260))
+                    .frame(width: 250, height: 141).clipped()
+                LinearGradient(colors: [.clear, .black.opacity(0.38)], startPoint: .center, endPoint: .bottom)
+                if hovering {
+                    Image(systemName: "play.fill").font(.headline).foregroundStyle(.white)
+                        .frame(width: 42, height: 42).background(.black.opacity(0.5), in: Circle())
+                        .transition(.scale.combined(with: .opacity))
+                }
+                if let pct = item.userData?.playedPercentage, pct > 0 {
+                    GeometryReader { geo in
+                        VStack { Spacer(); Rectangle().fill(.tint).frame(width: geo.size.width * min(pct, 100) / 100, height: 4) }
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 11).strokeBorder(hovering ? Color.accentColor : .white.opacity(0.1), lineWidth: hovering ? 2 : 1) }
+            .shadow(color: .black.opacity(hovering ? 0.24 : 0.1), radius: hovering ? 14 : 5, y: 6)
+            .scaleEffect(hovering ? 1.018 : 1)
+            Text(item.type == "Episode" ? (item.seriesName ?? item.name) : item.name)
+                .font(.callout.weight(.medium)).lineLimit(1)
+            if let subtitle { Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+        }
+        .frame(width: 250, alignment: .leading)
+        .contentShape(Rectangle()).onHover { hovering = $0 }
+        .animation(.spring(response: 0.28, dampingFraction: 0.8), value: hovering)
+    }
+
+    private var subtitle: String? {
+        if item.type == "Episode" {
+            let s = item.parentIndexNumber.map { "S\($0)" } ?? ""
+            let e = item.indexNumber.map { "E\($0)" } ?? ""
+            return [s + e, item.name].filter { !$0.isEmpty }.joined(separator: " · ")
+        }
+        return item.productionYear.map(String.init)
+    }
+}
+
+struct LibraryBanner: View {
+    @EnvironmentObject private var appState: AppState
+    let item: BaseItem
+    @State private var hovering = false
+
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            PosterImage(url: appState.api.backdropImageURL(for: item, maxWidth: 700)
+                        ?? appState.api.primaryImageURL(for: item, maxHeight: 300))
+                .frame(width: 300, height: 155).clipped()
+            LinearGradient(colors: [.clear, .black.opacity(0.78)], startPoint: .top, endPoint: .bottom)
+            Text(item.name).font(.title2.weight(.semibold)).foregroundStyle(.white).padding(18)
+        }
+        .frame(width: 300, height: 155)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(hovering ? 0.3 : 0.1)) }
+        .scaleEffect(hovering ? 1.015 : 1).onHover { hovering = $0 }
+        .animation(.spring(response: 0.28, dampingFraction: 0.8), value: hovering)
+    }
+}
+
 struct BackdropHero: View {
     let url: URL?
     let height: CGFloat
-
     var body: some View {
         ZStack(alignment: .bottom) {
             if let url {
                 AsyncImage(url: url) { phase in
-                    if let image = phase.image {
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    } else {
-                        Color.gray.opacity(0.12)
-                    }
-                }
-                .frame(height: height)
-                .clipped()
-                LinearGradient(
-                    colors: [.clear, .black.opacity(0.35), Color(nsColor: .windowBackgroundColor)],
-                    startPoint: .top, endPoint: .bottom
-                )
-                .frame(height: height)
+                    if let image = phase.image { image.resizable().aspectRatio(contentMode: .fill) }
+                    else { Color.secondary.opacity(0.1) }
+                }.frame(height: height).clipped()
+                LinearGradient(colors: [.clear, .black.opacity(0.22), Color(nsColor: .windowBackgroundColor)],
+                               startPoint: .top, endPoint: .bottom).frame(height: height)
             }
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: url == nil ? 0 : height)
+        }.frame(maxWidth: .infinity).frame(height: url == nil ? 0 : height)
     }
 }
 
-/// Persistent Now Playing strip pinned to the bottom of Home.
 struct NowPlayingBar: View {
-    @EnvironmentObject var nowPlaying: NowPlaying
+    @EnvironmentObject private var nowPlaying: NowPlaying
+    @State private var dragging = false
+    @State private var draftPosition = 0.0
 
     var body: some View {
         if nowPlaying.isActive, let name = nowPlaying.itemName {
-            HStack(spacing: 16) {
-                Image(systemName: nowPlaying.state == .paused ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.title2)
+            HStack(spacing: 14) {
+                PosterImage(url: nowPlaying.artworkURL).frame(width: 52, height: 52).clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 9))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(name).font(.callout.bold()).lineLimit(1)
-                    let detail = nowPlaying.subtitle.map { "\($0) · " } ?? ""
-                    Text("\(detail)\(nowPlaying.state.rawValue) · \(timeString(nowPlaying.positionSeconds))")
+                    Text(name).font(.callout.weight(.semibold)).lineLimit(1)
+                    Text(nowPlaying.subtitle ?? nowPlaying.state.rawValue.capitalized)
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer()
-                Button { nowPlaying.togglePause() } label: {
-                    Image(systemName: "playpause.fill")
-                }
-                Button { nowPlaying.stop() } label: {
-                    Image(systemName: "stop.fill")
-                }
+                }.frame(width: 180, alignment: .leading)
+                Text(timeString(displayPosition)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Slider(value: Binding(get: { displayPosition }, set: { draftPosition = $0 }),
+                       in: 0...max(nowPlaying.durationSeconds, 1), onEditingChanged: { editing in
+                    dragging = editing
+                    if !editing { nowPlaying.seek(to: draftPosition) }
+                }).disabled(!nowPlaying.isSeekable).accessibilityLabel("Playback position")
+                Text("−\(timeString(max(0, nowPlaying.durationSeconds - displayPosition)))")
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                control("gobackward.15", "Back 15 seconds") { nowPlaying.skip(seconds: -15) }
+                control(nowPlaying.state == .paused ? "play.fill" : "pause.fill",
+                        nowPlaying.state == .paused ? "Play" : "Pause") { nowPlaying.togglePause() }
+                control("goforward.30", "Forward 30 seconds") { nowPlaying.skip(seconds: 30) }
+                trackMenu
+                control("xmark", "Stop") { nowPlaying.stop() }
             }
-            .padding(.horizontal, 20).padding(.vertical, 10)
-            .background(.regularMaterial)
+            .padding(10)
+            .glassSurface(cornerRadius: 18)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
 
+    private var trackMenu: some View {
+        Menu {
+            if !nowPlaying.audioTracks.isEmpty {
+                Section("Audio") {
+                    ForEach(nowPlaying.audioTracks, id: \.id) { track in
+                        Button { nowPlaying.selectAudioTrack(track.id) } label: {
+                            if nowPlaying.selectedAudioTrack == track.id { Label(trackName(track), systemImage: "checkmark") }
+                            else { Text(trackName(track)) }
+                        }
+                    }
+                }
+            }
+            if !nowPlaying.subtitleTracks.isEmpty {
+                Section("Subtitles") {
+                    Button { nowPlaying.selectSubtitleTrack(nil) } label: {
+                        if nowPlaying.selectedSubtitleTrack == nil { Label("Off", systemImage: "checkmark") } else { Text("Off") }
+                    }
+                    ForEach(nowPlaying.subtitleTracks, id: \.id) { track in
+                        Button { nowPlaying.selectSubtitleTrack(track.id) } label: {
+                            if nowPlaying.selectedSubtitleTrack == track.id { Label(trackName(track), systemImage: "checkmark") }
+                            else { Text(trackName(track)) }
+                        }
+                    }
+                }
+            }
+            if nowPlaying.videoTracks.count > 1 {
+                Section("Video") {
+                    ForEach(nowPlaying.videoTracks, id: \.id) { track in
+                        Button { nowPlaying.selectVideoTrack(track.id) } label: {
+                            if nowPlaying.selectedVideoTrack == track.id { Label(trackName(track), systemImage: "checkmark") }
+                            else { Text(trackName(track)) }
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "captions.bubble")
+                Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
+            }
+            .frame(height: 26)
+            .padding(.horizontal, 7)
+            .background(.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+        }
+        .menuStyle(.borderlessButton).fixedSize()
+        .accessibilityLabel("Playback tracks")
+    }
+
+    private func trackName(_ track: (id: Int, stream: MediaStream)) -> String {
+        track.stream.displayTitle ?? track.stream.language ?? "Track \(track.id)"
+    }
+    private var displayPosition: Double { dragging ? draftPosition : nowPlaying.positionSeconds }
+    private func control(_ icon: String, _ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) { Image(systemName: icon).frame(width: 26, height: 26) }
+            .buttonStyle(.plain).accessibilityLabel(label)
+    }
     private func timeString(_ seconds: Double) -> String {
-        let s = Int(seconds)
-        return String(format: "%d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60)
+        let value = max(0, Int(seconds)); let hours = value / 3600
+        return hours > 0 ? String(format: "%d:%02d:%02d", hours, value % 3600 / 60, value % 60)
+                         : String(format: "%d:%02d", value / 60, value % 60)
     }
 }
