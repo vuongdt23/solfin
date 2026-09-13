@@ -49,18 +49,6 @@ struct HomeView: View {
                 .padding(.horizontal, SolfinDesign.pagePadding)
                 .padding(.top, featured.isEmpty ? 22 : 0)
                 .padding(.bottom, SolfinDesign.pagePadding)
-                .background(alignment: .top) {
-                    if !featured.isEmpty {
-                        LinearGradient(colors: [SolfinDesign.spaceBlack.opacity(0.0),
-                                                SolfinDesign.spaceBlack.opacity(0.70),
-                                                SolfinDesign.spaceBlack],
-                                       startPoint: .top,
-                                       endPoint: .bottom)
-                            .frame(height: 190)
-                            .offset(y: -150)
-                            .allowsHitTesting(false)
-                    }
-                }
             }
         }
         .background {
@@ -222,8 +210,18 @@ private struct FeaturedMediaBar: View {
                     .blendMode(.screen)
                 LinearGradient(colors: [.black.opacity(0.28), .black.opacity(0.08), .clear],
                                startPoint: .leading, endPoint: .trailing)
-                LinearGradient(colors: [.clear, .black.opacity(0.01), SolfinDesign.spaceBlack.opacity(0.38)],
-                               startPoint: .top, endPoint: .bottom)
+                LinearGradient(stops: [
+                    .init(color: .clear, location: 0.46),
+                    .init(color: SolfinDesign.spaceBlack.opacity(0.20), location: 0.66),
+                    .init(color: SolfinDesign.spaceBlack.opacity(0.76), location: 0.86),
+                    .init(color: SolfinDesign.spaceBlack, location: 1.0)
+                ], startPoint: .top, endPoint: .bottom)
+                RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.14), SolfinDesign.solarRed.opacity(0.06), .clear],
+                               center: UnitPoint(x: 0.76, y: 0.86), startRadius: 60, endRadius: 560)
+                    .blendMode(.screen)
+                RadialGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.12), .clear],
+                               center: UnitPoint(x: 0.26, y: 0.90), startRadius: 80, endRadius: 620)
+                    .blendMode(.screen)
 
                 VStack {
                     Spacer()
@@ -272,7 +270,7 @@ private struct FeaturedMediaBar: View {
                                     .onTapGesture { withAnimation(.easeInOut(duration: 0.45)) { selection = index } }
                             }
                         }.padding(.bottom, 8)
-                    }.padding(.horizontal, 72).padding(.bottom, 88).padding(.top, 40)
+                    }.padding(.horizontal, 72).padding(.bottom, 118).padding(.top, 40)
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
 
@@ -286,30 +284,6 @@ private struct FeaturedMediaBar: View {
         }
         .frame(maxWidth: .infinity)
         .containerRelativeFrame(.vertical, alignment: .top) { available, _ in max(820, available * 0.96) }
-        .overlay(alignment: .bottom) {
-            ZStack(alignment: .bottom) {
-                LinearGradient(colors: [.clear,
-                                        SolfinDesign.spaceBlack.opacity(0.58),
-                                        SolfinDesign.spaceBlack.opacity(0.92),
-                                        SolfinDesign.spaceBlack],
-                               startPoint: .top,
-                               endPoint: .bottom)
-                RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.18),
-                                        SolfinDesign.solarRed.opacity(0.08),
-                                        .clear],
-                               center: UnitPoint(x: 0.78, y: 0.72),
-                               startRadius: 40,
-                               endRadius: 520)
-                    .blendMode(.screen)
-                RadialGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.16), .clear],
-                               center: UnitPoint(x: 0.26, y: 0.82),
-                               startRadius: 60,
-                               endRadius: 560)
-                    .blendMode(.screen)
-            }
-            .frame(height: 330)
-            .allowsHitTesting(false)
-        }
         .ignoresSafeArea(edges: .top)
         .onHover { hovering = $0 }
         .task(id: "\(selection)-\(hovering)-\(autoAdvance)") {
