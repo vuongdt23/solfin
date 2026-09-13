@@ -2,87 +2,301 @@ import SwiftUI
 import JellyfinKit
 
 struct HomeView: View {
-    @EnvironmentObject var appState: AppState
-    @EnvironmentObject var nowPlaying: NowPlaying
+    @EnvironmentObject private var appState: AppState
+    let embeddedInShell: Bool
 
     @State private var views: [BaseItem] = []
     @State private var resume: [BaseItem] = []
     @State private var nextUp: [BaseItem] = []
+    @State private var latestMovies: [BaseItem] = []
+    @State private var latestShows: [BaseItem] = []
+    @State private var showcase: [BaseItem] = []
     @State private var loadError: String?
+    @State private var isLoading = true
+
+    init(embeddedInShell: Bool = false) { self.embeddedInShell = embeddedInShell }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 28) {
-                    if let err = loadError {
-                        Text(err).foregroundStyle(.red)
-                    }
-                    if !resume.isEmpty { shelf("Continue Watching", resume) }
-                    if !nextUp.isEmpty { shelf("Next Up", nextUp) }
-                    ForEach(views) { view in
-                        NavigationLink(value: view) {
-                            HStack {
-                                Text(view.name).font(.title2.bold())
-                                Image(systemName: "chevron.right").font(.caption)
-                                Spacer()
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(24)
-            }
-            .navigationTitle("solfin")
-            .navigationDestination(for: BaseItem.self) { destination(for: $0) }
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button("Sign Out") { appState.signOut() }
+        Group {
+            if embeddedInShell { content }
+            else {
+                NavigationStack {
+                    content.navigationDestination(for: BaseItem.self) { destination(for: $0) }
                 }
             }
-            .safeAreaInset(edge: .bottom) { NowPlayingBar() }
         }
+        .navigationTitle("Home")
         .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private var content: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: SolfinDesign.sectionSpacing) {
+                if !featured.isEmpty { FeaturedMediaBar(items: featured) }
+                if isLoading && resume.isEmpty && nextUp.isEmpty { loadingShelves }
+                if !views.isEmpty { librariesSection }
+                if !resume.isEmpty { landscapeShelf("Continue Watching", resume) }
+                if !nextUp.isEmpty { landscapeShelf("Next Up", nextUp) }
+                if !latestShows.isEmpty { shelf("Recently Added in Shows", latestShows) }
+                if !latestMovies.isEmpty { shelf("Recently Added in Movies", latestMovies) }
+                if let loadError, resume.isEmpty && nextUp.isEmpty && latestMovies.isEmpty && latestShows.isEmpty {
+                    EmptyContentView(title: "Home is unavailable", message: loadError,
+                                     systemImage: "wifi.exclamationmark") { Task { await load() } }
+                }
+            }
+            .padding(SolfinDesign.pagePadding)
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var featured: [BaseItem] {
+        var seen = Set<String>()
+        return (showcase + latestMovies + latestShows + resume + nextUp).filter { item in
+            guard item.backdropImageTags?.isEmpty == false else { return false }
+            return seen.insert(item.id).inserted
+        }.prefix(8).map { $0 }
+    }
+
+    private var loadingShelves: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            RoundedRectangle(cornerRadius: 5).fill(.secondary.opacity(0.12)).frame(width: 190, height: 22)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 18) {
+                    ForEach(0..<6, id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: SolfinDesign.posterRadius)
+                            .fill(.secondary.opacity(0.12)).frame(width: 160, height: 240)
+                    }
+                }
+            }
+        }.redacted(reason: .placeholder)
+    }
+
+    private var librariesSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Libraries").font(.title2.weight(.semibold))
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 14) {
+                    ForEach(views) { view in
+                        NavigationLink(value: view) { LibraryBanner(item: view) }.buttonStyle(.plain)
+                    }
+                }.padding(.vertical, 4).padding(.horizontal, 2)
+            }
+        }
     }
 
     @ViewBuilder
     private func destination(for item: BaseItem) -> some View {
-        // Series → seasons/episodes; libraries → grid; playable items → detail.
-        if item.type == "Series" {
-            SeriesDetailView(series: item)
-        } else if item.collectionType != nil || item.type == "CollectionFolder" {
-            LibraryView(parent: item)
-        } else {
-            ItemDetailView(itemId: item.id)
+        if item.type == "Series" { SeriesDetailView(series: item) }
+        else if item.collectionType != nil || item.type == "CollectionFolder" { LibraryView(parent: item) }
+        else { ItemDetailView(itemId: item.id) }
+    }
+
+    private func landscapeShelf(_ title: String, _ items: [BaseItem]) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title).font(.title2.weight(.semibold))
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 16) {
+                    ForEach(items) { item in
+                        NavigationLink(value: item) { LandscapeCard(item: item) }.buttonStyle(.plain)
+                    }
+                }.padding(.vertical, 8).padding(.horizontal, 2)
+            }
         }
     }
 
-    @ViewBuilder
     private func shelf(_ title: String, _ items: [BaseItem]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.title2.bold())
+        VStack(alignment: .leading, spacing: 14) {
+            Text(title).font(.title2.weight(.semibold))
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
+                LazyHStack(spacing: 18) {
                     ForEach(items) { item in
-                        NavigationLink(value: item) {
-                            PosterCard(item: item)
-                        }
-                        .buttonStyle(.plain)
+                        NavigationLink(value: item) { PosterCard(item: item) }.buttonStyle(.plain)
                     }
-                }
+                }.padding(.vertical, 8).padding(.horizontal, 2)
             }
         }
     }
 
     private func load() async {
-        do {
-            async let v = appState.api.views()
-            async let r = appState.api.resumeItems()
-            async let n = appState.api.nextUp()
-            views = try await v
-            resume = (try? await r) ?? []
-            nextUp = (try? await n) ?? []
-        } catch {
-            loadError = error.localizedDescription
+        isLoading = true; loadError = nil
+        async let viewsResult: Result<[BaseItem], Error> = capture { try await appState.api.views() }
+        async let resumeResult: Result<[BaseItem], Error> = capture { try await appState.api.resumeItems() }
+        async let nextResult: Result<[BaseItem], Error> = capture { try await appState.api.nextUp() }
+        async let moviesResult: Result<[BaseItem], Error> = capture { try await appState.api.latestItems(includeItemTypes: "Movie") }
+        async let showsResult: Result<[BaseItem], Error> = capture { try await appState.api.latestItems(includeItemTypes: "Series") }
+        async let featuredResult: Result<[BaseItem], Error> = capture { try await appState.api.featuredItems() }
+        let results = await (viewsResult, resumeResult, nextResult, moviesResult, showsResult, featuredResult)
+        if case .success(let value) = results.0 { views = value }
+        if case .success(let value) = results.1 { resume = value }
+        if case .success(let value) = results.2 { nextUp = value }
+        if case .success(let value) = results.3 { latestMovies = value }
+        if case .success(let value) = results.4 { latestShows = value }
+        if case .success(let value) = results.5 { showcase = value }
+        let errors = [results.0, results.1, results.2, results.3, results.4, results.5].compactMap { result -> String? in
+            if case .failure(let error) = result { return error.localizedDescription }
+            return nil
+        }
+        loadError = errors.first
+        isLoading = false
+    }
+}
+
+private struct FeaturedTitle: View {
+    @EnvironmentObject private var appState: AppState
+    let item: BaseItem
+
+    var body: some View {
+        if let url = appState.api.logoImageURL(for: item) {
+            AsyncImage(url: url) { phase in
+                if let image = phase.image { image.resizable().aspectRatio(contentMode: .fit) }
+                else { fallback }
+            }
+            .frame(width: 420, height: 125, alignment: .leading)
+        } else { fallback }
+    }
+
+    private var fallback: some View {
+        Text(item.name)
+            .font(.system(size: 42, weight: .heavy, design: .rounded))
+            .tracking(-1.4).foregroundStyle(.white).lineLimit(2)
+            .frame(maxWidth: 520, alignment: .leading)
+    }
+}
+
+private func capture<T>(_ operation: () async throws -> T) async -> Result<T, Error> {
+    do { return .success(try await operation()) }
+    catch { return .failure(error) }
+}
+
+private struct FeaturedMediaBar: View {
+    @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var nowPlaying: NowPlaying
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage("solfin.featuredAutoAdvance") private var autoAdvance = true
+    let items: [BaseItem]
+    @State private var selection = 0
+    @State private var hovering = false
+
+    private var item: BaseItem { items[min(selection, items.count - 1)] }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack {
+                if let url = appState.api.backdropImageURL(for: item, maxWidth: 1800) {
+                    AsyncImage(url: url) { phase in
+                        if let image = phase.image { image.resizable().aspectRatio(contentMode: .fill) }
+                        else { Color.secondary.opacity(0.12) }
+                    }
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .clipped()
+                    .id(item.id).transition(.opacity)
+                }
+                LinearGradient(colors: [.black.opacity(0.86), .black.opacity(0.42), .clear],
+                               startPoint: .leading, endPoint: .trailing)
+                LinearGradient(colors: [.clear, .black.opacity(0.12), .black.opacity(0.82)],
+                               startPoint: .top, endPoint: .bottom)
+
+                VStack {
+                    Spacer()
+                    HStack(alignment: .bottom, spacing: 24) {
+                        VStack(alignment: .leading, spacing: 13) {
+                            FeaturedTitle(item: item)
+                            HStack(spacing: 9) {
+                                if let rating = item.communityRating {
+                                    Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                                        .foregroundStyle(.yellow)
+                                }
+                                if let year = item.productionYear { Text(String(year)) }
+                                if let official = item.officialRating { Text(official).padding(.horizontal, 7).background(.white.opacity(0.84), in: RoundedRectangle(cornerRadius: 4)).foregroundStyle(.black) }
+                                if let runtime = runtime(item) { Text(runtime) }
+                            }.font(.caption.weight(.medium)).foregroundStyle(.white.opacity(0.88))
+                            if let genres = item.genres, !genres.isEmpty {
+                                Text(genres.prefix(3).joined(separator: "  ·  "))
+                                    .font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.88))
+                            }
+                            if let overview = item.overview {
+                                Text(overview).font(.callout).foregroundStyle(.white.opacity(0.82)).lineLimit(3)
+                                    .frame(maxWidth: min(620, proxy.size.width * 0.62), alignment: .leading)
+                            }
+                            HStack(spacing: 12) {
+                                if item.type != "Series" {
+                                    Button { play(item) } label: {
+                                        Label(playLabel(item), systemImage: "play.fill")
+                                            .padding(.horizontal, 16).padding(.vertical, 9)
+                                    }.buttonStyle(.plain).background(.white, in: Capsule()).foregroundStyle(.black)
+                                }
+                                NavigationLink(value: item) {
+                                    Image(systemName: "info").font(.headline).frame(width: 38, height: 38)
+                                }.buttonStyle(.plain).background(.white.opacity(0.16), in: Circle()).foregroundStyle(.white)
+                            }
+                        }
+                        Spacer(minLength: 20)
+                        HStack(spacing: 7) {
+                            ForEach(items.indices, id: \.self) { index in
+                                Capsule().fill(.white.opacity(index == selection ? 1 : 0.5))
+                                    .frame(width: index == selection ? 22 : 7, height: 7)
+                                    .onTapGesture { withAnimation(.easeInOut(duration: 0.45)) { selection = index } }
+                            }
+                        }.padding(.bottom, 8)
+                    }.padding(34)
+                }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+
+                HStack {
+                    carouselButton("chevron.left", action: previous)
+                    Spacer()
+                    carouselButton("chevron.right", action: next)
+                }.padding(.horizontal, 12).opacity(hovering ? 1 : 0)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+        .frame(maxWidth: .infinity)
+        // Backdrops are generally 16:9. A taller stage preserves faces and title art
+        // instead of turning the feature into an aggressively cropped banner.
+        .frame(height: 740)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 24).strokeBorder(.white.opacity(0.1)) }
+        .shadow(color: .black.opacity(0.24), radius: 30, y: 14)
+        .onHover { hovering = $0 }
+        .task(id: "\(selection)-\(hovering)-\(autoAdvance)") {
+            guard autoAdvance, !reduceMotion, !hovering, items.count > 1 else { return }
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled, !hovering else { return }
+            withAnimation(.easeInOut(duration: 0.5)) { next() }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Featured media")
+    }
+
+    private func carouselButton(_ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.headline.weight(.semibold))
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.white)
+        .background(.black.opacity(0.5), in: Circle())
+        .overlay { Circle().strokeBorder(.white.opacity(0.14)) }
+        .contentShape(Circle())
+        .help(icon == "chevron.left" ? "Previous feature" : "Next feature")
+    }
+    private func runtime(_ item: BaseItem) -> String? {
+        guard let ticks = item.runTimeTicks else { return nil }
+        let minutes = Int(Ticks.toSeconds(ticks) / 60)
+        return minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
+    }
+    private func playLabel(_ item: BaseItem) -> String {
+        Ticks.toSeconds(item.userData?.playbackPositionTicks) > 0 ? "Resume" : "Play"
+    }
+    private func play(_ item: BaseItem) {
+        appState.playbackError = nil
+        nowPlaying.play(item: item, api: appState.api, config: appState.makePlaybackConfig()) {
+            appState.playbackError = $0
         }
     }
+    private func next() { selection = (selection + 1) % items.count }
+    private func previous() { selection = (selection - 1 + items.count) % items.count }
 }

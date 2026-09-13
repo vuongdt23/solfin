@@ -11,9 +11,17 @@ final class NowPlaying: ObservableObject {
     @Published var subtitle: String?
     @Published var state: PlaybackController.State = .idle
     @Published var positionSeconds: Double = 0
+    @Published var durationSeconds: Double = 0
+    @Published var isSeekable = false
+    @Published var artworkURL: URL?
+    @Published var mediaStreams: [MediaStream] = []
+    @Published var selectedAudioTrack: Int?
+    @Published var selectedVideoTrack: Int?
+    @Published var selectedSubtitleTrack: Int?
     @AppStorage("solfin.autoplayNext") var autoplayNext: Bool = true
 
     private var controller: PlaybackController?
+    private var progressTask: Task<Void, Never>?
 
     // Context retained so we can autoplay the next episode.
     private var api: APIClient?
@@ -27,9 +35,12 @@ final class NowPlaying: ObservableObject {
     }
 
     func play(item: BaseItem, api: APIClient, config: PlaybackController.Config,
-              startOver: Bool = false, onError: @escaping (String) -> Void) {
+              startOver: Bool = false, audioTrack: Int? = nil,
+              videoTrack: Int? = nil, subtitleTrack: Int? = nil,
+              onError: @escaping (String) -> Void) {
         // Tear down any previous session first (mark so its stop doesn't cancel autoplay).
         userStopped = true
+        progressTask?.cancel()
         controller?.stop()
         userStopped = false
 
@@ -44,11 +55,34 @@ final class NowPlaying: ObservableObject {
         subtitle = Self.episodeSubtitle(item)
         state = .starting
         positionSeconds = Ticks.toSeconds(item.userData?.playbackPositionTicks)
+        durationSeconds = Ticks.toSeconds(item.runTimeTicks)
+        artworkURL = api.playablePosterURL(for: item, maxHeight: 160)
+        mediaStreams = item.mediaSources?.first?.mediaStreams ?? []
+        selectedAudioTrack = defaultTrackIndex(type: "Audio")
+        selectedVideoTrack = defaultTrackIndex(type: "Video")
+        selectedSubtitleTrack = defaultTrackIndex(type: "Subtitle")
+        isSeekable = durationSeconds > 0
 
+        var appliedInitialTracks = false
         c.onStateChange = { [weak self] state, pos in
             Task { @MainActor in
                 self?.state = state
                 self?.positionSeconds = pos
+                self?.updateProgressClock(for: state)
+                if state == .playing, !appliedInitialTracks {
+                    appliedInitialTracks = true
+                    if let audioTrack { c.selectAudioTrack(id: audioTrack) }
+                    if let videoTrack { c.selectVideoTrack(id: videoTrack) }
+                    if let subtitleTrack {
+                        c.selectSubtitleTrack(id: subtitleTrack == 0 ? nil : subtitleTrack)
+                    }
+                }
+            }
+        }
+        c.onMediaInfoChange = { [weak self] duration, seekable in
+            Task { @MainActor in
+                if duration > 0 { self?.durationSeconds = duration }
+                self?.isSeekable = seekable
             }
         }
         c.onError = { err in
@@ -63,10 +97,52 @@ final class NowPlaying: ObservableObject {
 
     func stop() {
         userStopped = true
+        progressTask?.cancel()
         controller?.stop()
     }
 
-    func togglePause() { controller?.togglePause() }
+    func togglePause() {
+        guard state == .playing || state == .paused else { return }
+        let paused = state != .paused
+        state = paused ? .paused : .playing
+        updateProgressClock(for: state)
+        controller?.setPaused(paused)
+    }
+    func skip(seconds: Double) { controller?.seek(relativeSeconds: seconds) }
+    func seek(to seconds: Double) {
+        positionSeconds = seconds
+        controller?.seek(to: seconds)
+    }
+    func selectAudioTrack(_ id: Int) { selectedAudioTrack = id; controller?.selectAudioTrack(id: id) }
+    func selectVideoTrack(_ id: Int) { selectedVideoTrack = id; controller?.selectVideoTrack(id: id) }
+    func selectSubtitleTrack(_ id: Int?) { selectedSubtitleTrack = id; controller?.selectSubtitleTrack(id: id) }
+
+    var audioTracks: [(id: Int, stream: MediaStream)] { tracks(type: "Audio") }
+    var videoTracks: [(id: Int, stream: MediaStream)] { tracks(type: "Video") }
+    var subtitleTracks: [(id: Int, stream: MediaStream)] { tracks(type: "Subtitle") }
+
+    private func tracks(type: String) -> [(id: Int, stream: MediaStream)] {
+        mediaStreams.filter { $0.type == type }.enumerated().map { index, stream in
+            (index + 1, stream)
+        }
+    }
+    private func defaultTrackIndex(type: String) -> Int? {
+        let matching = tracks(type: type)
+        return matching.first(where: { $0.stream.isDefault == true })?.id ?? matching.first?.id
+    }
+
+    private func updateProgressClock(for state: PlaybackController.State) {
+        progressTask?.cancel()
+        guard state == .playing else { return }
+        progressTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(0.25))
+                guard !Task.isCancelled, let self, self.state == .playing else { return }
+                self.positionSeconds = min(self.positionSeconds + 0.25,
+                                           self.durationSeconds > 0 ? self.durationSeconds : .greatestFiniteMagnitude)
+            }
+        }
+    }
 
     // MARK: - Autoplay
 
@@ -100,7 +176,18 @@ final class NowPlaying: ObservableObject {
     }
 
     private func clearIfIdle() {
-        if state == .stopped { itemName = nil; subtitle = nil }
+        if state == .stopped {
+            progressTask?.cancel()
+            itemName = nil
+            subtitle = nil
+            artworkURL = nil
+            durationSeconds = 0
+            isSeekable = false
+            mediaStreams = []
+            selectedAudioTrack = nil
+            selectedVideoTrack = nil
+            selectedSubtitleTrack = nil
+        }
     }
 
     static func episodeSubtitle(_ item: BaseItem) -> String? {

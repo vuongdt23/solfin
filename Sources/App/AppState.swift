@@ -64,7 +64,8 @@ final class AppState: ObservableObject {
     func makePlaybackConfig() -> PlaybackController.Config {
         PlaybackController.Config(
             mpvBinaryPath: mpvPathOverride.isEmpty ? nil : mpvPathOverride,
-            configDir: mpvConfigDir
+            configDir: mpvConfigDir,
+            additionalConfigPath: MPVConfigurationStore.activeOverridePath
         )
     }
 }

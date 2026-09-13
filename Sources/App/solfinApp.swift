@@ -6,38 +6,32 @@ struct SolfinApp: App {
     @StateObject private var nowPlaying = NowPlaying()
 
     init() {
-        // Generous shared HTTP cache so poster/backdrop images load once and are
-        // reused (Jellyfin serves images with ETags/long cache). Critical on slow
-        // or tunneled links where refetching every scroll shows spinners.
-        URLCache.shared = URLCache(memoryCapacity: 128 * 1024 * 1024,   // 128 MB RAM
-                                   diskCapacity: 1024 * 1024 * 1024,     // 1 GB disk
+        URLCache.shared = URLCache(memoryCapacity: 128 * 1024 * 1024,
+                                   diskCapacity: 1024 * 1024 * 1024,
                                    diskPath: "solfin-images")
     }
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environmentObject(appState)
-                .environmentObject(nowPlaying)
+            RootView().environmentObject(appState).environmentObject(nowPlaying)
                 .frame(minWidth: 900, minHeight: 600)
         }
         .windowStyle(.titleBar)
-        .commands {
-            CommandGroup(replacing: .newItem) {}
+        .commands { CommandGroup(replacing: .newItem) {} }
+
+        Settings {
+            SettingsView().environmentObject(appState).environmentObject(nowPlaying)
         }
     }
 }
 
 struct RootView: View {
-    @EnvironmentObject var appState: AppState
-
+    @EnvironmentObject private var appState: AppState
     var body: some View {
         Group {
-            if appState.isSignedIn {
-                HomeView()
-            } else {
-                LoginView()
-            }
+            if appState.isSignedIn { AppShellView() }
+            else { LoginView() }
         }
+        .animation(.easeInOut(duration: 0.25), value: appState.isSignedIn)
     }
 }

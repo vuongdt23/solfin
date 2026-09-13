@@ -12,11 +12,13 @@ public final class PlaybackController {
         public var mpvBinaryPath: String?
         public var configDir: String?
         public var progressInterval: TimeInterval
+        public var additionalConfigPath: String?
         public init(mpvBinaryPath: String? = nil, configDir: String? = nil,
-                    progressInterval: TimeInterval = 10) {
+                    progressInterval: TimeInterval = 10, additionalConfigPath: String? = nil) {
             self.mpvBinaryPath = mpvBinaryPath
             self.configDir = configDir
             self.progressInterval = progressInterval
+            self.additionalConfigPath = additionalConfigPath
         }
     }
 
@@ -31,7 +33,9 @@ public final class PlaybackController {
 
     private let queue = DispatchQueue(label: "dev.solfin.playback.controller")
     private var positionSeconds: Double = 0
+    private var durationSeconds: Double = 0
     private var isPaused = false
+    private var isSeekable = false
     private var didReportStopped = false
     private var naturalEnd = false
     private var state: State = .idle
@@ -39,9 +43,13 @@ public final class PlaybackController {
 
     private let timePosId = 1
     private let pauseId = 2
+    private let durationId = 3
+    private let seekableId = 4
 
     /// Delivered on the main queue: (state, positionSeconds).
     public var onStateChange: ((State, Double) -> Void)?
+    /// Delivered on the main queue as mpv reports duration and seek capability.
+    public var onMediaInfoChange: ((_ durationSeconds: Double, _ isSeekable: Bool) -> Void)?
     public var onError: ((Error) -> Void)?
     /// Delivered on the main queue when playback ends. `naturalEnd` is true only when
     /// mpv reported an "eof" end-file reason (the file played to completion) — the
@@ -74,18 +82,20 @@ public final class PlaybackController {
 
                 // Launch mpv already pointed at the file with the resume position.
                 try mpv.launch(binaryPath: binary, configDir: config.configDir,
+                               additionalConfigPath: config.additionalConfigPath,
                                initialURL: plan.streamURL.absoluteString,
                                startSeconds: plan.resumeSeconds,
                                mediaTitle: Self.displayTitle(for: item))
                 mpv.onExit = { [weak self] _ in self?.finalize() }
 
-                connectIPC(resumeSeconds: plan.resumeSeconds)
-                try? await api.reportPlaybackStart(plan)
                 self.queue.async {
                     self.positionSeconds = plan.resumeSeconds
+                    self.isPaused = false
                     self.setState(.playing)
                     self.startProgressTimer()
                 }
+                connectIPC(resumeSeconds: plan.resumeSeconds)
+                try? await api.reportPlaybackStart(plan)
             } catch {
                 emitError(error)
                 finalize()
@@ -99,8 +109,38 @@ public final class PlaybackController {
         mpv.terminate()
     }
 
+    public func setPaused(_ paused: Bool) {
+        queue.async { self.setPausedLocked(paused) }
+    }
+
     public func togglePause() {
-        ipc?.command(["cycle", "pause"])
+        queue.async { self.setPausedLocked(!self.isPaused) }
+    }
+
+    /// Must be called on `queue`. Update optimistically; mpv's observed `pause`
+    /// property remains authoritative and will reconcile the state.
+    private func setPausedLocked(_ paused: Bool) {
+        guard !didReportStopped else { return }
+        isPaused = paused
+        ipc?.setProperty("pause", paused)
+        setState(paused ? .paused : .playing)
+        reportProgressNow()
+    }
+
+    public func seek(relativeSeconds: Double) {
+        ipc?.command(["seek", relativeSeconds, "relative+exact"])
+    }
+
+    public func seek(to seconds: Double) {
+        ipc?.command(["seek", max(0, seconds), "absolute+exact"])
+    }
+
+    /// mpv stream selectors are 1-based track IDs. A nil subtitle disables subtitles.
+    public func selectAudioTrack(id: Int) { ipc?.setProperty("aid", id) }
+    public func selectVideoTrack(id: Int) { ipc?.setProperty("vid", id) }
+    public func selectSubtitleTrack(id: Int?) {
+        if let id { ipc?.setProperty("sid", id) }
+        else { ipc?.setProperty("sid", "no") }
     }
 
     // MARK: - IPC
@@ -115,34 +155,49 @@ public final class PlaybackController {
         }
         ipc.observeProperty("time-pos", id: timePosId)
         ipc.observeProperty("pause", id: pauseId)
+        ipc.observeProperty("duration", id: durationId)
+        ipc.observeProperty("seekable", id: seekableId)
         self.ipc = ipc
     }
 
     private func handle(_ msg: [String: Any]) {
         queue.async {
-            if let event = msg["event"] as? String {
-                switch event {
-                case "end-file":
-                    // reason: "eof" (completed) | "stop" | "quit" | "error" | "redirect"
-                    if (msg["reason"] as? String) == "eof" { self.naturalEnd = true }
-                    self.finalizeLocked()
-                case "shutdown":
-                    self.finalizeLocked()
+            guard let event = msg["event"] as? String else { return }
+            switch event {
+            case "property-change":
+                guard let id = Self.intValue(msg["id"]) else { return }
+                switch id {
+                case self.timePosId:
+                    if let pos = Self.doubleValue(msg["data"]) {
+                        self.positionSeconds = pos
+                        self.setState(self.isPaused ? .paused : .playing)
+                    }
+                case self.pauseId:
+                    if let paused = Self.boolValue(msg["data"]) {
+                        let changed = self.isPaused != paused
+                        self.isPaused = paused
+                        self.setState(paused ? .paused : .playing)
+                        if changed { self.reportProgressNow() }
+                    }
+                case self.durationId:
+                    if let duration = Self.doubleValue(msg["data"]) {
+                        self.durationSeconds = duration
+                        self.emitMediaInfo()
+                    }
+                case self.seekableId:
+                    if let seekable = Self.boolValue(msg["data"]) {
+                        self.isSeekable = seekable
+                        self.emitMediaInfo()
+                    }
                 default:
                     break
                 }
-                return
-            }
-            guard msg["event"] == nil, let id = msg["id"] as? Int else { return }
-            switch id {
-            case self.timePosId:
-                if let pos = msg["data"] as? Double { self.positionSeconds = pos }
-            case self.pauseId:
-                if let paused = msg["data"] as? Bool {
-                    self.isPaused = paused
-                    self.setState(paused ? .paused : .playing)
-                    self.reportProgressNow()   // immediate on pause/unpause
-                }
+            case "end-file":
+                // reason: "eof" (completed) | "stop" | "quit" | "error" | "redirect"
+                if (msg["reason"] as? String) == "eof" { self.naturalEnd = true }
+                self.finalizeLocked()
+            case "shutdown":
+                self.finalizeLocked()
             default:
                 break
             }
@@ -199,6 +254,31 @@ public final class PlaybackController {
         state = s
         let pos = positionSeconds
         DispatchQueue.main.async { self.onStateChange?(s, pos) }
+    }
+
+    private static func intValue(_ value: Any?) -> Int? {
+        if let value = value as? Int { return value }
+        if let value = value as? NSNumber { return value.intValue }
+        return nil
+    }
+
+    private static func doubleValue(_ value: Any?) -> Double? {
+        if let value = value as? Double { return value }
+        if let value = value as? Int { return Double(value) }
+        if let value = value as? NSNumber { return value.doubleValue }
+        return nil
+    }
+
+    private static func boolValue(_ value: Any?) -> Bool? {
+        if let value = value as? Bool { return value }
+        if let value = value as? NSNumber { return value.boolValue }
+        return nil
+    }
+
+    private func emitMediaInfo() {
+        let duration = durationSeconds
+        let seekable = isSeekable
+        DispatchQueue.main.async { self.onMediaInfoChange?(duration, seekable) }
     }
 
     private func emitError(_ error: Error) {

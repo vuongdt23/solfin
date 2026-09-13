@@ -36,8 +36,8 @@ public final class MPVProcess {
     /// Launch mpv. `configDir` should point at the bundled Resources/mpv (mpv.conf + OSC).
     /// `mediaTitle` overrides mpv's `media-title` (otherwise it falls back to the ugly
     /// stream URL filename) so the OSC shows the real Jellyfin item name.
-    public func launch(binaryPath: String, configDir: String?, initialURL: String?,
-                       startSeconds: Double?, mediaTitle: String? = nil) throws {
+    public func launch(binaryPath: String, configDir: String?, additionalConfigPath: String? = nil,
+                       initialURL: String?, startSeconds: Double?, mediaTitle: String? = nil) throws {
         // Stale socket from a prior crash would block bind on mpv's side.
         try? FileManager.default.removeItem(atPath: socketPath)
 
@@ -52,6 +52,10 @@ public final class MPVProcess {
             "--title=${media-title}",
         ]
         if let configDir { args.append("--config-dir=\(configDir)") }
+        // Load after the bundled mpv.conf so user values override bundled defaults.
+        if let additionalConfigPath, !additionalConfigPath.isEmpty {
+            args.append("--include=\(additionalConfigPath)")
+        }
         if let start = startSeconds, start > 0 { args.append("--start=\(Int(start))") }
         if let mediaTitle, !mediaTitle.isEmpty { args.append("--force-media-title=\(mediaTitle)") }
         if let initialURL { args.append(initialURL) }
