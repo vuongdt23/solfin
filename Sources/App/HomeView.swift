@@ -32,7 +32,7 @@ struct HomeView: View {
 
     private var content: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: SolfinDesign.sectionSpacing) {
+            VStack(alignment: .leading, spacing: 0) {
                 if !featured.isEmpty { FeaturedMediaBar(items: featured) }
                 VStack(alignment: .leading, spacing: SolfinDesign.sectionSpacing) {
                     if isLoading && resume.isEmpty && nextUp.isEmpty { loadingShelves }
@@ -47,7 +47,20 @@ struct HomeView: View {
                     }
                 }
                 .padding(.horizontal, SolfinDesign.pagePadding)
+                .padding(.top, featured.isEmpty ? 22 : 0)
                 .padding(.bottom, SolfinDesign.pagePadding)
+                .background(alignment: .top) {
+                    if !featured.isEmpty {
+                        LinearGradient(colors: [SolfinDesign.spaceBlack.opacity(0.0),
+                                                SolfinDesign.spaceBlack.opacity(0.70),
+                                                SolfinDesign.spaceBlack],
+                                       startPoint: .top,
+                                       endPoint: .bottom)
+                            .frame(height: 190)
+                            .offset(y: -150)
+                            .allowsHitTesting(false)
+                    }
+                }
             }
         }
         .background {
@@ -88,7 +101,7 @@ struct HomeView: View {
 
     private var librariesSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Libraries").font(.title2.weight(.semibold))
+            Text("Libraries").font(.title.weight(.semibold))
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 14) {
                     ForEach(views) { view in
@@ -108,7 +121,7 @@ struct HomeView: View {
 
     private func landscapeShelf(_ title: String, _ items: [BaseItem]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(title).font(.title2.weight(.semibold))
+            Text(title).font(.title.weight(.semibold))
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 16) {
                     ForEach(items) { item in
@@ -121,7 +134,7 @@ struct HomeView: View {
 
     private func shelf(_ title: String, _ items: [BaseItem]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(title).font(.title2.weight(.semibold))
+            Text(title).font(.title.weight(.semibold))
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 18) {
                     ForEach(items) { item in
@@ -274,10 +287,28 @@ private struct FeaturedMediaBar: View {
         .frame(maxWidth: .infinity)
         .containerRelativeFrame(.vertical, alignment: .top) { available, _ in max(820, available * 0.96) }
         .overlay(alignment: .bottom) {
-            LinearGradient(colors: [.clear, SolfinDesign.spaceBlack],
-                           startPoint: .top, endPoint: .bottom)
-                .frame(height: 150)
-                .allowsHitTesting(false)
+            ZStack(alignment: .bottom) {
+                LinearGradient(colors: [.clear,
+                                        SolfinDesign.spaceBlack.opacity(0.58),
+                                        SolfinDesign.spaceBlack.opacity(0.92),
+                                        SolfinDesign.spaceBlack],
+                               startPoint: .top,
+                               endPoint: .bottom)
+                RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.18),
+                                        SolfinDesign.solarRed.opacity(0.08),
+                                        .clear],
+                               center: UnitPoint(x: 0.78, y: 0.72),
+                               startRadius: 40,
+                               endRadius: 520)
+                    .blendMode(.screen)
+                RadialGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.16), .clear],
+                               center: UnitPoint(x: 0.26, y: 0.82),
+                               startRadius: 60,
+                               endRadius: 560)
+                    .blendMode(.screen)
+            }
+            .frame(height: 330)
+            .allowsHitTesting(false)
         }
         .ignoresSafeArea(edges: .top)
         .onHover { hovering = $0 }

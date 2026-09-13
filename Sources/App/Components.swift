@@ -53,8 +53,8 @@ struct PosterCard: View {
             .shadow(color: SolfinDesign.nebulaPurple.opacity(hovering ? 0.18 : 0), radius: 30, y: 14)
             .shadow(color: .black.opacity(hovering ? 0.36 : 0.14), radius: hovering ? 18 : 6, y: hovering ? 10 : 3)
             .scaleEffect(hovering ? 1.035 : 1)
-            Text(item.name).font(.callout.weight(.medium)).foregroundStyle(.white).lineLimit(1)
-            if let subtitle { Text(subtitle).font(.caption).foregroundStyle(.white.opacity(0.58)).lineLimit(1) }
+            Text(item.name).font(.system(size: 15.5, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+            if let subtitle { Text(subtitle).font(.system(size: 12.5, weight: .medium)).foregroundStyle(.white.opacity(0.64)).lineLimit(1) }
         }
         .frame(width: 160, alignment: .leading)
         .contentShape(Rectangle())
@@ -128,8 +128,8 @@ struct LandscapeCard: View {
             .shadow(color: .black.opacity(hovering ? 0.34 : 0.1), radius: hovering ? 16 : 5, y: 6)
             .scaleEffect(hovering ? 1.026 : 1)
             Text(item.type == "Episode" ? (item.seriesName ?? item.name) : item.name)
-                .font(.callout.weight(.medium)).foregroundStyle(.white).lineLimit(1)
-            if let subtitle { Text(subtitle).font(.caption).foregroundStyle(.white.opacity(0.58)).lineLimit(1) }
+                .font(.system(size: 15.5, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+            if let subtitle { Text(subtitle).font(.system(size: 12.5, weight: .medium)).foregroundStyle(.white.opacity(0.64)).lineLimit(1) }
         }
         .frame(width: 250, alignment: .leading)
         .contentShape(Rectangle()).onHover { hovering = $0 }
@@ -166,7 +166,7 @@ struct LibraryBanner: View {
                     .padding(-16)
                     .transition(.opacity)
             }
-            Text(item.name).font(.title2.weight(.semibold)).foregroundStyle(.white).padding(18)
+            Text(item.name).font(.title.weight(.semibold)).foregroundStyle(.white).padding(18)
         }
         .frame(width: 300, height: 155)
         .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(hovering ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarGold, SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: hovering ? 2 : 1) }
