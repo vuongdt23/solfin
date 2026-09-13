@@ -42,6 +42,44 @@ final class StreamURLTests: XCTestCase {
                        "/Videos/ITEM1/stream")
     }
 
+    func testRelativeSubtitleDeliveryURLIsAuthenticated() throws {
+        let client = makeClient(token: "ABC")
+        let stream = try decodeStream("""
+        {"Type":"Subtitle","Index":4,"Codec":"subrip","IsExternal":true,
+         "DeliveryMethod":"External",
+         "DeliveryUrl":"/Videos/ITEM1/MS1/Subtitles/4/0/Stream.srt"}
+        """)
+        let url = try XCTUnwrap(client.subtitleURL(
+            for: stream, itemId: "ITEM1", mediaSourceId: "MS1"))
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(components.path, "/Videos/ITEM1/MS1/Subtitles/4/0/Stream.srt")
+        XCTAssertEqual(components.queryItems?.first(where: { $0.name == "api_key" })?.value,
+                       "ABC")
+    }
+
+    func testAbsoluteThirdPartySubtitleDoesNotLeakToken() throws {
+        let client = makeClient(token: "SECRET")
+        let stream = try decodeStream("""
+        {"Type":"Subtitle","Index":7,"Codec":"ass","IsExternal":true,
+         "DeliveryMethod":"External","IsExternalUrl":true,
+         "DeliveryUrl":"https://subs.example.test/movie.ass?signature=x"}
+        """)
+        let url = try XCTUnwrap(client.subtitleURL(
+            for: stream, itemId: "ITEM1", mediaSourceId: "MS1"))
+        XCTAssertEqual(url.host, "subs.example.test")
+        XCTAssertFalse(url.absoluteString.contains("SECRET"))
+        XCTAssertFalse(url.absoluteString.contains("api_key"))
+    }
+
+    func testExternalSubtitleFallbackUsesCanonicalEndpoint() throws {
+        let client = makeClient(token: "ABC")
+        let stream = try decodeStream(
+            #"{"Type":"Subtitle","Index":9,"Codec":"subrip","IsExternal":true}"#)
+        let url = try XCTUnwrap(client.subtitleURL(
+            for: stream, itemId: "ITEM1", mediaSourceId: "MS1"))
+        XCTAssertEqual(url.path, "/Videos/ITEM1/MS1/Subtitles/9/Stream.srt")
+    }
+
     func testPrimaryImageURLNilWithoutTag() throws {
         let client = makeClient()
         let item = try decodeItem(#"{"Id":"i1","Name":"No Image"}"#)
@@ -78,5 +116,9 @@ final class StreamURLTests: XCTestCase {
 
     private func decodeItem(_ json: String) throws -> BaseItem {
         try JSONDecoder().decode(BaseItem.self, from: Data(json.utf8))
+    }
+
+    private func decodeStream(_ json: String) throws -> MediaStream {
+        try JSONDecoder().decode(MediaStream.self, from: Data(json.utf8))
     }
 }

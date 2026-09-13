@@ -44,4 +44,15 @@ final class MPVCommandTests: XCTestCase {
         XCTAssertEqual(args[1] as? Int, 1)
         XCTAssertEqual(args[2] as? String, "time-pos")
     }
+
+    func testAddSubtitleArgsDoNotAutoSelectAndPreserveMetadata() {
+        let args = MPVIPC.addSubtitleArgs(
+            url: "http://server/sub.srt?api_key=token",
+            title: "English SDH", language: "eng")
+        XCTAssertEqual(args[0] as? String, "sub-add")
+        XCTAssertEqual(args[1] as? String, "http://server/sub.srt?api_key=token")
+        XCTAssertEqual(args[2] as? String, "auto")
+        XCTAssertEqual(args[3] as? String, "English SDH")
+        XCTAssertEqual(args[4] as? String, "eng")
+    }
 }

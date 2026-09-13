@@ -52,6 +52,72 @@ final class APIClientMockTests: XCTestCase {
         XCTAssertTrue(plan.streamURL.absoluteString.contains("mediaSourceId=direct"))
     }
 
+    func testDirectPlayPlanBuildsExternalSubtitleFromPlaybackInfo() async throws {
+        MockURLProtocol.handler = { _ in
+            let payload = MockURLProtocol.lastBody.flatMap {
+                try? JSONSerialization.jsonObject(with: $0) as? [String: Any]
+            }
+            let profile = payload?["DeviceProfile"] as? [String: Any]
+            let subtitleProfiles = profile?["SubtitleProfiles"] as? [[String: Any]] ?? []
+            XCTAssertFalse(subtitleProfiles.isEmpty)
+            XCTAssertTrue(subtitleProfiles.contains { ($0["Format"] as? String) == "srt" && ($0["Method"] as? String) == "External" })
+            XCTAssertFalse(subtitleProfiles.contains { ($0["Format"] as? String) == "dvdsub" && ($0["Method"] as? String) == "External" })
+            XCTAssertFalse(subtitleProfiles.contains { ($0["Format"] as? String) == "vobsub" && ($0["Method"] as? String) == "External" })
+
+            let json = """
+            {"PlaySessionId":"ps1","MediaSources":[{
+              "Id":"source","Container":"mkv","SupportsDirectPlay":true,
+              "DefaultAudioStreamIndex":2,"DefaultSubtitleStreamIndex":0,
+              "MediaStreams":[
+                {"Type":"Subtitle","Index":0,"Codec":"subrip","Language":"eng",
+                 "DisplayTitle":"English","IsDefault":true,"IsExternal":true,
+                 "DeliveryMethod":"External",
+                 "DeliveryUrl":"/Videos/movie1/source/Subtitles/0/0/Stream.srt"},
+                {"Type":"Video","Index":1,"Codec":"h264"},
+                {"Type":"Audio","Index":2,"Codec":"aac"}
+              ]
+            }]}
+            """
+            return (200, Data(json.utf8))
+        }
+        let item = try JSONDecoder().decode(BaseItem.self, from: Data(
+            #"{"Id":"movie1","Name":"Movie"}"#.utf8))
+        let plan = try await makeClient(authed: true).directPlayPlan(for: item)
+
+        XCTAssertEqual(plan.defaultAudioStreamIndex, 2)
+        XCTAssertEqual(plan.defaultSubtitleStreamIndex, 0)
+        XCTAssertEqual(plan.externalSubtitles.count, 1)
+        XCTAssertEqual(plan.externalSubtitles[0].streamIndex, 0)
+        XCTAssertEqual(plan.externalSubtitles[0].language, "eng")
+        XCTAssertTrue(plan.externalSubtitles[0].url.absoluteString.contains("api_key=TOK"))
+    }
+
+    func testDirectPlayPlanSkipsExternalBitmapSubtitleURLs() async throws {
+        MockURLProtocol.handler = { _ in
+            let json = """
+            {"PlaySessionId":"ps1","MediaSources":[{
+              "Id":"source","Container":"mkv","SupportsDirectPlay":true,
+              "MediaStreams":[
+                {"Type":"Subtitle","Index":0,"Codec":"dvdsub","Language":"eng",
+                 "DisplayTitle":"English DVD","IsExternal":true,
+                 "DeliveryMethod":"External",
+                 "DeliveryUrl":"/Videos/movie1/source/Subtitles/0/Stream.sub"},
+                {"Type":"Subtitle","Index":1,"Codec":"subrip","Language":"eng",
+                 "DisplayTitle":"English SRT","IsExternal":true,
+                 "DeliveryMethod":"External",
+                 "DeliveryUrl":"/Videos/movie1/source/Subtitles/1/Stream.srt"}
+              ]
+            }]}
+            """
+            return (200, Data(json.utf8))
+        }
+        let item = try JSONDecoder().decode(BaseItem.self, from: Data(
+            #"{"Id":"movie1","Name":"Movie"}"#.utf8))
+        let plan = try await makeClient(authed: true).directPlayPlan(for: item)
+
+        XCTAssertEqual(plan.externalSubtitles.map(\.streamIndex), [1])
+    }
+
     func testProgressReportSendsPositionTicks() async throws {
         MockURLProtocol.handler = { _ in (204, Data()) }
         let client = makeClient(authed: true)

@@ -78,6 +78,18 @@ struct Probe {
                 print("MediaSourceId: \(plan.mediaSourceId)")
                 print("Resume: \(String(format: "%.1f", plan.resumeSeconds))s")
                 print("Direct stream URL:\n  \(plan.streamURL.absoluteString)")
+                print("Streams:")
+                for stream in plan.mediaStreams {
+                    let idx = stream.index.map(String.init) ?? "?"
+                    let ext = stream.isExternal == true ? " external" : ""
+                    let method = stream.deliveryMethod.map { " method=\($0)" } ?? ""
+                    print("  [\(idx)] \(stream.type ?? "?") \(stream.codec ?? "?") \(stream.displayTitle ?? stream.language ?? "")\(ext)\(method)")
+                }
+                print("External subtitles loaded into mpv (\(plan.externalSubtitles.count)):")
+                for sub in plan.externalSubtitles {
+                    print("  [\(sub.streamIndex)] \(sub.language ?? "und") \(sub.title ?? "")")
+                    print("      \(sub.url.absoluteString)")
+                }
 
             case "play":
                 let api = try await signedIn()
