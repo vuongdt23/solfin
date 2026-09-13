@@ -32,22 +32,37 @@ struct HomeView: View {
 
     private var content: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: SolfinDesign.sectionSpacing) {
+            VStack(alignment: .leading, spacing: 0) {
                 if !featured.isEmpty { FeaturedMediaBar(items: featured) }
-                if isLoading && resume.isEmpty && nextUp.isEmpty { loadingShelves }
-                if !views.isEmpty { librariesSection }
-                if !resume.isEmpty { landscapeShelf("Continue Watching", resume) }
-                if !nextUp.isEmpty { landscapeShelf("Next Up", nextUp) }
-                if !latestShows.isEmpty { shelf("Recently Added in Shows", latestShows) }
-                if !latestMovies.isEmpty { shelf("Recently Added in Movies", latestMovies) }
-                if let loadError, resume.isEmpty && nextUp.isEmpty && latestMovies.isEmpty && latestShows.isEmpty {
-                    EmptyContentView(title: "Home is unavailable", message: loadError,
-                                     systemImage: "wifi.exclamationmark") { Task { await load() } }
+                VStack(alignment: .leading, spacing: SolfinDesign.sectionSpacing) {
+                    if isLoading && resume.isEmpty && nextUp.isEmpty { loadingShelves }
+                    if !views.isEmpty { librariesSection }
+                    if !resume.isEmpty { landscapeShelf("Continue Watching", resume) }
+                    if !nextUp.isEmpty { landscapeShelf("Next Up", nextUp) }
+                    if !latestShows.isEmpty { shelf("Recently Added in Shows", latestShows) }
+                    if !latestMovies.isEmpty { shelf("Recently Added in Movies", latestMovies) }
+                    if let loadError, resume.isEmpty && nextUp.isEmpty && latestMovies.isEmpty && latestShows.isEmpty {
+                        EmptyContentView(title: "Home is unavailable", message: loadError,
+                                         systemImage: "wifi.exclamationmark") { Task { await load() } }
+                    }
                 }
+                .padding(.horizontal, SolfinDesign.pagePadding)
+                .padding(.top, featured.isEmpty ? 22 : 0)
+                .padding(.bottom, SolfinDesign.pagePadding)
             }
-            .padding(SolfinDesign.pagePadding)
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background {
+            ZStack {
+                SolfinDesign.solarBackground
+                RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.16), .clear],
+                               center: UnitPoint(x: 0.96, y: 0.02), startRadius: 0, endRadius: 720)
+                    .blendMode(.screen)
+                RadialGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.14), .clear],
+                               center: UnitPoint(x: 0.12, y: 0.88), startRadius: 60, endRadius: 900)
+                    .blendMode(.screen)
+            }
+        }
+        .scrollContentBackground(.hidden)
     }
 
     private var featured: [BaseItem] {
@@ -74,7 +89,7 @@ struct HomeView: View {
 
     private var librariesSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Libraries").font(.title2.weight(.semibold))
+            Text("Libraries").font(.title.weight(.semibold))
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 14) {
                     ForEach(views) { view in
@@ -94,7 +109,7 @@ struct HomeView: View {
 
     private func landscapeShelf(_ title: String, _ items: [BaseItem]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(title).font(.title2.weight(.semibold))
+            Text(title).font(.title.weight(.semibold))
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 16) {
                     ForEach(items) { item in
@@ -107,7 +122,7 @@ struct HomeView: View {
 
     private func shelf(_ title: String, _ items: [BaseItem]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(title).font(.title2.weight(.semibold))
+            Text(title).font(.title.weight(.semibold))
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 18) {
                     ForEach(items) { item in
@@ -152,15 +167,15 @@ private struct FeaturedTitle: View {
                 if let image = phase.image { image.resizable().aspectRatio(contentMode: .fit) }
                 else { fallback }
             }
-            .frame(width: 420, height: 125, alignment: .leading)
+            .frame(width: 560, height: 170, alignment: .leading)
         } else { fallback }
     }
 
     private var fallback: some View {
         Text(item.name)
-            .font(.system(size: 42, weight: .heavy, design: .rounded))
-            .tracking(-1.4).foregroundStyle(.white).lineLimit(2)
-            .frame(maxWidth: 520, alignment: .leading)
+            .font(.system(size: 74, weight: .heavy, design: .rounded))
+            .tracking(-2.2).foregroundStyle(.white).lineLimit(2)
+            .frame(maxWidth: 820, alignment: .leading)
     }
 }
 
@@ -183,26 +198,37 @@ private struct FeaturedMediaBar: View {
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                if let url = appState.api.backdropImageURL(for: item, maxWidth: 1800) {
-                    AsyncImage(url: url) { phase in
-                        if let image = phase.image { image.resizable().aspectRatio(contentMode: .fill) }
-                        else { Color.secondary.opacity(0.12) }
-                    }
+                heroArtwork
                     .frame(width: proxy.size.width, height: proxy.size.height)
                     .clipped()
                     .id(item.id).transition(.opacity)
-                }
-                LinearGradient(colors: [.black.opacity(0.86), .black.opacity(0.42), .clear],
+                RadialGradient(colors: [SolfinDesign.solarGold.opacity(0.38), SolfinDesign.solarOrange.opacity(0.22), .clear],
+                               center: .topTrailing, startRadius: 0, endRadius: 740)
+                    .blendMode(.screen)
+                RadialGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.24), .clear],
+                               center: .bottomLeading, startRadius: 20, endRadius: 820)
+                    .blendMode(.screen)
+                LinearGradient(colors: [.black.opacity(0.28), .black.opacity(0.08), .clear],
                                startPoint: .leading, endPoint: .trailing)
-                LinearGradient(colors: [.clear, .black.opacity(0.12), .black.opacity(0.82)],
-                               startPoint: .top, endPoint: .bottom)
+                LinearGradient(stops: [
+                    .init(color: .clear, location: 0.46),
+                    .init(color: SolfinDesign.spaceBlack.opacity(0.20), location: 0.66),
+                    .init(color: SolfinDesign.spaceBlack.opacity(0.76), location: 0.86),
+                    .init(color: SolfinDesign.spaceBlack, location: 1.0)
+                ], startPoint: .top, endPoint: .bottom)
+                RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.14), SolfinDesign.solarRed.opacity(0.06), .clear],
+                               center: UnitPoint(x: 0.76, y: 0.86), startRadius: 60, endRadius: 560)
+                    .blendMode(.screen)
+                RadialGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.12), .clear],
+                               center: UnitPoint(x: 0.26, y: 0.90), startRadius: 80, endRadius: 620)
+                    .blendMode(.screen)
 
                 VStack {
                     Spacer()
-                    HStack(alignment: .bottom, spacing: 24) {
-                        VStack(alignment: .leading, spacing: 13) {
+                    HStack(alignment: .bottom, spacing: 28) {
+                        VStack(alignment: .leading, spacing: 17) {
                             FeaturedTitle(item: item)
-                            HStack(spacing: 9) {
+                            HStack(spacing: 12) {
                                 if let rating = item.communityRating {
                                     Label(String(format: "%.1f", rating), systemImage: "star.fill")
                                         .foregroundStyle(.yellow)
@@ -210,25 +236,30 @@ private struct FeaturedMediaBar: View {
                                 if let year = item.productionYear { Text(String(year)) }
                                 if let official = item.officialRating { Text(official).padding(.horizontal, 7).background(.white.opacity(0.84), in: RoundedRectangle(cornerRadius: 4)).foregroundStyle(.black) }
                                 if let runtime = runtime(item) { Text(runtime) }
-                            }.font(.caption.weight(.medium)).foregroundStyle(.white.opacity(0.88))
+                            }.font(.callout.weight(.semibold)).foregroundStyle(.white.opacity(0.96))
                             if let genres = item.genres, !genres.isEmpty {
                                 Text(genres.prefix(3).joined(separator: "  ·  "))
-                                    .font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.88))
+                                    .font(.callout.weight(.bold)).foregroundStyle(.white.opacity(0.94))
                             }
                             if let overview = item.overview {
-                                Text(overview).font(.callout).foregroundStyle(.white.opacity(0.82)).lineLimit(3)
-                                    .frame(maxWidth: min(620, proxy.size.width * 0.62), alignment: .leading)
+                                Text(overview)
+                                    .font(.system(size: 18, weight: .medium))
+                                    .lineSpacing(4)
+                                    .foregroundStyle(.white.opacity(0.94))
+                                    .lineLimit(4)
+                                    .frame(maxWidth: min(820, proxy.size.width * 0.68), alignment: .leading)
                             }
                             HStack(spacing: 12) {
                                 if item.type != "Series" {
                                     Button { play(item) } label: {
                                         Label(playLabel(item), systemImage: "play.fill")
-                                            .padding(.horizontal, 16).padding(.vertical, 9)
+                                            .font(.headline.weight(.semibold))
+                                            .padding(.horizontal, 22).padding(.vertical, 12)
                                     }.buttonStyle(.plain).background(.white, in: Capsule()).foregroundStyle(.black)
                                 }
                                 NavigationLink(value: item) {
-                                    Image(systemName: "info").font(.headline).frame(width: 38, height: 38)
-                                }.buttonStyle(.plain).background(.white.opacity(0.16), in: Circle()).foregroundStyle(.white)
+                                    Image(systemName: "info").font(.headline).frame(width: 46, height: 46)
+                                }.buttonStyle(.plain).background(.white.opacity(0.22), in: Circle()).foregroundStyle(.white)
                             }
                         }
                         Spacer(minLength: 20)
@@ -239,7 +270,7 @@ private struct FeaturedMediaBar: View {
                                     .onTapGesture { withAnimation(.easeInOut(duration: 0.45)) { selection = index } }
                             }
                         }.padding(.bottom, 8)
-                    }.padding(34)
+                    }.padding(.horizontal, 72).padding(.bottom, 118).padding(.top, 40)
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
 
@@ -252,12 +283,8 @@ private struct FeaturedMediaBar: View {
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .frame(maxWidth: .infinity)
-        // Backdrops are generally 16:9. A taller stage preserves faces and title art
-        // instead of turning the feature into an aggressively cropped banner.
-        .frame(height: 740)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 24).strokeBorder(.white.opacity(0.1)) }
-        .shadow(color: .black.opacity(0.24), radius: 30, y: 14)
+        .containerRelativeFrame(.vertical, alignment: .top) { available, _ in max(820, available * 0.96) }
+        .ignoresSafeArea(edges: .top)
         .onHover { hovering = $0 }
         .task(id: "\(selection)-\(hovering)-\(autoAdvance)") {
             guard autoAdvance, !reduceMotion, !hovering, items.count > 1 else { return }
@@ -267,6 +294,18 @@ private struct FeaturedMediaBar: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Featured media")
+    }
+
+    @ViewBuilder private var heroArtwork: some View {
+        if let url = appState.api.backdropImageURL(for: item, maxWidth: nil) {
+            AsyncImage(url: url) { phase in
+                if let image = phase.image { image.resizable().aspectRatio(contentMode: .fill) }
+                else { Color.secondary.opacity(0.12) }
+            }
+        } else {
+            LinearGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.45), SolfinDesign.spaceBlack],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
     }
 
     private func carouselButton(_ icon: String, action: @escaping () -> Void) -> some View {

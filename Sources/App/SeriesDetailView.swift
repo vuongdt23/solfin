@@ -26,7 +26,7 @@ struct SeriesDetailView: View {
                 .padding(.horizontal, 38).padding(.top, 34).padding(.bottom, 70)
             }
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(SolfinDesign.solarBackground)
         .navigationTitle(series.name)
         .task { await loadSeasons() }
     }
@@ -41,10 +41,15 @@ struct SeriesDetailView: View {
                     }
                     .frame(width: proxy.size.width, height: proxy.size.height).clipped()
                 } else {
-                    LinearGradient(colors: [Color.accentColor.opacity(0.2), .clear], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    LinearGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.38), SolfinDesign.spaceBlack], startPoint: .topLeading, endPoint: .bottomTrailing)
                 }
-                LinearGradient(colors: [.black.opacity(0.1), .black.opacity(0.3), .black.opacity(0.9)], startPoint: .top, endPoint: .bottom)
-                LinearGradient(colors: [.black.opacity(0.64), .clear], startPoint: .leading, endPoint: .trailing)
+                ZStack {
+                    RadialGradient(colors: [SolfinDesign.solarGold.opacity(0.62), SolfinDesign.solarOrange.opacity(0.3), .clear], center: .topTrailing, startRadius: 0, endRadius: 760)
+                    RadialGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.34), .clear], center: .bottomLeading, startRadius: 40, endRadius: 780)
+                }
+                .blendMode(.screen)
+                LinearGradient(colors: [.black.opacity(0.04), .black.opacity(0.12), SolfinDesign.spaceBlack.opacity(0.58)], startPoint: .top, endPoint: .bottom)
+                LinearGradient(colors: [.black.opacity(0.28), .clear], startPoint: .leading, endPoint: .trailing)
 
                 HStack(alignment: .bottom) {
                     VStack(alignment: .leading, spacing: 16) {
@@ -214,9 +219,9 @@ private struct SeasonCard: View {
             PosterImage(url: appState.api.primaryImageURL(for: season, maxHeight: 420))
                 .frame(width: 170, height: 255).clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(selected ? Color.accentColor : .white.opacity(0.1), lineWidth: selected ? 3 : 1) }
-            Text(season.name).font(.callout.weight(selected ? .semibold : .regular)).lineLimit(1)
-            if let count = season.childCount { Text("\(count) episodes").font(.caption).foregroundStyle(.secondary) }
+                .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(selected ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: selected ? 3 : 1) }
+            Text(season.name).font(.callout.weight(selected ? .semibold : .regular)).foregroundStyle(.white).lineLimit(1)
+            if let count = season.childCount { Text("\(count) episodes").font(.caption).foregroundStyle(.white.opacity(0.58)) }
         }.frame(width: 170, alignment: .leading)
     }
 }
@@ -230,31 +235,39 @@ struct EpisodeCard: View {
         VStack(alignment: .leading, spacing: 9) {
             ZStack(alignment: .bottomLeading) {
                 PosterImage(url: appState.api.primaryImageURL(for: episode, maxHeight: 320))
-                    .aspectRatio(16/9, contentMode: .fill).clipped()
-                LinearGradient(colors: [.clear, .black.opacity(0.45)], startPoint: .center, endPoint: .bottom)
+                    .aspectRatio(16/9, contentMode: .fill)
+                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                LinearGradient(colors: [.clear, .black.opacity(0.40)], startPoint: .center, endPoint: .bottom)
+                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                 if hovering {
+                    RoundedRectangle(cornerRadius: 21, style: .continuous)
+                        .fill(RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.34), SolfinDesign.solarRed.opacity(0.18), SolfinDesign.nebulaPurple.opacity(0.22), .clear], center: .center, startRadius: 10, endRadius: 180))
+                        .blur(radius: 16)
+                        .padding(-14)
                     Image(systemName: "play.fill").font(.title3).foregroundStyle(.white)
-                        .frame(width: 48, height: 48).background(.black.opacity(0.55), in: Circle())
+                        .frame(width: 50, height: 50)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .overlay { Circle().strokeBorder(SolfinDesign.solarOrange.opacity(0.45)) }
+                        .shadow(color: SolfinDesign.solarOrange.opacity(0.35), radius: 18, y: 5)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 if let pct = episode.userData?.playedPercentage, pct > 0 {
                     GeometryReader { geo in
-                        VStack { Spacer(); Rectangle().fill(.tint).frame(width: geo.size.width * min(pct, 100) / 100, height: 4) }
+                        VStack { Spacer(); Rectangle().fill(LinearGradient(colors: [SolfinDesign.solarOrange, SolfinDesign.nebulaPurple], startPoint: .leading, endPoint: .trailing)).frame(width: geo.size.width * min(pct, 100) / 100, height: 4) }
                     }
                 }
             }
             .aspectRatio(16/9, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: 13).strokeBorder(hovering ? Color.accentColor : .white.opacity(0.1), lineWidth: hovering ? 2 : 1) }
+            .overlay { RoundedRectangle(cornerRadius: 13).strokeBorder(hovering ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: hovering ? 2 : 1) }
             .shadow(color: .black.opacity(hovering ? 0.22 : 0.1), radius: hovering ? 14 : 5, y: 6)
             .scaleEffect(hovering ? 1.015 : 1)
 
             HStack(alignment: .firstTextBaseline) {
-                Text(episodeTitle).font(.headline).lineLimit(1)
+                Text(episodeTitle).font(.headline).foregroundStyle(.white).lineLimit(1)
                 Spacer()
-                if let runtime { Text(runtime).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
+                if let runtime { Text(runtime).font(.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.58)) }
             }
-            if let overview = episode.overview { Text(overview).font(.caption).foregroundStyle(.secondary).lineLimit(2).lineSpacing(2) }
+            if let overview = episode.overview { Text(overview).font(.caption).foregroundStyle(.white.opacity(0.6)).lineLimit(2).lineSpacing(2) }
         }
         .contentShape(Rectangle()).onHover { hovering = $0 }
         .animation(.spring(response: 0.28, dampingFraction: 0.8), value: hovering)

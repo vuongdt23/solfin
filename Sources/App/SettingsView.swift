@@ -13,6 +13,9 @@ struct SettingsView: View {
             Form {
                 Section("Home") {
                     Toggle("Automatically advance featured media", isOn: $featuredAutoAdvance)
+                    Text("The home feature uses a large cinematic backdrop with Solfin's solar dark theme.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 Section("Episodes") {
                     Toggle("Automatically play the next episode", isOn: $autoplayNext)

@@ -23,26 +23,38 @@ struct PosterCard: View {
     @State private var hovering = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            PosterImage(url: appState.api.primaryImageURL(for: item))
-                .frame(width: 160, height: 240).clipped()
-                .clipShape(RoundedRectangle(cornerRadius: SolfinDesign.posterRadius))
-                .overlay(alignment: .bottom) { progressBar }
-                .overlay {
-                    RoundedRectangle(cornerRadius: SolfinDesign.posterRadius)
-                        .strokeBorder(hovering ? Color.accentColor : .white.opacity(0.1), lineWidth: hovering ? 2 : 1)
-                }
-                .overlay {
-                    if hovering {
-                        Image(systemName: "play.fill").font(.title2).foregroundStyle(.white)
-                            .frame(width: 48, height: 48).background(.black.opacity(0.48), in: Circle())
-                            .transition(.scale.combined(with: .opacity))
+        VStack(alignment: .leading, spacing: 10) {
+            ZStack {
+                PosterImage(url: appState.api.primaryImageURL(for: item))
+                    .frame(width: 160, height: 240)
+                    .clipShape(RoundedRectangle(cornerRadius: SolfinDesign.posterRadius, style: .continuous))
+                    .overlay(alignment: .bottom) { progressBar }
+                    .overlay {
+                        RoundedRectangle(cornerRadius: SolfinDesign.posterRadius, style: .continuous)
+                            .strokeBorder(hovering ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarGold, SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: hovering ? 2 : 1)
                     }
+                if hovering {
+                    RoundedRectangle(cornerRadius: SolfinDesign.posterRadius + 8, style: .continuous)
+                        .fill(RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.32), SolfinDesign.solarRed.opacity(0.18), SolfinDesign.nebulaPurple.opacity(0.22), .clear], center: .center, startRadius: 10, endRadius: 140))
+                        .blur(radius: 16)
+                        .padding(-14)
+                        .transition(.opacity)
+                    Image(systemName: "play.fill").font(.title2).foregroundStyle(.white)
+                        .frame(width: 52, height: 52)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .overlay { Circle().strokeBorder(SolfinDesign.solarOrange.opacity(0.45)) }
+                        .shadow(color: SolfinDesign.solarOrange.opacity(0.35), radius: 18, y: 5)
+                        .transition(.scale.combined(with: .opacity))
                 }
-                .shadow(color: .black.opacity(hovering ? 0.28 : 0.14), radius: hovering ? 16 : 6, y: hovering ? 8 : 3)
-                .scaleEffect(hovering ? 1.025 : 1)
-            Text(item.name).font(.callout.weight(.medium)).lineLimit(1)
-            if let subtitle { Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+            }
+            .frame(width: 160, height: 240)
+            .compositingGroup()
+            .shadow(color: SolfinDesign.solarOrange.opacity(hovering ? 0.22 : 0), radius: 24, y: 10)
+            .shadow(color: SolfinDesign.nebulaPurple.opacity(hovering ? 0.18 : 0), radius: 30, y: 14)
+            .shadow(color: .black.opacity(hovering ? 0.36 : 0.14), radius: hovering ? 18 : 6, y: hovering ? 10 : 3)
+            .scaleEffect(hovering ? 1.035 : 1)
+            Text(item.name).font(.system(size: 15.5, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+            if let subtitle { Text(subtitle).font(.system(size: 12.5, weight: .medium)).foregroundStyle(.white.opacity(0.64)).lineLimit(1) }
         }
         .frame(width: 160, alignment: .leading)
         .contentShape(Rectangle())
@@ -68,7 +80,7 @@ struct PosterCard: View {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Rectangle().fill(.black.opacity(0.5))
-                    Rectangle().fill(.tint).frame(width: geo.size.width * min(pct, 100) / 100)
+                    Rectangle().fill(LinearGradient(colors: [SolfinDesign.solarOrange, SolfinDesign.nebulaPurple], startPoint: .leading, endPoint: .trailing)).frame(width: geo.size.width * min(pct, 100) / 100)
                 }
             }.frame(height: 4)
         }
@@ -85,26 +97,39 @@ struct LandscapeCard: View {
             ZStack(alignment: .bottom) {
                 PosterImage(url: appState.api.backdropImageURL(for: item, maxWidth: 640)
                             ?? appState.api.primaryImageURL(for: item, maxHeight: 260))
-                    .frame(width: 250, height: 141).clipped()
-                LinearGradient(colors: [.clear, .black.opacity(0.38)], startPoint: .center, endPoint: .bottom)
+                    .frame(width: 250, height: 141)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                LinearGradient(colors: [.clear, .black.opacity(0.34)], startPoint: .center, endPoint: .bottom)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 if hovering {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.34), SolfinDesign.solarRed.opacity(0.18), SolfinDesign.nebulaPurple.opacity(0.22), .clear], center: .center, startRadius: 8, endRadius: 140))
+                        .blur(radius: 16)
+                        .padding(-14)
+                        .transition(.opacity)
                     Image(systemName: "play.fill").font(.headline).foregroundStyle(.white)
-                        .frame(width: 42, height: 42).background(.black.opacity(0.5), in: Circle())
+                        .frame(width: 46, height: 46)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .overlay { Circle().strokeBorder(SolfinDesign.solarOrange.opacity(0.45)) }
+                        .shadow(color: SolfinDesign.solarOrange.opacity(0.35), radius: 18, y: 5)
                         .transition(.scale.combined(with: .opacity))
                 }
                 if let pct = item.userData?.playedPercentage, pct > 0 {
                     GeometryReader { geo in
-                        VStack { Spacer(); Rectangle().fill(.tint).frame(width: geo.size.width * min(pct, 100) / 100, height: 4) }
+                        VStack { Spacer(); Rectangle().fill(LinearGradient(colors: [SolfinDesign.solarOrange, SolfinDesign.nebulaPurple], startPoint: .leading, endPoint: .trailing)).frame(width: geo.size.width * min(pct, 100) / 100, height: 4) }
                     }
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: 11).strokeBorder(hovering ? Color.accentColor : .white.opacity(0.1), lineWidth: hovering ? 2 : 1) }
-            .shadow(color: .black.opacity(hovering ? 0.24 : 0.1), radius: hovering ? 14 : 5, y: 6)
-            .scaleEffect(hovering ? 1.018 : 1)
+            .frame(width: 250, height: 141)
+            .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(hovering ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarGold, SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: hovering ? 2 : 1) }
+            .compositingGroup()
+            .shadow(color: SolfinDesign.solarOrange.opacity(hovering ? 0.22 : 0), radius: 24, y: 10)
+            .shadow(color: SolfinDesign.nebulaPurple.opacity(hovering ? 0.18 : 0), radius: 30, y: 14)
+            .shadow(color: .black.opacity(hovering ? 0.34 : 0.1), radius: hovering ? 16 : 5, y: 6)
+            .scaleEffect(hovering ? 1.026 : 1)
             Text(item.type == "Episode" ? (item.seriesName ?? item.name) : item.name)
-                .font(.callout.weight(.medium)).lineLimit(1)
-            if let subtitle { Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                .font(.system(size: 15.5, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+            if let subtitle { Text(subtitle).font(.system(size: 12.5, weight: .medium)).foregroundStyle(.white.opacity(0.64)).lineLimit(1) }
         }
         .frame(width: 250, alignment: .leading)
         .contentShape(Rectangle()).onHover { hovering = $0 }
@@ -130,14 +155,25 @@ struct LibraryBanner: View {
         ZStack(alignment: .bottomLeading) {
             PosterImage(url: appState.api.backdropImageURL(for: item, maxWidth: 700)
                         ?? appState.api.primaryImageURL(for: item, maxHeight: 300))
-                .frame(width: 300, height: 155).clipped()
-            LinearGradient(colors: [.clear, .black.opacity(0.78)], startPoint: .top, endPoint: .bottom)
-            Text(item.name).font(.title2.weight(.semibold)).foregroundStyle(.white).padding(18)
+                .frame(width: 300, height: 155)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            LinearGradient(colors: [.clear, .black.opacity(0.68)], startPoint: .top, endPoint: .bottom)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            if hovering {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .fill(RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.32), SolfinDesign.solarRed.opacity(0.18), SolfinDesign.nebulaPurple.opacity(0.22), .clear], center: .center, startRadius: 20, endRadius: 180))
+                    .blur(radius: 18)
+                    .padding(-16)
+                    .transition(.opacity)
+            }
+            Text(item.name).font(.title.weight(.semibold)).foregroundStyle(.white).padding(18)
         }
         .frame(width: 300, height: 155)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(hovering ? 0.3 : 0.1)) }
-        .scaleEffect(hovering ? 1.015 : 1).onHover { hovering = $0 }
+        .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(hovering ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarGold, SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: hovering ? 2 : 1) }
+        .compositingGroup()
+        .shadow(color: SolfinDesign.solarOrange.opacity(hovering ? 0.22 : 0), radius: 24, y: 10)
+        .shadow(color: SolfinDesign.nebulaPurple.opacity(hovering ? 0.16 : 0), radius: 30, y: 14)
+        .scaleEffect(hovering ? 1.025 : 1).onHover { hovering = $0 }
         .animation(.spring(response: 0.28, dampingFraction: 0.8), value: hovering)
     }
 }

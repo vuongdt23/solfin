@@ -15,42 +15,27 @@ struct AppShellView: View {
     @State private var searchText = ""
     @State private var detailPath: [BaseItem] = []
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    @State private var sidebarExpanded = false
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            List {
-                Section {
-                    sidebarButton("Home", systemImage: "house", destination: .home)
-                    sidebarButton("Search", systemImage: "magnifyingglass", destination: .search)
-                }
-                if !libraries.isEmpty {
-                    Section("Libraries") {
-                        ForEach(libraries) { library in
-                            sidebarButton(library.name, systemImage: icon(for: library),
-                                          destination: .library(library.id))
-                        }
-                    }
-                }
-            }
-            .navigationTitle("Solfin")
-            .listStyle(.sidebar)
-            .safeAreaInset(edge: .bottom) {
-                SettingsLink {
-                    Label("Settings", systemImage: "gearshape")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 8).padding(.vertical, 6)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .padding(8)
-            }
-        } detail: {
+        HStack(spacing: 0) {
+            IntegratedSolarSidebar(selection: detailPath.isEmpty ? selection : nil,
+                                   libraries: libraries,
+                                   isExpanded: $sidebarExpanded,
+                                   navigate: navigate,
+                                   icon: icon(for:))
+
             NavigationStack(path: $detailPath) {
                 destinationView
                     .navigationDestination(for: BaseItem.self) { destination(for: $0) }
             }
+            .background(SolfinDesign.solarBackground)
+            .toolbarBackground(.hidden, for: .windowToolbar)
         }
-        .navigationSplitViewStyle(.balanced)
+        .tint(SolfinDesign.solarOrange)
+        .background(SolfinDesign.solarBackground)
+        .preferredColorScheme(.dark)
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .safeAreaPadding(.bottom, nowPlaying.isActive ? 82 : 0)
         .overlay(alignment: .bottom) {
             NowPlayingBar()

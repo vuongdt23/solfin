@@ -22,73 +22,121 @@ struct LibraryView: View {
 
     var body: some View {
         ScrollView {
-            Group {
-                if isLoading && items.isEmpty {
-                    LoadingPosterGrid()
-                } else if let loadError, items.isEmpty {
-                    EmptyContentView(title: "Library unavailable", message: loadError,
-                                     systemImage: "wifi.exclamationmark") { reload() }
-                } else if items.isEmpty {
-                    EmptyContentView(title: playedFilter == .all ? "Nothing here" : "No matching titles",
-                                     message: playedFilter == .all
-                                     ? "This library does not contain supported video items."
-                                     : "Try changing the watched filter.")
-                } else {
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: density.spacing) {
-                        ForEach(items) { item in
-                            NavigationLink(value: item) { PosterCard(item: item) }.buttonStyle(.plain)
-                                .onAppear { if item.id == items.last?.id { Task { await loadNextPage() } } }
+            VStack(alignment: .leading, spacing: 24) {
+                libraryHeader
+                Group {
+                    if isLoading && items.isEmpty {
+                        LoadingPosterGrid()
+                    } else if let loadError, items.isEmpty {
+                        EmptyContentView(title: "Library unavailable", message: loadError,
+                                         systemImage: "wifi.exclamationmark") { reload() }
+                    } else if items.isEmpty {
+                        EmptyContentView(title: playedFilter == .all ? "Nothing here" : "No matching titles",
+                                         message: playedFilter == .all
+                                         ? "This library does not contain supported video items."
+                                         : "Try changing the watched filter.")
+                    } else {
+                        LazyVGrid(columns: columns, alignment: .leading, spacing: density.spacing) {
+                            ForEach(items) { item in
+                                NavigationLink(value: item) { PosterCard(item: item) }.buttonStyle(.plain)
+                                    .onAppear { if item.id == items.last?.id { Task { await loadNextPage() } } }
+                            }
                         }
-                    }
-                    if isLoading { ProgressView().controlSize(.small).padding(24) }
-                    if let loadError, !items.isEmpty {
-                        VStack(spacing: 8) {
-                            Text(loadError).font(.caption).foregroundStyle(.secondary)
-                            Button("Retry") { Task { await loadNextPage() } }
-                        }.frame(maxWidth: .infinity).padding(20)
+                        if isLoading { ProgressView().controlSize(.small).padding(24).tint(SolfinDesign.solarOrange) }
+                        if let loadError, !items.isEmpty {
+                            VStack(spacing: 8) {
+                                Text(loadError).font(.caption).foregroundStyle(.white.opacity(0.6))
+                                Button("Retry") { Task { await loadNextPage() } }
+                            }.frame(maxWidth: .infinity).padding(20)
+                        }
                     }
                 }
             }
-            .padding(SolfinDesign.pagePadding)
+            .padding(.horizontal, SolfinDesign.pagePadding)
+            .padding(.top, 22)
+            .padding(.bottom, SolfinDesign.pagePadding)
         }
-        .navigationTitle(parent.name)
-        .toolbar {
-            ToolbarItemGroup {
-                if let count = totalCount { Text("\(count) items").foregroundStyle(.secondary) }
-                Menu {
-                    Picker("Watched", selection: playedFilterBinding) {
-                        ForEach(PlayedFilter.allCases) { Text($0.title).tag($0) }
-                    }
-                } label: { Label(playedFilter.title, systemImage: "line.3.horizontal.decrease.circle") }
-                Menu {
-                    Section("Sort By") {
-                        ForEach(availableSorts) { option in
-                            Button { sortRaw = option.rawValue } label: {
-                                if sort == option { Label(option.title(for: parent.collectionType), systemImage: "checkmark") }
-                                else { Text(option.title(for: parent.collectionType)) }
-                            }
-                        }
-                    }
-                    Divider()
-                    Section("Direction") {
-                        Button { sortAscending = true } label: {
-                            if sortAscending { Label("Ascending", systemImage: "checkmark") }
-                            else { Text("Ascending") }
-                        }
-                        Button { sortAscending = false } label: {
-                            if !sortAscending { Label("Descending", systemImage: "checkmark") }
-                            else { Text("Descending") }
-                        }
-                    }
-                } label: { Label("Sort", systemImage: sortAscending ? "arrow.up" : "arrow.down") }
-                Menu {
-                    Picker("Density", selection: densityBinding) {
-                        ForEach(LibraryDensity.allCases) { Text($0.title).tag($0) }
-                    }
-                } label: { Label("View", systemImage: "square.grid.3x3") }
-            }
-        }
+        .background(SolfinDesign.solarBackground)
+        .scrollContentBackground(.hidden)
+        .navigationTitle("")
+        .toolbarBackground(.hidden, for: .windowToolbar)
         .task(id: "\(parent.id)-\(sort.rawValue)-\(sortAscending)-\(playedFilter.rawValue)") { await reloadAndWait() }
+    }
+
+    private var libraryHeader: some View {
+        HStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(parent.name)
+                    .font(.largeTitle.weight(.bold))
+                    .foregroundStyle(.white)
+                if let count = totalCount {
+                    Text("\(count) items")
+                        .font(.callout.weight(.medium))
+                        .foregroundStyle(.white.opacity(0.56))
+                }
+            }
+            Spacer()
+            Menu {
+                Picker("Watched", selection: playedFilterBinding) {
+                    ForEach(PlayedFilter.allCases) { Text($0.title).tag($0) }
+                }
+            } label: {
+                Label(playedFilter.title, systemImage: "line.3.horizontal.decrease.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .buttonStyle(SolarToolbarButtonStyle())
+
+            Menu {
+                Section("Sort By") {
+                    ForEach(availableSorts) { option in
+                        Button { sortRaw = option.rawValue } label: {
+                            if sort == option { Label(option.title(for: parent.collectionType), systemImage: "checkmark") }
+                            else { Text(option.title(for: parent.collectionType)) }
+                        }
+                    }
+                }
+                Divider()
+                Section("Direction") {
+                    Button { sortAscending = true } label: {
+                        if sortAscending { Label("Ascending", systemImage: "checkmark") }
+                        else { Text("Ascending") }
+                    }
+                    Button { sortAscending = false } label: {
+                        if !sortAscending { Label("Descending", systemImage: "checkmark") }
+                        else { Text("Descending") }
+                    }
+                }
+            } label: {
+                Label("Sort", systemImage: sortAscending ? "arrow.up" : "arrow.down")
+            }
+            .menuStyle(.borderlessButton)
+            .buttonStyle(SolarToolbarButtonStyle())
+
+            Menu {
+                Picker("Density", selection: densityBinding) {
+                    ForEach(LibraryDensity.allCases) { Text($0.title).tag($0) }
+                }
+            } label: {
+                Label("View", systemImage: "square.grid.3x3")
+            }
+            .menuStyle(.borderlessButton)
+            .buttonStyle(SolarToolbarButtonStyle())
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+        .background {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay { RoundedRectangle(cornerRadius: 22).fill(Color.black.opacity(0.28)) }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .strokeBorder(LinearGradient(colors: [SolfinDesign.solarOrange.opacity(0.24),
+                                                              .white.opacity(0.08),
+                                                              SolfinDesign.nebulaPurple.opacity(0.22)],
+                                                     startPoint: .topLeading,
+                                                     endPoint: .bottomTrailing))
+                }
+        }
     }
 
     private var sort: LibrarySort {
