@@ -20,7 +20,8 @@ public struct ServerSession: Codable, Sendable {
 /// in UserDefaults. v1 = a single server session.
 public struct CredentialStore {
     private let defaults: UserDefaults
-    private let service = "dev.solfin.token"
+    private let service = "Solfin"
+    private let legacyService = "dev.solfin.token"
     private let deviceIdKey = "solfin.deviceId"
     private let sessionKey = "solfin.session"
 
@@ -47,17 +48,29 @@ public struct CredentialStore {
 
     public func loadSession() -> ServerSession? {
         guard let data = defaults.data(forKey: sessionKey),
-              var meta = try? JSONDecoder().decode(ServerSession.self, from: data),
-              let token = getToken(account: meta.userId)
+              var meta = try? JSONDecoder().decode(ServerSession.self, from: data)
         else { return nil }
-        meta.accessToken = token
-        return meta
+        if let token = getToken(account: meta.userId) {
+            meta.accessToken = token
+            return meta
+        }
+        if let legacyToken = getToken(account: meta.userId, service: legacyService) {
+            // Migrate away from the reverse-DNS service name because macOS shows the
+            // service string in Keychain prompts. Failure is non-fatal: keep using the
+            // legacy token for this launch and try again next time.
+            try? setToken(legacyToken, account: meta.userId)
+            deleteToken(account: meta.userId, service: legacyService)
+            meta.accessToken = legacyToken
+            return meta
+        }
+        return nil
     }
 
     public func clear() {
         if let data = defaults.data(forKey: sessionKey),
            let meta = try? JSONDecoder().decode(ServerSession.self, from: data) {
             deleteToken(account: meta.userId)
+            deleteToken(account: meta.userId, service: legacyService)
         }
         defaults.removeObject(forKey: sessionKey)
     }
@@ -96,10 +109,10 @@ public struct CredentialStore {
         guard addStatus == errSecSuccess else { throw JellyfinError.keychain(addStatus) }
     }
 
-    private func getToken(account: String) -> String? {
+    private func getToken(account: String, service: String? = nil) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
+            kSecAttrService as String: service ?? self.service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
@@ -110,10 +123,10 @@ public struct CredentialStore {
         return String(decoding: data, as: UTF8.self)
     }
 
-    private func deleteToken(account: String) {
+    private func deleteToken(account: String, service: String? = nil) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
+            kSecAttrService as String: service ?? self.service,
             kSecAttrAccount as String: account,
         ]
         SecItemDelete(query as CFDictionary)
