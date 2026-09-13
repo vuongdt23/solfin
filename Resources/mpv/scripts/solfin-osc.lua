@@ -38,15 +38,16 @@ local user_opts = {
 
 local DS = {
     playresy      = 720,        -- virtual canvas height
-    bar_height    = 82,         -- bottom control bar height
-    bar_pad_x     = 28,         -- horizontal padding inside the bar
-    seek_height   = 4,          -- seekbar track thickness
-    seek_handle_r = 5,          -- seek handle radius
-    row_gap       = 12,         -- gap between seekbar row and button row
-    btn_size      = 24,         -- clickable button box (square)
-    btn_gap       = 12,         -- gap between buttons
-    time_size     = 17,         -- timecode font size
-    title_size    = 26,         -- top-bar title font size
+    bar_height    = 46,         -- bottom control bar height
+    bar_pad_x     = 20,         -- horizontal padding inside the bar
+    seek_height   = 3,          -- seekbar track thickness
+    seek_handle_r = 4,          -- seek handle radius
+    row_gap       = 7,          -- gap between seekbar row and button row
+    btn_size      = 20,         -- clickable button box (square)
+    btn_gap       = 11,         -- gap between buttons
+    time_size     = 13,         -- timecode font size
+    control_size  = 13,         -- compact text-control font size
+    title_size    = 24,         -- top-bar title font size
     corner_r      = 3,          -- rounded-rect radius for the seekbar
     scrim_alpha   = 0x60,       -- bottom gradient scrim opacity (00=opaque)
     top_alpha     = 0x78,       -- top gradient scrim opacity
@@ -54,7 +55,7 @@ local DS = {
     buffer_alpha  = 0x74,       -- buffered range tint opacity
     buffer_hi_alpha = 0xA8,     -- buffered range inner highlight opacity
     top_height    = 68,         -- top bar height
-    vol_slider_w  = 96,         -- volume slider width (shown on hover)
+    vol_slider_w  = 60,         -- compact volume slider width (shown on hover)
     font          = "Inter",    -- bundled UI font (Resources/mpv/fonts/Inter.ttf)
 }
 
@@ -280,126 +281,123 @@ local function seekbar_fraction_at(x)
 end
 
 --------------------------------------------------------------------------------
--- Icon glyphs (vector; Phase 6 swaps these for a proper icon font)
+-- Icon glyphs (vector; slim SF/VLC-inspired controls)
 --------------------------------------------------------------------------------
 
+local stroked_icon_style
+
 local function icon_subtitle(ass, cx, cy, color, ab)
-    -- Outlined card
     ass:new_event()
-    ass:append(string.format("{\\bord2\\shad0\\3c&H%s&\\3a&H%02X&\\1a&HFF&}", color, ab))
-    ass:pos(cx, cy)
-    ass:draw_start(); ass:round_rect_cw(-15, -11, 15, 11, 4); ass:draw_stop()
-    -- Two subtitle lines
-    ass:new_event()
-    ass:append(shape_style(color, ab))
+    ass:append(stroked_icon_style(color, ab, 1.6))
     ass:pos(cx, cy)
     ass:draw_start()
-    ass:rect_cw(-10, 2, 4, 5)
-    ass:rect_cw(6, 2, 10, 5)
+    ass:round_rect_cw(-10, -7, 10, 7, 2.5)
+    ass:move_to(-6, 1); ass:line_to(-1, 1)
+    ass:move_to(3, 1);  ass:line_to(7, 1)
+    ass:move_to(-6, 5); ass:line_to(6, 5)
     ass:draw_stop()
 end
 
 -- Volume speaker; shows mute/level state.
 local function icon_volume(ass, cx, cy, color, ab, muted, level)
     ass:new_event()
-    ass:append(shape_style(color, ab))
+    ass:append(stroked_icon_style(color, ab, 1.6))
     ass:pos(cx, cy)
     ass:draw_start()
-    ass:move_to(-13, -5); ass:line_to(-6, -5); ass:line_to(2, -12)
-    ass:line_to(2, 12);   ass:line_to(-6, 5);  ass:line_to(-13, 5)
+    ass:move_to(-7, -3); ass:line_to(-4, -3); ass:line_to(0, -6)
+    ass:line_to(0, 6);   ass:line_to(-4, 3);  ass:line_to(-7, 3); ass:line_to(-7, -3)
     ass:draw_stop()
+    ass:new_event()
+    ass:append(stroked_icon_style(color, ab, 1.4))
+    ass:pos(cx, cy)
+    ass:draw_start()
     if muted or (level and level <= 0) then
-        ass:new_event()
-        ass:append(string.format("{\\bord2\\shad0\\3c&H%s&\\3a&H%02X&\\1a&HFF&}", color, ab))
-        ass:pos(cx, cy)
-        ass:draw_start()
-        ass:move_to(7, -6); ass:line_to(15, 6); ass:move_to(15, -6); ass:line_to(7, 6)
-        ass:draw_stop()
+        ass:move_to(4, -4); ass:line_to(10, 4); ass:move_to(10, -4); ass:line_to(4, 4)
     else
-        ass:new_event()
-        ass:append(shape_style(color, ab))
-        ass:pos(cx, cy)
-        ass:draw_start()
-        ass:rect_cw(6, -6, 8, 6)
-        if not level or level > 45 then ass:rect_cw(11, -9, 13, 9) end
-        ass:draw_stop()
+        if not level or level > 0 then
+            ass:move_to(4, -3); ass:line_to(4, 3)
+        end
+        if not level or level > 45 then
+            ass:move_to(8, -5); ass:line_to(8, 5)
+        end
     end
+    ass:draw_stop()
 end
 
--- Audio-track selection (music note).
+-- Audio-track selection: compact sliders icon, clearer than a large music note.
 local function icon_tracks(ass, cx, cy, color, ab)
+    ass:new_event()
+    ass:append(stroked_icon_style(color, ab, 1.7))
+    ass:pos(cx, cy)
+    ass:draw_start()
+    ass:move_to(-10, -6); ass:line_to(10, -6)
+    ass:move_to(-10, 0);  ass:line_to(10, 0)
+    ass:move_to(-10, 6);  ass:line_to(10, 6)
+    ass:draw_stop()
     ass:new_event()
     ass:append(shape_style(color, ab))
     ass:pos(cx, cy)
     ass:draw_start()
-    ass:rect_cw(4, -12, 6, 8)                                   -- stem
-    ass:move_to(6, -12); ass:line_to(13, -9); ass:line_to(13, -3); ass:line_to(6, -6)  -- flag
-    ass:round_rect_cw(-5, 4, 7, 12, 4)                          -- note head
+    ass:round_rect_cw(-5, -9, -1, -3, 2)
+    ass:round_rect_cw(3, -3, 7, 3, 2)
+    ass:round_rect_cw(-8, 3, -4, 9, 2)
     ass:draw_stop()
 end
 
-local function stroked_icon_style(color, ab, width)
-    return string.format("{\\bord%.1f\\shad0\\3c&H%s&\\3a&H%02X&\\1a&HFF&}", width or 2.2, color, ab)
+function stroked_icon_style(color, ab, width)
+    return string.format("{\\bord%.1f\\shad0\\3c&H%s&\\3a&H%02X&\\1a&HFF&}", width or 1.8, color, ab)
 end
 
 local function icon_fullscreen(ass, cx, cy, color, ab, is_fs)
     ass:new_event()
-    ass:append(stroked_icon_style(color, ab, 2.2))
+    ass:append(stroked_icon_style(color, ab, 1.5))
     ass:pos(cx, cy)
     ass:draw_start()
     if is_fs then
-        -- Leave fullscreen: four clean arrows pointing back toward the centre.
-        ass:move_to(-13, -5); ass:line_to(-5, -5); ass:line_to(-5, -13)
-        ass:move_to(-5, -5);  ass:line_to(-11, -11)
-        ass:move_to(13, -5);  ass:line_to(5, -5);  ass:line_to(5, -13)
-        ass:move_to(5, -5);   ass:line_to(11, -11)
-        ass:move_to(-13, 5);  ass:line_to(-5, 5);  ass:line_to(-5, 13)
-        ass:move_to(-5, 5);   ass:line_to(-11, 11)
-        ass:move_to(13, 5);   ass:line_to(5, 5);   ass:line_to(5, 13)
-        ass:move_to(5, 5);    ass:line_to(11, 11)
+        -- Leave fullscreen: inward corners.
+        ass:move_to(-7, -2); ass:line_to(-2, -2); ass:line_to(-2, -7)
+        ass:move_to(7, -2);  ass:line_to(2, -2);  ass:line_to(2, -7)
+        ass:move_to(-7, 2);  ass:line_to(-2, 2);  ass:line_to(-2, 7)
+        ass:move_to(7, 2);   ass:line_to(2, 2);   ass:line_to(2, 7)
     else
-        -- Enter fullscreen: outward corner arrows.
-        ass:move_to(-4, -10); ass:line_to(-12, -10); ass:line_to(-12, -2)
-        ass:move_to(-12, -10); ass:line_to(-6, -4)
-        ass:move_to(4, -10);  ass:line_to(12, -10);  ass:line_to(12, -2)
-        ass:move_to(12, -10); ass:line_to(6, -4)
-        ass:move_to(-4, 10);  ass:line_to(-12, 10);  ass:line_to(-12, 2)
-        ass:move_to(-12, 10); ass:line_to(-6, 4)
-        ass:move_to(4, 10);   ass:line_to(12, 10);   ass:line_to(12, 2)
-        ass:move_to(12, 10);  ass:line_to(6, 4)
+        -- Enter fullscreen: simple outward corners.
+        ass:move_to(-7, -2); ass:line_to(-7, -7); ass:line_to(-2, -7)
+        ass:move_to(7, -2);  ass:line_to(7, -7);  ass:line_to(2, -7)
+        ass:move_to(-7, 2);  ass:line_to(-7, 7);  ass:line_to(-2, 7)
+        ass:move_to(7, 2);   ass:line_to(7, 7);   ass:line_to(2, 7)
     end
     ass:draw_stop()
 end
 
 local function icon_minimize(ass, cx, cy, color, ab)
     ass:new_event()
-    ass:append(stroked_icon_style(color, ab, 2.4))
+    ass:append(stroked_icon_style(color, ab, 1.35))
     ass:pos(cx, cy)
     ass:draw_start()
-    ass:move_to(-8, 6); ass:line_to(8, 6)
+    ass:move_to(-5, 4); ass:line_to(5, 4)
     ass:draw_stop()
 end
 
 local function icon_window(ass, cx, cy, color, ab, restore)
     ass:new_event()
-    ass:append(stroked_icon_style(color, ab, 2.0))
+    ass:append(stroked_icon_style(color, ab, 1.35))
     ass:pos(cx, cy)
     ass:draw_start()
     if restore then
-        ass:rect_cw(-4, -10, 8, 2)
-        ass:rect_cw(-8, -4, 4, 8)
+        ass:rect_cw(-2.5, -6, 5.5, 2)
+        ass:rect_cw(-5.5, -2, 2.5, 6)
     else
-        ass:rect_cw(-8, -8, 8, 8)
+        ass:rect_cw(-5.5, -5.5, 5.5, 5.5)
     end
     ass:draw_stop()
 end
 
 local function icon_close(ass, cx, cy, color, ab)
     ass:new_event()
-    ass:append(string.format("{\\bord2.5\\shad0\\3c&H%s&\\3a&H%02X&\\1a&HFF&}", color, ab))
+    ass:append(string.format("{\\bord1.8\\shad0\\3c&H%s&\\3a&H%02X&\\1a&HFF&}", color, ab))
     ass:pos(cx, cy)
     ass:draw_start()
-    ass:move_to(-8, -8); ass:line_to(8, 8); ass:move_to(8, -8); ass:line_to(-8, 8)
+    ass:move_to(-7, -7); ass:line_to(7, 7); ass:move_to(7, -7); ass:line_to(-7, 7)
     ass:draw_stop()
 end
 
@@ -665,12 +663,13 @@ local function render()
             ass:append(state.title)
         end
         local top_y = DS.top_height / 2
-        local clx = W - DS.bar_pad_x - 12
-        local maxx = clx - 36
-        local minx = maxx - 36
-        hitboxes.close = { x1 = clx - 15, y1 = top_y - 15, x2 = clx + 15, y2 = top_y + 15 }
-        hitboxes.maximize = { x1 = maxx - 15, y1 = top_y - 15, x2 = maxx + 15, y2 = top_y + 15 }
-        hitboxes.minimize = { x1 = minx - 15, y1 = top_y - 15, x2 = minx + 15, y2 = top_y + 15 }
+        local clx = W - DS.bar_pad_x - DS.btn_size / 2
+        local maxx = clx - 28
+        local minx = maxx - 28
+        local top_hit = DS.btn_size / 2 + 3
+        hitboxes.close = { x1 = clx - top_hit, y1 = top_y - top_hit, x2 = clx + top_hit, y2 = top_y + top_hit }
+        hitboxes.maximize = { x1 = maxx - top_hit, y1 = top_y - top_hit, x2 = maxx + top_hit, y2 = top_y + top_hit }
+        hitboxes.minimize = { x1 = minx - top_hit, y1 = top_y - top_hit, x2 = minx + top_hit, y2 = top_y + top_hit }
         icon_minimize(ass, minx, top_y,
                       (state.hovered == "minimize") and COL.accent or COL.white, a(0))
         icon_window(ass, maxx, top_y,
@@ -686,7 +685,7 @@ local function render()
     local sb_x1 = DS.bar_pad_x
     local sb_x2 = W - DS.bar_pad_x
     local sb_w  = sb_x2 - sb_x1
-    local sb_y  = bar_top + 20
+    local sb_y  = H - 30
     local sb_hh = DS.seek_height / 2
     hitboxes.seekbar = { x1 = sb_x1, y1 = sb_y - 12, x2 = sb_x2, y2 = sb_y + 12 }
 
@@ -820,7 +819,7 @@ local function render()
     ----------------------------------------------------------------------------
     -- Button row (play/pause + jump) and timecodes
     ----------------------------------------------------------------------------
-    local row_y = sb_y + DS.row_gap + DS.btn_size / 2 + 6
+    local row_y = H - 13
     local cx = DS.bar_pad_x + DS.btn_size / 2
 
     -- Skip-back
@@ -835,16 +834,13 @@ local function render()
         return (state.hovered == name) and COL.accent or COL.white
     end
 
-    -- Skip back (double-triangle-left)
+    -- Skip back: text is cleaner and more legible than tiny custom vector arrows.
     place_button("skip_back")
     ass:new_event()
-    ass:append(shape_style(col_for("skip_back"), a(0)))
+    ass:append(string.format("{\\an5\\fs%d\\b1\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
+                             DS.control_size, DS.font, col_for("skip_back"), a(0)))
     ass:pos(cx, row_y)
-    ass:draw_start()
-    local t = DS.btn_size * 0.32
-    ass:move_to(-t, 0); ass:line_to(2, -t); ass:line_to(2, t)
-    ass:move_to(2, 0);  ass:line_to(t + 4, -t); ass:line_to(t + 4, t)
-    ass:draw_stop()
+    ass:append("−" .. tostring(user_opts.jump_amount))
 
     cx = cx + DS.btn_size + DS.btn_gap
 
@@ -855,27 +851,25 @@ local function render()
     ass:pos(cx, row_y)
     ass:draw_start()
     if state.pause then
-        local s = DS.btn_size * 0.4
-        ass:move_to(-s * 0.7, -s); ass:line_to(s, 0); ass:line_to(-s * 0.7, s)
+        local s = DS.btn_size * 0.34
+        ass:move_to(-s * 0.62, -s); ass:line_to(s * 0.85, 0); ass:line_to(-s * 0.62, s)
     else
-        local s = DS.btn_size * 0.4
-        local bw = s * 0.55
-        ass:rect_cw(-s * 0.8, -s, -s * 0.8 + bw, s)
-        ass:rect_cw(s * 0.8 - bw, -s, s * 0.8, s)
+        local s = DS.btn_size * 0.34
+        local bw = s * 0.45
+        ass:rect_cw(-s * 0.75, -s, -s * 0.75 + bw, s)
+        ass:rect_cw(s * 0.75 - bw, -s, s * 0.75, s)
     end
     ass:draw_stop()
 
     cx = cx + DS.btn_size + DS.btn_gap
 
-    -- Skip forward (double-triangle-right)
+    -- Skip forward
     place_button("skip_fwd")
     ass:new_event()
-    ass:append(shape_style(col_for("skip_fwd"), a(0)))
+    ass:append(string.format("{\\an5\\fs%d\\b1\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
+                             DS.control_size, DS.font, col_for("skip_fwd"), a(0)))
     ass:pos(cx, row_y)
-    ass:draw_start()
-    ass:move_to(-t - 4, -t); ass:line_to(-2, 0); ass:line_to(-t - 4, t)
-    ass:move_to(-2, -t);     ass:line_to(t, 0);  ass:line_to(-2, t)
-    ass:draw_stop()
+    ass:append("+" .. tostring(user_opts.jump_amount))
 
     -- Timecodes (position / duration), left cluster
     local pos_txt = format_time(state.time_pos)
@@ -883,10 +877,10 @@ local function render()
     ass:new_event()
     ass:append(string.format("{\\an4\\fs%d\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
                              DS.time_size, DS.font, COL.white, a(0)))
-    ass:pos(cx + DS.btn_size / 2 + 18, row_y)
+    ass:pos(cx + DS.btn_size / 2 + 14, row_y)
     ass:append(pos_txt .. "  /  " .. dur_txt)
 
-    -- Right cluster (right → left): fullscreen, volume(+slider), subtitle, tracks, speed
+    -- Right cluster (right → left): fullscreen, media info, volume(+slider), subtitle, tracks, speed
     local function place_at(name, bx)
         hitboxes[name] = { x1 = bx - DS.btn_size / 2, y1 = row_y - DS.btn_size / 2,
                            x2 = bx + DS.btn_size / 2, y2 = row_y + DS.btn_size / 2 }
@@ -901,6 +895,16 @@ local function render()
     place_at("fullscreen", rx)
     icon_fullscreen(ass, rx, row_y,
                     (state.hovered == "fullscreen") and COL.accent or COL.white, a(0), state.fullscreen)
+    rx = rx - (DS.btn_size + DS.btn_gap)
+
+    -- Media info toggle
+    place_at("media_info", rx)
+    ass:new_event()
+    ass:append(string.format("{\\an5\\fs%d\\b1\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
+                             DS.control_size, DS.font,
+                             (state.hovered == "media_info") and COL.accent or COL.white, a(0)))
+    ass:pos(rx, row_y)
+    ass:append("i")
     rx = rx - (DS.btn_size + DS.btn_gap)
 
     -- Volume speaker
@@ -929,14 +933,22 @@ local function render()
     end
     rx = vs_x1 - DS.btn_gap - DS.btn_size / 2
 
-    -- Subtitle
+    -- Subtitles: compact CC label avoids ambiguous glyphs.
     place_at("subtitle", rx)
-    icon_subtitle(ass, rx, row_y, menu_col("subtitle"), a(0))
+    ass:new_event()
+    ass:append(string.format("{\\an5\\fs%d\\b1\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
+                             DS.control_size, DS.font, menu_col("subtitle"), a(0)))
+    ass:pos(rx, row_y)
+    ass:append("CC")
     rx = rx - (DS.btn_size + DS.btn_gap)
 
-    -- Audio tracks (music note)
+    -- Audio tracks: compact language/audio label instead of a decorative icon.
     place_at("audio", rx)
-    icon_tracks(ass, rx, row_y, menu_col("audio"), a(0))
+    ass:new_event()
+    ass:append(string.format("{\\an5\\fs%d\\b1\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
+                             DS.control_size, DS.font, menu_col("audio"), a(0)))
+    ass:pos(rx, row_y)
+    ass:append("A")
     rx = rx - (DS.btn_size + DS.btn_gap)
 
     -- Speed (text pill; accent when not 1× or hovered/open)
@@ -946,8 +958,8 @@ local function render()
     local spcol = (state.hovered == "speed" or (state.menu.open and state.menu.kind == "speed")
                    or math.abs(state.speed - 1.0) > 0.01) and COL.accent or COL.white
     ass:new_event()
-    ass:append(string.format("{\\an5\\fs19\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
-                             DS.font, spcol, a(0)))
+    ass:append(string.format("{\\an5\\fs%d\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
+                             DS.control_size, DS.font, spcol, a(0)))
     ass:pos(rx, row_y)
     ass:append(speed_text(state.speed))
 
@@ -977,7 +989,7 @@ local function resolve_hover()
         for i = 1, visible_count do names[#names + 1] = "menu_row_" .. i end
     end
     for _, n in ipairs({ "close", "maximize", "minimize", "playpause", "skip_back", "skip_fwd", "speed", "audio",
-                         "subtitle", "fullscreen", "volume", "volslider", "seekbar" }) do
+                         "subtitle", "media_info", "fullscreen", "volume", "volslider", "seekbar" }) do
         names[#names + 1] = n
     end
     for _, name in ipairs(names) do
@@ -1144,6 +1156,8 @@ local function on_mbtn_up()
         open_menu("speed")
     elseif point_in(hitboxes.volume, mx, my) then
         mp.commandv("cycle", "mute"); close_menu()
+    elseif point_in(hitboxes.media_info, mx, my) then
+        mp.commandv("script-binding", "stats/display-stats-toggle"); close_menu()
     elseif point_in(hitboxes.fullscreen, mx, my) then
         mp.commandv("cycle", "fullscreen"); close_menu()
     elseif point_in(hitboxes.minimize, mx, my) then
