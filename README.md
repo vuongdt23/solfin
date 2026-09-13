@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="Resources/Assets.xcassets/AppIcon.appiconset/icon_128x128@2x.png" width="128" height="128" alt="solfin app icon">
+
 # solfin
 
 **A power-user Jellyfin client for macOS that plays through external [mpv](https://mpv.io).**
@@ -30,9 +32,12 @@ state (resume points, watched status) in sync.
 - **Progress sync** — reports `Sessions/Playing` / `Progress` / `Stopped`; honours and
   saves resume points; marks items watched. Exactly one "stopped" report on every exit
   path.
-- **Polished OSC** via bundled **ModernZ** (chapter markers, buffered range, window
-  controls, track/chapter menus), tuned to a macOS-blue accent. Real media titles shown in
-  the OSC (via `--force-media-title`).
+- **Bespoke pointer-first OSC** (`scripts/solfin-osc.lua`) — a web/VLC-style controller
+  built for solfin: gradient scrims, chapter markers, buffered range, hover **thumbnail
+  previews** (via bundled [thumbfast](https://github.com/po5/thumbfast)), audio/subtitle
+  track menus, a prominent **playback-speed** control (1.5× a tap away), volume slider, and
+  a top title bar — tuned to a macOS-blue accent in the **Inter** UI font. Real media titles
+  shown via `--force-media-title`.
 - **External mpv, isolated config** — solfin runs mpv with its own `--config-dir`, so your
   personal `~/.config/mpv` is never touched.
 - Launches **fullscreen**; a **Now Playing** strip in the app reflects live playback state.
@@ -93,9 +98,10 @@ SOLFIN_USER=you SOLFIN_PASS=secret "$PROBE" play <itemId>
 ## Configuration
 
 - **mpv config** lives in `Resources/mpv/` (bundled into the app and passed via
-  `--config-dir`): `mpv.conf`, `input.conf`, ModernZ (`scripts/modernz.lua`,
-  `fonts/modernz-icons.ttf`, `script-opts/modernz.conf`). Edit these to change OSD look,
-  scalers, cache, subtitle styling, or key bindings; rebuild to re-bundle.
+  `--config-dir`): `mpv.conf`, `input.conf`, the bespoke OSC (`scripts/solfin-osc.lua` +
+  `script-opts/solfin-osc.conf`), the thumbnail engine (`scripts/thumbfast.lua` +
+  `script-opts/thumbfast.conf`), and the `fonts/Inter.ttf` UI font. Edit these to change
+  OSD look, scalers, cache, subtitle styling, or key bindings; rebuild to re-bundle.
 - **mpv binary path** can be overridden (`solfin.mpvPath` in `UserDefaults`); no Settings
   UI yet.
 
@@ -106,7 +112,7 @@ solfin/
 ├─ project.yml                 XcodeGen spec
 ├─ Sources/{JellyfinKit,PlaybackEngine,App,Probe}/
 ├─ Tests/                      XCTest suites
-├─ Resources/mpv/              mpv.conf, input.conf, ModernZ + font + conf
+├─ Resources/mpv/              mpv.conf, input.conf, solfin-osc + thumbfast + Inter
 ├─ Resources/Assets.xcassets/  AppIcon
 └─ docs/PLAN.md                design doc + as-built deviations
 ```
@@ -114,8 +120,8 @@ solfin/
 ## Known limitations / not yet done
 
 - Direct-play only — no transcoding, so very high-bitrate files need adequate bandwidth.
-- Single server; no in-app Settings screen, keyboard navigation, library search, or
-  seekbar thumbnails yet. mpv is used from Homebrew (not bundled/notarized).
+- Single server; no in-app Settings screen, keyboard navigation, or library search yet.
+  mpv is used from Homebrew (not bundled/notarized).
 - See `docs/PLAN.md` → *As-built deviations* for the full record.
 
 ## Acknowledgements
@@ -125,16 +131,18 @@ solfin stands on excellent open-source work:
 - **[mpv](https://mpv.io)** — the media player that does the actual playback (run as an
   external process). GPLv2+/LGPL.
 - **[Jellyfin](https://jellyfin.org)** — the free software media server and its REST API.
-- **[ModernZ](https://github.com/Samillion/ModernZ)** by Samillion — the bundled mpv OSC
-  and its `modernz-icons` font. It descends from **ModernX**
-  ([zydezu](https://github.com/zydezu/ModernX) / [cyl0](https://github.com/cyl0/ModernX))
-  and originally maoiscat's **mpv-osc-modern**.
+- **[thumbfast](https://github.com/po5/thumbfast)** by po5 — the on-the-fly thumbnail
+  engine the OSC uses for seek previews (MPL-2.0). The `solfin-osc.lua` controller itself is
+  original to solfin, in the lineage of mpv's `osc.lua` (LGPLv2.1).
+- **[Inter](https://rsms.me/inter/)** by Rasmus Andersson — the bundled UI font (SIL OFL-1.1;
+  full text in `Resources/mpv/fonts/Inter-OFL.txt`).
 - **[XcodeGen](https://github.com/yonaskolb/XcodeGen)** by Yonas Kolb — project generation.
 
-Please consult each project's license for terms. solfin ships mpv's config scripts
-(ModernZ) inside its app bundle; it does not link mpv (it spawns the binary).
+Please consult each project's license for terms. solfin ships mpv config scripts
+(`solfin-osc.lua`, `thumbfast.lua`) and the Inter font inside its app bundle; it does not
+link mpv (it spawns the binary).
 
 ## License
 
 Not yet specified. The solfin source is provided as-is; bundled third-party assets
-(ModernZ, its font) retain their upstream licenses.
+(thumbfast — MPL-2.0; Inter — OFL-1.1) retain their upstream licenses.

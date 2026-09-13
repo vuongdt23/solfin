@@ -34,7 +34,7 @@ targets:
     platform: macOS
     sources:
       - path: Sources/App
-      # Folder reference (type: folder) so mpv's scripts/uosc, fonts, script-opts
+      # Folder reference (type: folder) so mpv's scripts, fonts, script-opts
       # hierarchy is preserved in the bundle as Contents/Resources/mpv/ rather than
       # flattened. AppState.mpvConfigDir points mpv --config-dir at this folder.
       - path: Resources/mpv
