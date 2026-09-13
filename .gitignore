@@ -12,3 +12,5 @@ DerivedData/
 
 # AI-generated planning/design docs (not committed)
 docs/
+
+dist/

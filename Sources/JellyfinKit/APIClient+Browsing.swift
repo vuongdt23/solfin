@@ -42,6 +42,26 @@ public extension APIClient {
         return try decode(ItemsResponse.self, from: try await send(req))
     }
 
+    /// Fetch a specific set of items. The server may not preserve `ids` order, so callers
+    /// that care about ordering should reorder the returned items themselves.
+    func items(ids: [String], includeItemTypes: String? = nil) async throws -> ItemsResponse {
+        guard !ids.isEmpty else { return ItemsResponse(items: [], totalRecordCount: 0) }
+        let uid = try requireUser()
+        var q = [
+            URLQueryItem(name: "Ids", value: ids.joined(separator: ",")),
+            URLQueryItem(name: "Limit", value: String(ids.count)),
+            URLQueryItem(name: "Fields", value: Self.itemFields),
+            URLQueryItem(name: "EnableUserData", value: "true"),
+            URLQueryItem(name: "EnableImages", value: "true"),
+            URLQueryItem(name: "ImageTypeLimit", value: "1"),
+        ]
+        if let includeItemTypes {
+            q.append(URLQueryItem(name: "IncludeItemTypes", value: includeItemTypes))
+        }
+        let req = try makeRequest(path: "Users/\(uid)/Items", query: q)
+        return try decode(ItemsResponse.self, from: try await send(req))
+    }
+
     /// Artwork-rich, unplayed titles for the home feature carousel.
     func featuredItems(limit: Int = 20) async throws -> [BaseItem] {
         let uid = try requireUser()
@@ -101,6 +121,53 @@ public extension APIClient {
     /// Recently added episodes, useful for following currently-updating series.
     func latestEpisodes(limit: Int = 20) async throws -> [BaseItem] {
         try await latestItems(limit: limit, includeItemTypes: "Episode")
+    }
+
+    /// Series ordered by recently-added episode activity. This keeps TV libraries as a
+    /// series grid while still surfacing shows with fresh episodes first. Series without
+    /// a scanned recent episode are still included and sorted alphabetically after active series.
+    func recentlyActiveSeries(parentId: String, limit: Int? = nil, sortOrder: String = "Descending",
+                              filters: String? = nil, episodeScanLimit: Int = 1_000,
+                              allSeriesLimit: Int = 5_000) async throws -> [BaseItem] {
+        async let seriesResponse = items(parentId: parentId,
+                                         startIndex: 0,
+                                         limit: allSeriesLimit,
+                                         sortBy: "SortName",
+                                         sortOrder: "Ascending",
+                                         includeItemTypes: "Series",
+                                         recursive: true,
+                                         filters: filters)
+        async let episodeResponse = items(parentId: parentId,
+                                          startIndex: 0,
+                                          limit: episodeScanLimit,
+                                          sortBy: "DateCreated",
+                                          sortOrder: "Descending",
+                                          includeItemTypes: "Episode",
+                                          recursive: true,
+                                          filters: filters)
+
+        var latestEpisodeDateBySeriesId: [String: String] = [:]
+        for episode in try await episodeResponse.items {
+            guard let seriesId = episode.seriesId, let dateCreated = episode.dateCreated else { continue }
+            if latestEpisodeDateBySeriesId[seriesId] == nil { latestEpisodeDateBySeriesId[seriesId] = dateCreated }
+        }
+
+        let ordered = try await seriesResponse.items.sorted { lhs, rhs in
+            let lhsDate = latestEpisodeDateBySeriesId[lhs.id]
+            let rhsDate = latestEpisodeDateBySeriesId[rhs.id]
+            switch (lhsDate, rhsDate) {
+            case let (l?, r?) where l != r:
+                return sortOrder == "Ascending" ? l < r : l > r
+            case (.some, nil):
+                return true
+            case (nil, .some):
+                return false
+            default:
+                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+            }
+        }
+        if let limit { return Array(ordered.prefix(limit)) }
+        return ordered
     }
 
     /// Continue Watching.

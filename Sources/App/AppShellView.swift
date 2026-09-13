@@ -92,6 +92,7 @@ struct AppShellView: View {
         case .library(let id):
             if let library = libraries.first(where: { $0.id == id }) {
                 LibraryView(parent: library)
+                    .id(library.id)
             } else {
                 ProgressView().controlSize(.small)
             }

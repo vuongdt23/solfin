@@ -47,9 +47,9 @@ struct SeriesDetailView: View {
                 LinearGradient(colors: [.black.opacity(0.64), .clear], startPoint: .leading, endPoint: .trailing)
 
                 HStack(alignment: .bottom) {
-                    VStack(alignment: .leading, spacing: 13) {
-                        FeaturedTitleView(item: series)
-                        HStack(spacing: 9) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        FeaturedTitleView(item: series, availableWidth: proxy.size.width)
+                        HStack(spacing: 10) {
                             if let year = series.productionYear { heroPill(String(year)) }
                             if let count = series.childCount { heroPill("\(count) season\(count == 1 ? "" : "s")") }
                             if let official = series.officialRating { heroPill(official) }
@@ -59,12 +59,16 @@ struct SeriesDetailView: View {
                             }
                         }
                         if let genres = series.genres, !genres.isEmpty {
-                            Text(genres.prefix(4).joined(separator: "  ·  ")).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.8))
+                            Text(genres.prefix(4).joined(separator: "  ·  ")).font(.callout.weight(.semibold)).foregroundStyle(.white.opacity(0.8))
                         }
                         if let overview = series.overview, !overview.isEmpty {
-                            Text(overview).font(.callout).lineSpacing(3).foregroundStyle(.white.opacity(0.84))
-                                .lineLimit(overviewExpanded ? nil : 3).frame(maxWidth: min(740, proxy.size.width * 0.58), alignment: .leading)
-                            if overview.count > 420 {
+                            Text(overview)
+                                .font(.system(size: 16, weight: .regular))
+                                .lineSpacing(5)
+                                .foregroundStyle(.white.opacity(0.88))
+                                .lineLimit(overviewExpanded ? nil : 5)
+                                .frame(maxWidth: min(980, proxy.size.width * 0.66), alignment: .leading)
+                            if overview.count > 520 {
                                 Button(overviewExpanded ? "Show Less" : "More") { withAnimation { overviewExpanded.toggle() } }
                                     .buttonStyle(.plain).font(.callout.weight(.semibold)).foregroundStyle(.white)
                             }
@@ -76,7 +80,7 @@ struct SeriesDetailView: View {
                         }
                     }
                     Spacer()
-                }.padding(.horizontal, 48).padding(.bottom, 42)
+                }.padding(.horizontal, 48).padding(.bottom, 54)
             }.frame(width: proxy.size.width, height: proxy.size.height)
         }
         .containerRelativeFrame(.vertical, alignment: .top) { available, _ in
@@ -181,17 +185,23 @@ struct SeriesDetailView: View {
 private struct FeaturedTitleView: View {
     @EnvironmentObject private var appState: AppState
     let item: BaseItem
+    let availableWidth: CGFloat
+
+    private var logoWidth: CGFloat { min(1120, max(760, availableWidth * 0.58)) }
+    private var logoHeight: CGFloat { min(380, max(280, availableWidth * 0.22)) }
+    private var fallbackSize: CGFloat { min(88, max(58, availableWidth * 0.052)) }
+
     var body: some View {
-        if let url = appState.api.logoImageURL(for: item, maxWidth: 760) {
+        if let url = appState.api.logoImageURL(for: item, maxWidth: 1400) {
             AsyncImage(url: url) { phase in
                 if let image = phase.image { image.resizable().aspectRatio(contentMode: .fit) }
                 else { fallback }
-            }.frame(width: 500, height: 150, alignment: .leading)
+            }.frame(width: logoWidth, height: logoHeight, alignment: .leading)
         } else { fallback }
     }
     private var fallback: some View {
-        Text(item.name).font(.system(size: 48, weight: .bold, design: .rounded)).tracking(-1.2)
-            .foregroundStyle(.white).lineLimit(2).frame(maxWidth: 650, alignment: .leading)
+        Text(item.name).font(.system(size: fallbackSize, weight: .bold, design: .rounded)).tracking(-1.4)
+            .foregroundStyle(.white).lineLimit(2).frame(maxWidth: min(860, availableWidth * 0.48), alignment: .leading)
     }
 }
 
