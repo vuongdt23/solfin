@@ -1,0 +1,101 @@
+name: solfin
+options:
+  bundleIdPrefix: dev.solfin
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  # Shared REST client + models
+  JellyfinKit:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: Sources/JellyfinKit
+
+  # External-mpv playback engine (JSON IPC)
+  PlaybackEngine:
+    type: library.static
+    platform: macOS
+    sources:
+      - path: Sources/PlaybackEngine
+    dependencies:
+      - target: JellyfinKit
+
+  # The SwiftUI app
+  solfin:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/App
+      # Folder reference (type: folder) so mpv's scripts/uosc, fonts, script-opts
+      # hierarchy is preserved in the bundle as Contents/Resources/mpv/ rather than
+      # flattened. AppState.mpvConfigDir points mpv --config-dir at this folder.
+      - path: Resources/mpv
+        type: folder
+        buildPhase: resources
+      - path: Resources/Assets.xcassets
+    dependencies:
+      - target: JellyfinKit
+      - target: PlaybackEngine
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.solfin.app
+        PRODUCT_NAME: Solfin
+        INFOPLIST_KEY_CFBundleDisplayName: Solfin
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.video"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: Sources/App/solfin.entitlements
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSMinimumSystemVersion: "14.0"
+
+  # Headless CLI to exercise JellyfinKit/PlaybackEngine against a real server
+  solfin-probe:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Sources/Probe
+    dependencies:
+      - target: JellyfinKit
+      - target: PlaybackEngine
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.solfin.probe
+
+  # Unit tests for the pure logic in JellyfinKit + PlaybackEngine
+  solfinTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: JellyfinKit
+      - target: PlaybackEngine
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.solfin.tests
+        GENERATE_INFOPLIST_FILE: YES
+
+schemes:
+  solfin:
+    build:
+      targets:
+        solfin: all
+    test:
+      targets:
+        - solfinTests
+  solfinTests:
+    build:
+      targets:
+        solfinTests: all
+    test:
+      targets:
+        - solfinTests

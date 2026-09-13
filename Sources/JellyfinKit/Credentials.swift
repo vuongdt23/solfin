@@ -1,0 +1,101 @@
+import Foundation
+import Security
+
+/// Persisted server session: the reusable pieces needed to rebuild an authenticated client.
+public struct ServerSession: Codable, Sendable {
+    public var serverURL: URL
+    public var userId: String
+    public var userName: String
+    public var accessToken: String
+
+    public init(serverURL: URL, userId: String, userName: String, accessToken: String) {
+        self.serverURL = serverURL
+        self.userId = userId
+        self.userName = userName
+        self.accessToken = accessToken
+    }
+}
+
+/// Stores the access token in the Keychain and the non-secret session metadata + DeviceId
+/// in UserDefaults. v1 = a single server session.
+public struct CredentialStore {
+    private let defaults: UserDefaults
+    private let service = "dev.solfin.token"
+    private let deviceIdKey = "solfin.deviceId"
+    private let sessionKey = "solfin.session"
+
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    /// A stable per-install device identifier for the MediaBrowser auth header.
+    public var deviceId: String {
+        if let existing = defaults.string(forKey: deviceIdKey) { return existing }
+        let generated = UUID().uuidString
+        defaults.set(generated, forKey: deviceIdKey)
+        return generated
+    }
+
+    public func save(_ session: ServerSession) throws {
+        // Non-secret metadata (without the token) in UserDefaults.
+        var meta = session
+        meta.accessToken = ""
+        defaults.set(try JSONEncoder().encode(meta), forKey: sessionKey)
+        try setToken(session.accessToken, account: session.userId)
+    }
+
+    public func loadSession() -> ServerSession? {
+        guard let data = defaults.data(forKey: sessionKey),
+              var meta = try? JSONDecoder().decode(ServerSession.self, from: data),
+              let token = getToken(account: meta.userId)
+        else { return nil }
+        meta.accessToken = token
+        return meta
+    }
+
+    public func clear() {
+        if let data = defaults.data(forKey: sessionKey),
+           let meta = try? JSONDecoder().decode(ServerSession.self, from: data) {
+            deleteToken(account: meta.userId)
+        }
+        defaults.removeObject(forKey: sessionKey)
+    }
+
+    // MARK: - Keychain
+
+    private func setToken(_ token: String, account: String) throws {
+        deleteToken(account: account)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecValueData as String: Data(token.utf8),
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlock,
+        ]
+        let status = SecItemAdd(query as CFDictionary, nil)
+        guard status == errSecSuccess else { throw JellyfinError.keychain(status) }
+    }
+
+    private func getToken(account: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var out: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess,
+              let data = out as? Data else { return nil }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private func deleteToken(account: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(query as CFDictionary)
+    }
+}
