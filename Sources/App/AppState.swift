@@ -17,7 +17,7 @@ final class AppState: ObservableObject {
     private let store = CredentialStore()
     private(set) var api: APIClient
 
-    /// Path to the bundled mpv config-dir (mpv.conf + uosc), inside the app bundle.
+    /// Path to the bundled mpv config-dir (mpv.conf + solfin-osc), inside the app bundle.
     var mpvConfigDir: String? {
         Bundle.main.resourcePath.map { $0 + "/mpv" }
     }
