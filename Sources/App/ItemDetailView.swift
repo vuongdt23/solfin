@@ -51,7 +51,7 @@ struct ItemDetailView: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     Spacer(minLength: 96)
-                    VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 20) {
                         identity(item, availableWidth: proxy.size.width)
                         overview(item)
                         if let genres = item.genres, !genres.isEmpty {
@@ -64,7 +64,7 @@ struct ItemDetailView: View {
                     }
                     .frame(maxWidth: 1280, alignment: .leading)
                     .padding(.horizontal, 48)
-                    .padding(.bottom, 34)
+                    .padding(.bottom, 50)
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
             }
@@ -107,9 +107,9 @@ struct ItemDetailView: View {
     }
 
     private func identity(_ item: BaseItem, availableWidth: CGFloat) -> some View {
-        let logoWidth = min(960, max(520, availableWidth * 0.56))
-        let logoHeight = min(300, max(180, availableWidth * 0.18))
-        let titleSize = min(76, max(48, availableWidth * 0.045))
+        let logoWidth = min(1120, max(620, availableWidth * 0.62))
+        let logoHeight = min(360, max(220, availableWidth * 0.21))
+        let titleSize = min(88, max(58, availableWidth * 0.052))
         return VStack(alignment: .leading, spacing: 14) {
             if let context = contextTitle(item) {
                 Text(context.uppercased())
@@ -187,14 +187,18 @@ struct ItemDetailView: View {
     @ViewBuilder private func overview(_ item: BaseItem) -> some View {
         if let overview = item.overview, !overview.isEmpty {
             VStack(alignment: .leading, spacing: 7) {
-                Text(overview).font(.callout).foregroundStyle(.white.opacity(0.88)).lineSpacing(3)
-                    .multilineTextAlignment(.leading).lineLimit(overviewExpanded ? nil : 4)
-                    .frame(maxWidth: 900, alignment: .leading)
-                if overview.count > 430 {
+                Text(overview)
+                    .font(.system(size: 16, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .lineSpacing(5)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(overviewExpanded ? nil : 6)
+                    .frame(maxWidth: 1040, alignment: .leading)
+                if overview.count > 620 {
                     Button(overviewExpanded ? "Show Less" : "More") { withAnimation { overviewExpanded.toggle() } }
                         .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(.white)
                 }
-            }.frame(maxWidth: 900, alignment: .leading)
+            }.frame(maxWidth: 1040, alignment: .leading)
         }
     }
 

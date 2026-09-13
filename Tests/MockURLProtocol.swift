@@ -7,11 +7,13 @@ final class MockURLProtocol: URLProtocol {
     nonisolated(unsafe) static var handler: ((URLRequest) -> (Int, Data))?
     nonisolated(unsafe) static var lastRequest: URLRequest?
     nonisolated(unsafe) static var lastBody: Data?
+    nonisolated(unsafe) static var requests: [URLRequest] = []
 
     static func reset() {
         handler = nil
         lastRequest = nil
         lastBody = nil
+        requests = []
     }
 
     static func makeSession() -> URLSession {
@@ -25,6 +27,7 @@ final class MockURLProtocol: URLProtocol {
 
     override func startLoading() {
         MockURLProtocol.lastRequest = request
+        MockURLProtocol.requests.append(request)
         // URLSession strips httpBody for custom protocols; recover via stream.
         MockURLProtocol.lastBody = request.httpBody ?? request.bodyStreamData()
 

@@ -10,6 +10,7 @@ struct LibraryView: View {
     @State private var loadError: String?
     @State private var isLoading = false
     @State private var hasMore = true
+    @State private var recentSeriesLoaded = false
     @State private var generation = UUID()
     @AppStorage("solfin.librarySort") private var sortRaw = LibrarySort.name.rawValue
     @AppStorage("solfin.librarySortAscending") private var sortAscending = true
@@ -17,6 +18,7 @@ struct LibraryView: View {
     @AppStorage("solfin.libraryDensity") private var densityRaw = LibraryDensity.standard.rawValue
 
     private let pageSize = 60
+    private var availableSorts: [LibrarySort] { LibrarySort.options(for: parent.collectionType) }
 
     var body: some View {
         ScrollView {
@@ -59,13 +61,24 @@ struct LibraryView: View {
                     }
                 } label: { Label(playedFilter.title, systemImage: "line.3.horizontal.decrease.circle") }
                 Menu {
-                    Picker("Sort By", selection: sortBinding) {
-                        ForEach(LibrarySort.allCases) { Text($0.title).tag($0) }
+                    Section("Sort By") {
+                        ForEach(availableSorts) { option in
+                            Button { sortRaw = option.rawValue } label: {
+                                if sort == option { Label(option.title(for: parent.collectionType), systemImage: "checkmark") }
+                                else { Text(option.title(for: parent.collectionType)) }
+                            }
+                        }
                     }
                     Divider()
-                    Picker("Direction", selection: $sortAscending) {
-                        Label("Ascending", systemImage: "arrow.up").tag(true)
-                        Label("Descending", systemImage: "arrow.down").tag(false)
+                    Section("Direction") {
+                        Button { sortAscending = true } label: {
+                            if sortAscending { Label("Ascending", systemImage: "checkmark") }
+                            else { Text("Ascending") }
+                        }
+                        Button { sortAscending = false } label: {
+                            if !sortAscending { Label("Descending", systemImage: "checkmark") }
+                            else { Text("Descending") }
+                        }
                     }
                 } label: { Label("Sort", systemImage: sortAscending ? "arrow.up" : "arrow.down") }
                 Menu {
@@ -75,10 +88,13 @@ struct LibraryView: View {
                 } label: { Label("View", systemImage: "square.grid.3x3") }
             }
         }
-        .task(id: "\(sort.rawValue)-\(sortAscending)-\(playedFilter.rawValue)") { await reloadAndWait() }
+        .task(id: "\(parent.id)-\(sort.rawValue)-\(sortAscending)-\(playedFilter.rawValue)") { await reloadAndWait() }
     }
 
-    private var sort: LibrarySort { LibrarySort(rawValue: sortRaw) ?? .name }
+    private var sort: LibrarySort {
+        let stored = LibrarySort(rawValue: sortRaw) ?? .name
+        return availableSorts.contains(stored) ? stored : .name
+    }
     private var playedFilter: PlayedFilter { PlayedFilter(rawValue: playedFilterRaw) ?? .all }
     private var density: LibraryDensity { LibraryDensity(rawValue: densityRaw) ?? .standard }
     private var sortBinding: Binding<LibrarySort> {
@@ -97,7 +113,7 @@ struct LibraryView: View {
     private func reload() { Task { await reloadAndWait() } }
     private func reloadAndWait() async {
         let token = UUID(); generation = token
-        items = []; totalCount = nil; hasMore = true; loadError = nil
+        items = []; totalCount = nil; hasMore = true; recentSeriesLoaded = false; loadError = nil
         await loadNextPage(token: token)
     }
 
@@ -106,15 +122,27 @@ struct LibraryView: View {
         guard !isLoading, hasMore, expected == generation else { return }
         isLoading = true; loadError = nil
         do {
-            let response = try await appState.api.items(
-                parentId: parent.id, startIndex: items.count, limit: pageSize,
-                sortBy: sort.apiValue, sortOrder: sortAscending ? "Ascending" : "Descending",
-                includeItemTypes: sort == .recentEpisodes ? "Episode" : nil,
-                recursive: sort == .recentEpisodes, filters: playedFilter.apiValue)
-            guard expected == generation else { return }
-            items.append(contentsOf: response.items.filter { candidate in !items.contains(where: { $0.id == candidate.id }) })
-            totalCount = response.totalRecordCount
-            hasMore = !response.items.isEmpty && items.count < (response.totalRecordCount ?? Int.max)
+            if sort == .recentEpisodes {
+                guard !recentSeriesLoaded else { hasMore = false; isLoading = false; return }
+                let activeSeries = try await appState.api.recentlyActiveSeries(parentId: parent.id,
+                                                                               limit: nil,
+                                                                               sortOrder: sortAscending ? "Ascending" : "Descending",
+                                                                               filters: playedFilter.apiValue)
+                guard expected == generation else { return }
+                items = sortAscending ? Array(activeSeries.reversed()) : activeSeries
+                totalCount = items.count
+                recentSeriesLoaded = true
+                hasMore = false
+            } else {
+                let response = try await appState.api.items(
+                    parentId: parent.id, startIndex: items.count, limit: pageSize,
+                    sortBy: sort.apiValue, sortOrder: sortAscending ? "Ascending" : "Descending",
+                    filters: playedFilter.apiValue)
+                guard expected == generation else { return }
+                items.append(contentsOf: response.items.filter { candidate in !items.contains(where: { $0.id == candidate.id }) })
+                totalCount = response.totalRecordCount
+                hasMore = !response.items.isEmpty && items.count < (response.totalRecordCount ?? Int.max)
+            }
         } catch {
             guard expected == generation else { return }
             loadError = error.localizedDescription
@@ -125,11 +153,19 @@ struct LibraryView: View {
 
 private enum LibrarySort: String, CaseIterable, Identifiable {
     case name, newest, recentEpisodes, releaseDate, rating
+    static func options(for collectionType: String?) -> [LibrarySort] {
+        switch collectionType?.lowercased() {
+        case "tvshows": return [.name, .newest, .recentEpisodes, .releaseDate, .rating]
+        default: return [.name, .newest, .releaseDate, .rating]
+        }
+    }
     var id: String { rawValue }
-    var title: String {
+    var title: String { title(for: nil) }
+    func title(for collectionType: String?) -> String {
         switch self {
         case .name: "Title"
-        case .newest: "Recently Added"
+        case .newest:
+            collectionType?.lowercased() == "movies" ? "Recently Added Movies" : "Recently Added Series"
         case .recentEpisodes: "Recently Added Episodes"
         case .releaseDate: "Release Date"
         case .rating: "Rating"

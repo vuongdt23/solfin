@@ -77,6 +77,53 @@ final class APIClientMockTests: XCTestCase {
         """
     }
 
+    func testRecentlyActiveSeriesReturnsSeriesInLatestEpisodeOrder() async throws {
+        MockURLProtocol.handler = { request in
+            guard request.url?.path == "/Users/u1/Items" else {
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                return (404, Data())
+            }
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let includeTypes = query.first { $0.name == "IncludeItemTypes" }?.value
+
+            if includeTypes == "Episode" {
+                XCTAssertEqual(query.first { $0.name == "ParentId" }?.value, "tv")
+                XCTAssertEqual(query.first { $0.name == "SortBy" }?.value, "DateCreated")
+                XCTAssertEqual(query.first { $0.name == "SortOrder" }?.value, "Descending")
+                XCTAssertEqual(query.first { $0.name == "Recursive" }?.value, "true")
+                let json = """
+                {"Items":[
+                  {"Id":"ep4","Name":"Newest B","Type":"Episode","SeriesId":"seriesB","DateCreated":"2026-09-12T00:00:00.0000000Z"},
+                  {"Id":"ep3","Name":"Newest A","Type":"Episode","SeriesId":"seriesA","DateCreated":"2026-09-11T00:00:00.0000000Z"},
+                  {"Id":"ep2","Name":"Older B","Type":"Episode","SeriesId":"seriesB","DateCreated":"2026-09-10T00:00:00.0000000Z"}
+                ],"TotalRecordCount":3}
+                """
+                return (200, Data(json.utf8))
+            }
+
+            XCTAssertEqual(includeTypes, "Series")
+            XCTAssertEqual(query.first { $0.name == "ParentId" }?.value, "tv")
+            XCTAssertEqual(query.first { $0.name == "SortBy" }?.value, "SortName")
+            XCTAssertEqual(query.first { $0.name == "SortOrder" }?.value, "Ascending")
+            let json = """
+            {"Items":[
+              {"Id":"seriesC","Name":"Series C","Type":"Series"},
+              {"Id":"seriesA","Name":"Series A","Type":"Series"},
+              {"Id":"seriesB","Name":"Series B","Type":"Series"},
+              {"Id":"seriesD","Name":"Series D","Type":"Series"}
+            ],"TotalRecordCount":4}
+            """
+            return (200, Data(json.utf8))
+        }
+
+        let series = try await makeClient(authed: true).recentlyActiveSeries(parentId: "tv", limit: 20)
+
+        XCTAssertEqual(series.map(\.id), ["seriesB", "seriesA", "seriesC", "seriesD"])
+        XCTAssertEqual(MockURLProtocol.requests.count, 2)
+        XCTAssertEqual(MockURLProtocol.requests.first?.url?.path, "/Users/u1/Items")
+        XCTAssertEqual(MockURLProtocol.requests.last?.url?.path, "/Users/u1/Items")
+    }
+
     func testNextEpisodeReturnsFollowing() async throws {
         MockURLProtocol.handler = { _ in (200, Data(self.episodesJSON().utf8)) }
         let current = try JSONDecoder().decode(BaseItem.self, from: Data(

@@ -38,14 +38,14 @@ local user_opts = {
 
 local DS = {
     playresy      = 720,        -- virtual canvas height
-    bar_height    = 96,         -- bottom control bar height
+    bar_height    = 82,         -- bottom control bar height
     bar_pad_x     = 28,         -- horizontal padding inside the bar
-    seek_height   = 5,          -- seekbar track thickness
-    seek_handle_r = 7,          -- seek handle radius
-    row_gap       = 18,         -- gap between seekbar row and button row
-    btn_size      = 30,         -- clickable button box (square)
-    btn_gap       = 16,         -- gap between buttons
-    time_size     = 20,         -- timecode font size
+    seek_height   = 4,          -- seekbar track thickness
+    seek_handle_r = 5,          -- seek handle radius
+    row_gap       = 12,         -- gap between seekbar row and button row
+    btn_size      = 24,         -- clickable button box (square)
+    btn_gap       = 12,         -- gap between buttons
+    time_size     = 17,         -- timecode font size
     title_size    = 26,         -- top-bar title font size
     corner_r      = 3,          -- rounded-rect radius for the seekbar
     scrim_alpha   = 0x60,       -- bottom gradient scrim opacity (00=opaque)
@@ -102,7 +102,7 @@ local state = {
     chapters     = {},             -- {{title=,time=}, ...}
     audio_tracks = {},             -- {{id,title,lang,codec,selected}, ...}
     sub_tracks   = {},
-    menu         = { open = false, kind = nil, items = {} },  -- popup track/settings menu
+    menu         = { open = false, kind = nil, items = {}, scroll = 0 },  -- popup track/settings menu
     thumbfast    = nil,            -- {width,height,disabled,available} from thumbfast-info
     thumb_shown  = false,          -- whether we currently have a thumbnail requested
 
@@ -407,7 +407,7 @@ end
 -- Popup menu
 --------------------------------------------------------------------------------
 
-local MENU = { row_h = 38, pad = 8, width = 320, title_h = 34 }
+local MENU = { row_h = 34, pad = 8, width = 320, title_h = 32, scroll_h = 28, top_margin = 76 }
 
 local function track_label(tr)
     local parts = {}
@@ -467,7 +467,14 @@ local function render_menu(ass, a, W, bar_top)
     if #items == 0 then return end
 
     local mw = MENU.width
-    local mh = MENU.title_h + #items * MENU.row_h + MENU.pad
+    local max_content_h = math.max(MENU.row_h, bar_top - MENU.top_margin - MENU.title_h - MENU.pad)
+    local visible_count = math.max(1, math.min(#items, math.floor(max_content_h / MENU.row_h)))
+    local can_scroll = #items > visible_count
+    state.menu.scroll = clamp(state.menu.scroll or 0, 0, math.max(0, #items - visible_count))
+    state.menu.visible_start = state.menu.scroll + 1
+    state.menu.visible_count = visible_count
+
+    local mh = MENU.title_h + visible_count * MENU.row_h + MENU.pad + (can_scroll and MENU.scroll_h or 0)
     local anchor = hitboxes[state.menu.kind]
     local ax = anchor and (anchor.x1 + anchor.x2) / 2 or (W - 160)
     local mx1 = clamp(ax - mw / 2, DS.bar_pad_x, W - DS.bar_pad_x - mw)
@@ -488,12 +495,24 @@ local function render_menu(ass, a, W, bar_top)
     ass:pos(mx1 + 18, my1 + MENU.title_h / 2 + 2)
     ass:append(MENU_TITLES[state.menu.kind] or "")
 
+    if can_scroll then
+        local count_text = string.format("%d–%d / %d", state.menu.visible_start,
+                                         state.menu.visible_start + visible_count - 1, #items)
+        ass:new_event()
+        ass:append(string.format("{\\an6\\fs15\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
+                                 DS.font, COL.white, a(0x70)))
+        ass:pos(mx1 + mw - 18, my1 + MENU.title_h / 2 + 2)
+        ass:append(count_text)
+    end
+
     -- Rows
-    for i, item in ipairs(items) do
-        local ry1 = my1 + MENU.title_h + (i - 1) * MENU.row_h
+    for visual = 1, visible_count do
+        local i = state.menu.visible_start + visual - 1
+        local item = items[i]
+        local ry1 = my1 + MENU.title_h + (visual - 1) * MENU.row_h
         local ry2 = ry1 + MENU.row_h
-        hitboxes["menu_row_" .. i] = { x1 = mx1, y1 = ry1, x2 = mx1 + mw, y2 = ry2 }
-        local hovered = (state.hovered == "menu_row_" .. i)
+        hitboxes["menu_row_" .. visual] = { x1 = mx1, y1 = ry1, x2 = mx1 + mw, y2 = ry2, item_index = i }
+        local hovered = (state.hovered == "menu_row_" .. visual)
 
         if hovered then
             ass:new_event()
@@ -515,10 +534,41 @@ local function render_menu(ass, a, W, bar_top)
         -- Label
         local lcol = item.selected and COL.accent or COL.white
         ass:new_event()
-        ass:append(string.format("{\\an4\\fs19\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
+        ass:append(string.format("{\\an4\\fs18\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
                                  DS.font, lcol, a(0)))
         ass:pos(mx1 + 40, (ry1 + ry2) / 2)
         ass:append(item.label)
+    end
+
+    if can_scroll then
+        local sy1, sy2 = my2 - MENU.scroll_h, my2
+        local half = mw / 2
+        hitboxes.menu_scroll_up = { x1 = mx1, y1 = sy1, x2 = mx1 + half, y2 = sy2 }
+        hitboxes.menu_scroll_down = { x1 = mx1 + half, y1 = sy1, x2 = mx1 + mw, y2 = sy2 }
+
+        ass:new_event()
+        ass:append(shape_style(COL.white, a(0xDD)))
+        ass:pos(0, 0)
+        ass:draw_start(); ass:rect_cw(mx1 + 10, sy1, mx1 + mw - 10, sy1 + 1); ass:draw_stop()
+
+        local up_col = state.menu.scroll > 0 and COL.white or COL.track
+        local down_col = state.menu.scroll < (#items - visible_count) and COL.white or COL.track
+        if state.hovered == "menu_scroll_up" and state.menu.scroll > 0 then up_col = COL.accent end
+        if state.hovered == "menu_scroll_down" and state.menu.scroll < (#items - visible_count) then down_col = COL.accent end
+
+        ass:new_event()
+        ass:append(string.format("{\\an5\\fs18\\b1\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
+                                 DS.font, up_col, a(0)))
+        ass:pos(mx1 + mw * 0.25, sy1 + MENU.scroll_h / 2 + 1)
+        ass:append("▲")
+
+        ass:new_event()
+        ass:append(string.format("{\\an5\\fs18\\b1\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
+                                 DS.font, down_col, a(0)))
+        ass:pos(mx1 + mw * 0.75, sy1 + MENU.scroll_h / 2 + 1)
+        ass:append("▼")
+    else
+        hitboxes.menu_scroll_up, hitboxes.menu_scroll_down = nil, nil
     end
 end
 
@@ -527,6 +577,7 @@ local function open_menu(kind)
         state.menu.open = false
     else
         state.menu.open, state.menu.kind = true, kind
+        state.menu.scroll = 0
     end
     register_activity()
     request_tick()
@@ -918,9 +969,12 @@ local function resolve_hover()
     local prev = state.hovered
     state.hovered = nil
     local names = {}
-    -- Menu rows take precedence when the popup is open.
+    -- Menu controls/rows take precedence when the popup is open.
     if state.menu.open and state.menu.items then
-        for i = 1, #state.menu.items do names[#names + 1] = "menu_row_" .. i end
+        names[#names + 1] = "menu_scroll_up"
+        names[#names + 1] = "menu_scroll_down"
+        local visible_count = state.menu.visible_count or #state.menu.items
+        for i = 1, visible_count do names[#names + 1] = "menu_row_" .. i end
     end
     for _, n in ipairs({ "close", "maximize", "minimize", "playpause", "skip_back", "skip_fwd", "speed", "audio",
                          "subtitle", "fullscreen", "volume", "volslider", "seekbar" }) do
@@ -1050,10 +1104,24 @@ local function on_mbtn_up()
     -- Click actions (only when the OSC is on screen)
     if state.opacity <= 0 then return end
 
-    -- Menu row selection takes precedence.
+    -- Menu scrolling/row selection takes precedence.
     if state.menu.open and state.menu.items then
-        for i, item in ipairs(state.menu.items) do
-            if point_in(hitboxes["menu_row_" .. i], mx, my) then
+        if point_in(hitboxes.menu_scroll_up, mx, my) then
+            state.menu.scroll = clamp((state.menu.scroll or 0) - math.max(1, (state.menu.visible_count or 1) - 1),
+                                      0, math.max(0, #state.menu.items - (state.menu.visible_count or #state.menu.items)))
+            request_tick()
+            return
+        elseif point_in(hitboxes.menu_scroll_down, mx, my) then
+            state.menu.scroll = clamp((state.menu.scroll or 0) + math.max(1, (state.menu.visible_count or 1) - 1),
+                                      0, math.max(0, #state.menu.items - (state.menu.visible_count or #state.menu.items)))
+            request_tick()
+            return
+        end
+        local visible_count = state.menu.visible_count or #state.menu.items
+        for visual = 1, visible_count do
+            local box = hitboxes["menu_row_" .. visual]
+            local item = box and state.menu.items[box.item_index or visual]
+            if item and point_in(box, mx, my) then
                 item.apply()
                 close_menu()
                 request_tick()
@@ -1092,7 +1160,16 @@ local function on_mbtn_up()
 end
 
 local function on_wheel(delta)
+    update_mouse()
     register_activity()
+    if state.menu.open and state.menu.items and point_in(hitboxes.menu_area, state.mouse_x, state.mouse_y) then
+        local visible_count = state.menu.visible_count or #state.menu.items
+        local max_scroll = math.max(0, #state.menu.items - visible_count)
+        local step = delta > 0 and -3 or 3
+        state.menu.scroll = clamp((state.menu.scroll or 0) + step, 0, max_scroll)
+        request_tick()
+        return
+    end
     mp.commandv("add", "volume", delta)
     if state.mute and delta > 0 then mp.set_property_native("mute", false) end
 end
