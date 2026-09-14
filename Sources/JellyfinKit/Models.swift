@@ -71,6 +71,8 @@ public struct BaseItem: Codable, Sendable, Identifiable, Hashable {
     public let backdropImageTags: [String]?
     public let parentBackdropItemId: String?
     public let parentBackdropImageTags: [String]?
+    public let parentLogoItemId: String?
+    public let parentLogoImageTag: String?
     public let userData: UserItemData?
     public let mediaSources: [MediaSource]?
 
@@ -97,6 +99,8 @@ public struct BaseItem: Codable, Sendable, Identifiable, Hashable {
         case backdropImageTags = "BackdropImageTags"
         case parentBackdropItemId = "ParentBackdropItemId"
         case parentBackdropImageTags = "ParentBackdropImageTags"
+        case parentLogoItemId = "ParentLogoItemId"
+        case parentLogoImageTag = "ParentLogoImageTag"
         case userData = "UserData"
         case mediaSources = "MediaSources"
     }

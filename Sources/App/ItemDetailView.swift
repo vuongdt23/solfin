@@ -1,5 +1,6 @@
 import SwiftUI
 import JellyfinKit
+import PlaybackEngine
 
 /// One artwork-led detail surface for every playable video.
 struct ItemDetailView: View {
@@ -15,6 +16,12 @@ struct ItemDetailView: View {
     @State private var selectedAudioTrack: Int?
     @State private var selectedVideoTrack: Int?
     @State private var selectedSubtitleTrack: Int? = -1
+    @State private var pendingPlayAction: PlayAction?
+
+    private enum PlayAction: Equatable {
+        case primary
+        case startOver
+    }
 
     var body: some View {
         ScrollView {
@@ -28,6 +35,13 @@ struct ItemDetailView: View {
         .background(SolfinDesign.solarBackground)
         .navigationTitle(item?.name ?? "Details")
         .task(id: itemId) { await load() }
+        .task(id: item?.id) {
+            guard let item else { return }
+            await LogoOverlayCache.shared.prefetch(for: item, api: appState.api)
+        }
+        .onChange(of: nowPlaying.isLaunching) { _, isLaunching in
+            if !isLaunching { pendingPlayAction = nil }
+        }
     }
 
     private func playableDetail(_ item: BaseItem) -> some View {
@@ -171,28 +185,48 @@ struct ItemDetailView: View {
     }
 
     private func actions(_ item: BaseItem) -> some View {
-        HStack(spacing: 10) {
-            Button { play(item) } label: {
-                Label(playLabel(item), systemImage: "play.fill")
-                    .font(.callout.weight(.semibold))
-                    .padding(.horizontal, 20).frame(height: 42)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.black)
-            .background(.white, in: Capsule())
+        let isWaitingForLaunch = pendingPlayAction != nil
+        return HStack(spacing: 10) {
+            playButton(item, action: .primary, title: playLabel(item), systemImage: "play.fill",
+                       isPrimary: true, isBusy: pendingPlayAction == .primary && isWaitingForLaunch)
 
             if resumeSeconds(item) > 0 {
-                Button { play(item, startOver: true) } label: {
-                    Label("Start Over", systemImage: "arrow.counterclockwise")
-                        .font(.callout.weight(.semibold))
-                        .padding(.horizontal, 16).frame(height: 42)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.white)
-                .background(.white.opacity(0.14), in: Capsule())
-                .overlay { Capsule().strokeBorder(.white.opacity(0.16)) }
+                playButton(item, action: .startOver, title: "Start Over", systemImage: "arrow.counterclockwise",
+                           isPrimary: false, isBusy: pendingPlayAction == .startOver && isWaitingForLaunch)
             }
         }
+        .disabled(isWaitingForLaunch)
+        .animation(.easeOut(duration: 0.16), value: pendingPlayAction)
+    }
+
+    private func playButton(_ item: BaseItem, action: PlayAction, title: String,
+                            systemImage: String, isPrimary: Bool, isBusy: Bool) -> some View {
+        Button {
+            guard pendingPlayAction == nil, !nowPlaying.isLaunching else { return }
+            pendingPlayAction = action
+            play(item, startOver: action == .startOver)
+        } label: {
+            HStack(spacing: 8) {
+                if isBusy {
+                    ProgressView()
+                        .controlSize(.small)
+                        .scaleEffect(0.82)
+                        .tint(isPrimary ? .black : .white)
+                } else {
+                    Image(systemName: systemImage)
+                }
+                Text(isBusy ? "Starting…" : title)
+            }
+            .font(.callout.weight(.semibold))
+            .padding(.horizontal, isPrimary ? 20 : 16)
+            .frame(height: 42)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(isPrimary ? .black : .white)
+        .background(isPrimary ? AnyShapeStyle(.white) : AnyShapeStyle(.white.opacity(0.14)), in: Capsule())
+        .overlay { Capsule().strokeBorder(.white.opacity(isPrimary ? 0 : 0.16)) }
+        .opacity(pendingPlayAction == nil || isBusy ? 1 : 0.62)
     }
 
     @ViewBuilder private func overview(_ item: BaseItem) -> some View {
@@ -252,25 +286,30 @@ struct ItemDetailView: View {
                 .frame(width: 76, alignment: .leading)
             Spacer(minLength: 12)
             Menu {
-                if includesOff { Button("Off") { selection.wrappedValue = -1 } }
+                if includesOff { Button("Off") { selection.wrappedValue = -1 }.foregroundStyle(.white) }
                 ForEach(tracks, id: \.id) { track in
                     Button { selection.wrappedValue = track.id } label: {
                         if selection.wrappedValue == track.id { Label(trackLabel(track), systemImage: "checkmark") }
                         else { Text(trackLabel(track)) }
                     }
+                    .foregroundStyle(.white)
                 }
             } label: {
                 HStack(spacing: 12) {
                     Text(selectedTrackLabel(selection.wrappedValue, tracks: tracks, includesOff: includesOff))
                         .font(.callout).lineLimit(1)
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.55))
+                        .font(.system(size: 9, weight: .bold))
                 }
-                .foregroundStyle(.white.opacity(0.92))
+                .foregroundStyle(.white.opacity(0.94))
+                .tint(.white)
                 .padding(.horizontal, 12).frame(height: 34)
                 .background(.black.opacity(0.24), in: RoundedRectangle(cornerRadius: 9))
                 .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.13)) }
-            }.menuStyle(.borderlessButton).frame(maxWidth: 560, alignment: .trailing)
+            }
+            .menuStyle(.borderlessButton)
+            .tint(.white)
+            .frame(maxWidth: 560, alignment: .trailing)
         }.padding(.horizontal, 16).padding(.vertical, 10)
     }
 
@@ -329,7 +368,8 @@ struct ItemDetailView: View {
     }
     private func contextTitle(_ item: BaseItem) -> String? { item.type == "Episode" ? item.seriesName : item.type }
     private func episodeCode(_ item: BaseItem) -> String {
-        (item.parentIndexNumber.map { "S\($0)" } ?? "") + (item.indexNumber.map { "E\($0)" } ?? "")
+        (item.parentIndexNumber.map { String(format: "S%02d", $0) } ?? "") +
+        (item.indexNumber.map { String(format: "E%02d", $0) } ?? "")
     }
     private func runtime(_ item: BaseItem) -> String? {
         guard let ticks = item.runTimeTicks else { return nil }; let minutes = Int(Ticks.toSeconds(ticks) / 60)

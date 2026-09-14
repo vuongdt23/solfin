@@ -103,15 +103,28 @@ public final class APIClient: Sendable {
 
     @discardableResult
     func send(_ req: URLRequest) async throws -> Data {
-        let (data, resp) = try await urlSession.data(for: req)
-        guard let http = resp as? HTTPURLResponse else {
-            throw JellyfinError.http(-1, "No HTTP response")
+        let started = Date()
+        let method = req.httpMethod ?? "GET"
+        let redacted = SolfinLog.redactedURL(req.url)
+        SolfinLog.debug("→ \(method) \(redacted)", category: .api)
+        do {
+            let (data, resp) = try await urlSession.data(for: req)
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            guard let http = resp as? HTTPURLResponse else {
+                SolfinLog.error("← \(method) \(redacted) no HTTP response in \(ms)ms", category: .api)
+                throw JellyfinError.http(-1, "No HTTP response")
+            }
+            SolfinLog.info("← \(method) \(redacted) status=\(http.statusCode) bytes=\(data.count) in \(ms)ms", category: .api)
+            guard (200..<300).contains(http.statusCode) else {
+                let msg = String(data: data, encoding: .utf8) ?? ""
+                throw JellyfinError.http(http.statusCode, String(msg.prefix(200)))
+            }
+            return data
+        } catch {
+            let ms = Int(Date().timeIntervalSince(started) * 1000)
+            SolfinLog.error("← \(method) \(redacted) failed in \(ms)ms: \(error.localizedDescription)", category: .api)
+            throw error
         }
-        guard (200..<300).contains(http.statusCode) else {
-            let msg = String(data: data, encoding: .utf8) ?? ""
-            throw JellyfinError.http(http.statusCode, String(msg.prefix(200)))
-        }
-        return data
     }
 
     func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
