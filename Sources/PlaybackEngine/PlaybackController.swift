@@ -57,6 +57,7 @@ public final class PlaybackController {
     private var didReportStopped = false
     private var naturalEnd = false
     private var state: State = .idle
+    private var hasStartedPlayback = false
     private var progressTimer: DispatchSourceTimer?
 
     private let timePosId = 1
@@ -98,9 +99,13 @@ public final class PlaybackController {
         }
         setState(.starting)
 
+        SolfinLog.info("Playback requested for item=\(item.id) title=\(Self.displayTitle(for: item))", category: .playback)
+
         Task {
             do {
+                let directPlanStarted = Date()
                 var plan = try await api.directPlayPlan(for: item)
+                SolfinLog.info("directPlayPlan resolved in \(Int(Date().timeIntervalSince(directPlanStarted) * 1000))ms stream=\(SolfinLog.redactedURL(plan.streamURL))", category: .playback)
                 if let startOverride { plan.resumeSeconds = startOverride }
                 self.plan = plan
                 self.prepareTrackMaps(for: plan)
@@ -110,23 +115,40 @@ public final class PlaybackController {
                                             plan.defaultSubtitleStreamIndex)
                 }
 
-                // Launch mpv already pointed at the file with the resume position.
+                // Prefer the prewarmed on-disk logo. On the first cold route we allow a
+                // blocking download so the OSC still gets the logo; subsequent plays are
+                // cache hits and do not slow launch.
+                let logoStarted = Date()
+                let logoOverlay = await LogoOverlayCache.shared.overlay(for: item, api: api,
+                                                                        downloadIfNeeded: true)
+                SolfinLog.info("logo overlay \(logoOverlay == nil ? "unavailable" : "ready") in \(Int(Date().timeIntervalSince(logoStarted) * 1000))ms", category: .cache)
+
+                let title = Self.displayTitle(for: item)
+                let mpvLogPath = SolfinLog.makeMPVLogPath(title: title)
+                let launchStarted = Date()
                 try mpv.launch(binaryPath: binary, configDir: config.configDir,
                                additionalConfigPath: config.additionalConfigPath,
                                initialURL: plan.streamURL.absoluteString,
                                startSeconds: plan.resumeSeconds,
-                               mediaTitle: Self.displayTitle(for: item))
+                               mediaTitle: title,
+                               logoOverlay: logoOverlay,
+                               mpvLogPath: mpvLogPath,
+                               mpvMessageLevel: SolfinLog.currentLevel.mpvMessageLevel)
+                SolfinLog.info("mpv Process.run returned in \(Int(Date().timeIntervalSince(launchStarted) * 1000))ms log=\(mpvLogPath ?? "off")", category: .mpv)
                 mpv.onExit = { [weak self] _ in self?.finalize() }
 
                 self.queue.async {
                     self.positionSeconds = plan.resumeSeconds
                     self.isPaused = false
-                    self.setState(.playing)
+                    // Keep the UI in `.starting` until mpv tells us the file is really
+                    // loaded / playback properties arrive. Process.run only means the
+                    // mpv process was spawned, not that the window is visible or media is ready.
                     self.startProgressTimer()
                 }
                 connectIPC(resumeSeconds: plan.resumeSeconds)
                 try? await api.reportPlaybackStart(plan)
             } catch {
+                SolfinLog.error("Playback startup failed: \(error.localizedDescription)", category: .playback)
                 emitError(error)
                 finalize()
             }
@@ -199,10 +221,13 @@ public final class PlaybackController {
         let ipc = MPVIPC(socketPath: mpv.socketPath)
         ipc.onMessage = { [weak self] msg in self?.handle(msg) }
         ipc.onClose = { [weak self] in self?.finalize() }
+        let connectStarted = Date()
         guard ipc.connect(timeout: 6) else {
+            SolfinLog.error("Could not connect to mpv IPC socket after 6s", category: .mpv)
             emitError(MPVProcess.LaunchError(message: "Could not connect to mpv IPC socket."))
             return
         }
+        SolfinLog.info("mpv IPC connected in \(Int(Date().timeIntervalSince(connectStarted) * 1000))ms", category: .mpv)
         ipc.observeProperty("time-pos", id: timePosId)
         ipc.observeProperty("pause", id: pauseId)
         ipc.observeProperty("duration", id: durationId)
@@ -246,13 +271,20 @@ public final class PlaybackController {
                 case self.timePosId:
                     if let pos = Self.doubleValue(msg["data"]) {
                         self.positionSeconds = pos
-                        self.setState(self.isPaused ? .paused : .playing)
+                        // time-pos can arrive before the first frame is displayed. Keep
+                        // the UI in the launch state until mpv's playback-restart event,
+                        // which is emitted after the post-seek playback pipeline resumes.
+                        if self.hasStartedPlayback {
+                            self.setState(self.isPaused ? .paused : .playing)
+                        }
                     }
                 case self.pauseId:
                     if let paused = Self.boolValue(msg["data"]) {
                         let changed = self.isPaused != paused
                         self.isPaused = paused
-                        self.setState(paused ? .paused : .playing)
+                        if self.hasStartedPlayback {
+                            self.setState(paused ? .paused : .playing)
+                        }
                         if changed { self.reportProgressNow() }
                     }
                 case self.durationId:
@@ -270,6 +302,14 @@ public final class PlaybackController {
                 default:
                     break
                 }
+            case "file-loaded":
+                SolfinLog.debug("mpv file-loaded; waiting for playback-restart/first frame", category: .mpv)
+            case "playback-restart":
+                if !self.hasStartedPlayback {
+                    SolfinLog.info("mpv playback became ready via playback-restart", category: .mpv)
+                }
+                self.hasStartedPlayback = true
+                self.setState(self.isPaused ? .paused : .playing)
             case "end-file":
                 // reason: "eof" (completed) | "stop" | "quit" | "error" | "redirect"
                 if (msg["reason"] as? String) == "eof" { self.naturalEnd = true }
@@ -293,6 +333,7 @@ public final class PlaybackController {
         externalSubtitleTrackIDs.removeAll()
         pendingExternalSubtitleURLs.removeAll()
         loadingExternalSubtitleIndexes.removeAll()
+        hasStartedPlayback = false
         requestedAudioStreamIndex = nil
         requestedVideoStreamIndex = nil
         requestedSubtitleStreamIndex = nil
@@ -473,18 +514,22 @@ public final class PlaybackController {
     }
 
     /// The human title shown in the mpv OSC. Episodes read as
-    /// "Series · S1E2 · Episode Name"; everything else uses the item name.
+    /// "Series · S01E02 · Episode Name"; everything else uses the item name.
     static func displayTitle(for item: BaseItem) -> String {
         if item.type == "Episode" {
             var parts: [String] = []
             if let series = item.seriesName { parts.append(series) }
-            let s = item.parentIndexNumber.map { "S\($0)" } ?? ""
-            let e = item.indexNumber.map { "E\($0)" } ?? ""
-            let se = s + e
+            let se = episodeCode(for: item)
             if !se.isEmpty { parts.append(se) }
             parts.append(item.name)
             return parts.joined(separator: " · ")
         }
         return item.name
+    }
+
+    private static func episodeCode(for item: BaseItem) -> String {
+        let s = item.parentIndexNumber.map { String(format: "S%02d", $0) } ?? ""
+        let e = item.indexNumber.map { String(format: "E%02d", $0) } ?? ""
+        return s + e
     }
 }

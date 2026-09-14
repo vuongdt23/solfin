@@ -36,7 +36,7 @@ state (resume points, watched status) in sync.
   built for solfin: gradient scrims, chapter markers, buffered range, hover **thumbnail
   previews** (via bundled [thumbfast](https://github.com/po5/thumbfast)), audio/subtitle
   track menus, a prominent **playback-speed** control (1.5× a tap away), volume slider, and
-  a top title bar — tuned to a macOS-blue accent in the **Inter** UI font. Real media titles
+  a top title bar — tuned to Solfin's solar orange accent and tiny sun seek-handle motif in the **Inter** UI font. Real media titles
   shown via `--force-media-title`.
 - **External mpv, isolated config** — solfin runs mpv with its own `--config-dir`, so your
   personal `~/.config/mpv` is never touched.

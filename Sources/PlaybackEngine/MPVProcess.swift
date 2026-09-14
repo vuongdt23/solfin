@@ -7,6 +7,18 @@ public final class MPVProcess {
         public var errorDescription: String? { message }
     }
 
+    public struct OverlayImage: Sendable {
+        public let path: String
+        public let width: Int
+        public let height: Int
+
+        public init(path: String, width: Int, height: Int) {
+            self.path = path
+            self.width = width
+            self.height = height
+        }
+    }
+
     private var process: Process?
     public let socketPath: String
     public var onExit: ((Int32) -> Void)?
@@ -37,7 +49,9 @@ public final class MPVProcess {
     /// `mediaTitle` overrides mpv's `media-title` (otherwise it falls back to the ugly
     /// stream URL filename) so the OSC shows the real Jellyfin item name.
     public func launch(binaryPath: String, configDir: String?, additionalConfigPath: String? = nil,
-                       initialURL: String?, startSeconds: Double?, mediaTitle: String? = nil) throws {
+                       initialURL: String?, startSeconds: Double?, mediaTitle: String? = nil,
+                       logoOverlay: OverlayImage? = nil,
+                       mpvLogPath: String? = nil, mpvMessageLevel: String? = nil) throws {
         // Stale socket from a prior crash would block bind on mpv's side.
         try? FileManager.default.removeItem(atPath: socketPath)
 
@@ -52,10 +66,10 @@ public final class MPVProcess {
             "--title=${media-title}",
         ]
         if let configDir { args.append("--config-dir=\(configDir)") }
-        if let logPath = ProcessInfo.processInfo.environment["SOLFIN_MPV_LOG"],
-           !logPath.isEmpty {
+        let envLogPath = ProcessInfo.processInfo.environment["SOLFIN_MPV_LOG"]
+        if let logPath = mpvLogPath ?? envLogPath, !logPath.isEmpty {
             args.append("--log-file=\(logPath)")
-            args.append("--msg-level=all=debug")
+            args.append("--msg-level=\(mpvMessageLevel ?? "all=debug")")
         }
         // Load after the bundled mpv.conf so user values override bundled defaults.
         if let additionalConfigPath, !additionalConfigPath.isEmpty {
@@ -63,6 +77,9 @@ public final class MPVProcess {
         }
         if let start = startSeconds, start > 0 { args.append("--start=\(Int(start))") }
         if let mediaTitle, !mediaTitle.isEmpty { args.append("--force-media-title=\(mediaTitle)") }
+        if let logoOverlay {
+            args.append("--script-opts=solfin-osc-logo_path=\(logoOverlay.path),solfin-osc-logo_width=\(logoOverlay.width),solfin-osc-logo_height=\(logoOverlay.height)")
+        }
         if let initialURL { args.append(initialURL) }
         p.arguments = args
 

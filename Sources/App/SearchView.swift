@@ -129,8 +129,8 @@ private struct SearchEpisodeRow: View {
         }.padding(.vertical, 12).contentShape(Rectangle())
     }
     private var subtitle: String {
-        let s = episode.parentIndexNumber.map { "S\($0)" } ?? ""
-        let e = episode.indexNumber.map { "E\($0)" } ?? ""
+        let s = episode.parentIndexNumber.map { String(format: "S%02d", $0) } ?? ""
+        let e = episode.indexNumber.map { String(format: "E%02d", $0) } ?? ""
         return [episode.seriesName, s + e].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 }
