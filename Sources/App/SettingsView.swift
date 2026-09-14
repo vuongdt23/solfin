@@ -1,10 +1,13 @@
 import SwiftUI
+import JellyfinKit
 import PlaybackEngine
 
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
     @AppStorage("solfin.autoplayNext") private var autoplayNext = true
     @AppStorage("solfin.featuredAutoAdvance") private var featuredAutoAdvance = true
+    @AppStorage(SolfinLog.levelKey) private var logLevelRaw = SolfinLogLevel.info.rawValue
+    @AppStorage(SolfinLog.directoryKey) private var logDirectory = ""
     @StateObject private var configStore = MPVConfigurationStore()
     @State private var validationMessage: String?
 
@@ -29,6 +32,9 @@ struct SettingsView: View {
 
             MPVConfigurationView(store: configStore)
                 .tabItem { Label("mpv Config", systemImage: "doc.text") }
+
+            loggingSettings
+                .tabItem { Label("Logging", systemImage: "doc.badge.gearshape") }
 
             Form {
                 LabeledContent("Server", value: appState.session?.serverURL.absoluteString ?? "Not connected")
@@ -82,6 +88,66 @@ struct SettingsView: View {
             appState.mpvPathOverride = path
             validateMPV()
         }
+    }
+
+    private var loggingSettings: some View {
+        Form {
+            Section("Diagnostics") {
+                Picker("Log level", selection: $logLevelRaw) {
+                    ForEach(SolfinLogLevel.allCases) { level in
+                        Text(level.displayName).tag(level.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                LabeledContent("Current file", value: SolfinLog.directoryURL.appendingPathComponent("solfin.log").path)
+                    .textSelection(.enabled)
+
+                Text("Logs include app, API latency, cache/logo latency, playback startup milestones, and mpv logs when enabled. Sensitive URL tokens are redacted.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Location") {
+                TextField(SolfinLog.defaultDirectoryPath, text: $logDirectory)
+                    .textSelection(.enabled)
+                HStack {
+                    Button("Choose…", action: chooseLogDirectory)
+                    Button("Reveal Logs", action: revealLogs)
+                    Button("Reset to Default") { logDirectory = "" }
+                }
+                Text("Leave blank to use the default location: \(SolfinLog.defaultDirectoryPath)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("mpv") {
+                LabeledContent("mpv log folder", value: SolfinLog.directoryURL.appendingPathComponent("mpv", isDirectory: true).path)
+                    .textSelection(.enabled)
+                Text("mpv receives --log-file and --msg-level matching the selected level for new playback sessions.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped).padding(12)
+    }
+
+    private func chooseLogDirectory() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Use for Logs"
+        if panel.runModal() == .OK, let path = panel.url?.path {
+            logDirectory = path
+        }
+    }
+
+    private func revealLogs() {
+        let url = SolfinLog.directoryURL
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     private func validateMPV() {

@@ -66,8 +66,8 @@ struct PosterCard: View {
 
     private var subtitle: String? {
         if item.type == "Episode" {
-            let s = item.parentIndexNumber.map { "S\($0)" } ?? ""
-            let e = item.indexNumber.map { "E\($0)" } ?? ""
+            let s = item.parentIndexNumber.map { String(format: "S%02d", $0) } ?? ""
+            let e = item.indexNumber.map { String(format: "E%02d", $0) } ?? ""
             return "\(item.seriesName ?? "") \(s)\(e)".trimmingCharacters(in: .whitespaces)
         }
         return item.productionYear.map(String.init)
@@ -138,8 +138,8 @@ struct LandscapeCard: View {
 
     private var subtitle: String? {
         if item.type == "Episode" {
-            let s = item.parentIndexNumber.map { "S\($0)" } ?? ""
-            let e = item.indexNumber.map { "E\($0)" } ?? ""
+            let s = item.parentIndexNumber.map { String(format: "S%02d", $0) } ?? ""
+            let e = item.indexNumber.map { String(format: "E%02d", $0) } ?? ""
             return [s + e, item.name].filter { !$0.isEmpty }.joined(separator: " · ")
         }
         return item.productionYear.map(String.init)

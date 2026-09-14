@@ -37,6 +37,9 @@ struct AppShellView: View {
         .preferredColorScheme(.dark)
         .toolbarBackground(.hidden, for: .windowToolbar)
         .safeAreaPadding(.bottom, nowPlaying.isActive ? 82 : 0)
+        .overlay(alignment: .center) {
+            PlaybackLaunchOverlay()
+        }
         .overlay(alignment: .bottom) {
             NowPlayingBar()
                 .frame(maxWidth: 1180)
@@ -100,6 +103,46 @@ struct AppShellView: View {
         case "movies": return "film"
         case "tvshows": return "tv"
         default: return "rectangle.stack"
+        }
+    }
+}
+
+private struct PlaybackLaunchOverlay: View {
+    @EnvironmentObject private var nowPlaying: NowPlaying
+
+    var body: some View {
+        if nowPlaying.isLaunching {
+            ZStack {
+                Rectangle()
+                    .fill(.black.opacity(0.24))
+                    .ignoresSafeArea()
+
+                VStack(spacing: 14) {
+                    ProgressView()
+                        .controlSize(.large)
+                        .tint(.white)
+                    VStack(spacing: 4) {
+                        Text("Starting mpv…")
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(.white)
+                        if let name = nowPlaying.itemName {
+                            Text(name)
+                                .font(.callout)
+                                .foregroundStyle(.white.opacity(0.72))
+                                .lineLimit(1)
+                        }
+                    }
+                }
+                .padding(.horizontal, 28)
+                .padding(.vertical, 22)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .strokeBorder(.white.opacity(0.16))
+                }
+                .shadow(color: .black.opacity(0.28), radius: 30, y: 14)
+            }
+            .transition(.opacity.combined(with: .scale(scale: 0.98)))
         }
     }
 }

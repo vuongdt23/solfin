@@ -3,7 +3,7 @@ import Foundation
 public extension APIClient {
 
     private static let episodeFields =
-        "Overview,MediaSources,MediaStreams,RunTimeTicks,IndexNumber,ParentIndexNumber,SeriesId,SeasonId,ImageTags,ParentBackdropItemId,ParentBackdropImageTags,SeriesPrimaryImageTag,ProductionYear,OfficialRating,CommunityRating,Genres"
+        "Overview,MediaSources,MediaStreams,RunTimeTicks,IndexNumber,ParentIndexNumber,SeriesId,SeasonId,ImageTags,ParentBackdropItemId,ParentBackdropImageTags,ParentLogoItemId,ParentLogoImageTag,SeriesPrimaryImageTag,ProductionYear,OfficialRating,CommunityRating,Genres"
 
     /// Seasons of a series, ordered.
     func seasons(seriesId: String) async throws -> [BaseItem] {

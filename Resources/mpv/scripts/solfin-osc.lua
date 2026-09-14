@@ -25,11 +25,17 @@ mp.set_property("osc", "no")
 --------------------------------------------------------------------------------
 
 local user_opts = {
-    accent_color   = "#0A84FF",  -- macOS-blue, matches the SwiftUI app tint
-    hidetimeout    = 1800,       -- ms of pointer stillness before the OSC hides
-    fadeduration   = 200,        -- ms fade in/out
-    seek_precise    = true,      -- exact seeks from the seekbar (accurate, slower)
-    jump_amount    = 10,         -- seconds for the skip-back / skip-forward buttons
+    accent_color      = "#FF4F0F", -- solar orange, matches the SwiftUI app tint
+    solar_gold_color  = "#FFAD29", -- warm highlight for the Solfin sun motif
+    solar_red_color   = "#F2140F", -- hot inner accent for the Solfin sun motif
+    logo_path         = "",        -- optional raw BGRA Jellyfin logo rendered in the top bar
+    logo_width        = 0,         -- source pixel width for logo_path
+    logo_height       = 0,         -- source pixel height for logo_path
+    logo_overlay_id   = 43,        -- mpv overlay id reserved for the title logo
+    hidetimeout       = 1800,      -- ms of pointer stillness before the OSC hides
+    fadeduration      = 200,       -- ms fade in/out
+    seek_precise      = true,      -- exact seeks from the seekbar (accurate, slower)
+    jump_amount       = 10,        -- seconds for the skip-back / skip-forward buttons
 }
 
 --------------------------------------------------------------------------------
@@ -47,6 +53,7 @@ local DS = {
     btn_gap       = 11,         -- gap between buttons
     time_size     = 13,         -- timecode font size
     control_size  = 13,         -- compact text-control font size
+    now_title_size = 12,        -- small media title above the progress bar
     title_size    = 24,         -- top-bar title font size
     corner_r      = 3,          -- rounded-rect radius for the seekbar
     scrim_alpha   = 0x60,       -- bottom gradient scrim opacity (00=opaque)
@@ -73,6 +80,8 @@ end
 local COL = {}
 local function rebuild_colors()
     COL.accent = hex_to_ass(user_opts.accent_color)
+    COL.gold   = hex_to_ass(user_opts.solar_gold_color)
+    COL.red    = hex_to_ass(user_opts.solar_red_color)
     COL.white  = "FFFFFF"
     COL.track  = "FFFFFF"
     COL.black  = "000000"
@@ -106,6 +115,8 @@ local state = {
     menu         = { open = false, kind = nil, items = {}, scroll = 0 },  -- popup track/settings menu
     thumbfast    = nil,            -- {width,height,disabled,available} from thumbfast-info
     thumb_shown  = false,          -- whether we currently have a thumbnail requested
+    logo_shown   = false,          -- whether the top-bar logo overlay is currently visible
+    logo_draw    = nil,            -- last rendered logo geometry/path to avoid overlay spam
 
     mouse_x      = -1,             -- virtual coords, -1 when outside window
     mouse_y      = -1,
@@ -126,6 +137,7 @@ local state = {
 
 local overlay = mp.create_osd_overlay("ass-events")
 local clear_thumb
+local clear_logo
 
 -- Hit-testable elements, rebuilt each layout pass: name -> {x1,y1,x2,y2}
 local hitboxes = {}
@@ -254,6 +266,54 @@ end
 -- Rough text width in virtual units (no font metrics available in ASS).
 local function estimate_text_width(text, size)
     return #tostring(text) * size * 0.52
+end
+
+local function logo_available()
+    return user_opts.logo_path ~= "" and user_opts.logo_width > 0 and user_opts.logo_height > 0
+end
+
+local function logo_virtual_size(max_w, max_h)
+    local lw, lh = user_opts.logo_width, user_opts.logo_height
+    local scale = math.min(max_w / lw, max_h / lh, 1)
+    return lw * scale, lh * scale
+end
+
+clear_logo = function()
+    if state.logo_shown then
+        mp.command_native_async({"overlay-remove", user_opts.logo_overlay_id}, function() end)
+        state.logo_shown = false
+        state.logo_draw = nil
+    end
+end
+
+local function render_logo(x, y, w, h)
+    if not logo_available() then
+        clear_logo()
+        return
+    end
+    local draw = {
+        path = user_opts.logo_path,
+        x = math.floor(to_real(x)),
+        y = math.floor(to_real(y)),
+        w = math.floor(to_real(w)),
+        h = math.floor(to_real(h)),
+        src_w = user_opts.logo_width,
+        src_h = user_opts.logo_height,
+    }
+    local prev = state.logo_draw
+    if prev and prev.path == draw.path and prev.x == draw.x and prev.y == draw.y
+       and prev.w == draw.w and prev.h == draw.h
+       and prev.src_w == draw.src_w and prev.src_h == draw.src_h then
+        return
+    end
+    mp.command_native_async({"overlay-add", user_opts.logo_overlay_id,
+                             draw.x, draw.y,
+                             draw.path, 0, "bgra",
+                             draw.src_w, draw.src_h,
+                             draw.src_w * 4,
+                             draw.w, draw.h}, function() end)
+    state.logo_shown = true
+    state.logo_draw = draw
 end
 
 -- Vertical gradient scrim built from stacked bands (ASS has no native gradient).
@@ -389,6 +449,44 @@ local function icon_window(ass, cx, cy, color, ab, restore)
     else
         ass:rect_cw(-5.5, -5.5, 5.5, 5.5)
     end
+    ass:draw_stop()
+end
+
+local function icon_solar_mark(ass, cx, cy, radius, alpha_fn, hot)
+    -- Small Solfin signature: a warm sun tucked into the progress track.
+    -- Layered circles fake a radial glow with ASS primitives.
+    local glow_alpha = hot and 0xA8 or 0xC4
+    local mid_alpha = hot and 0x48 or 0x64
+
+    ass:new_event()
+    ass:append(shape_style(COL.gold, alpha_fn(glow_alpha)))
+    ass:pos(0, 0)
+    ass:draw_start()
+    ass:round_rect_cw(cx - radius * 2.1, cy - radius * 2.1,
+                      cx + radius * 2.1, cy + radius * 2.1, radius * 2.1)
+    ass:draw_stop()
+
+    ass:new_event()
+    ass:append(shape_style(COL.accent, alpha_fn(mid_alpha)))
+    ass:pos(0, 0)
+    ass:draw_start()
+    ass:round_rect_cw(cx - radius * 1.35, cy - radius * 1.35,
+                      cx + radius * 1.35, cy + radius * 1.35, radius * 1.35)
+    ass:draw_stop()
+
+    ass:new_event()
+    ass:append(shape_style(hot and COL.red or COL.gold, alpha_fn(0)))
+    ass:pos(0, 0)
+    ass:draw_start()
+    ass:round_rect_cw(cx - radius, cy - radius, cx + radius, cy + radius, radius)
+    ass:draw_stop()
+
+    ass:new_event()
+    ass:append(shape_style(COL.gold, alpha_fn(hot and 0x18 or 0x28)))
+    ass:pos(0, 0)
+    ass:draw_start()
+    ass:round_rect_cw(cx - radius * 0.42, cy - radius * 0.42,
+                      cx + radius * 0.42, cy + radius * 0.42, radius * 0.42)
     ass:draw_stop()
 end
 
@@ -627,6 +725,7 @@ local function render()
     local alpha_mul = state.opacity            -- 0..1
     if alpha_mul <= 0 then
         clear_thumb()
+        clear_logo()
         overlay.data = ""
         overlay:update()
         return
@@ -655,14 +754,20 @@ local function render()
             ass:pos(0, 0)
             ass:draw_start(); ass:rect_cw(0, i * h, W, (i + 1) * h + 1); ass:draw_stop()
         end
-        if state.title and #state.title > 0 then
+        local top_y = DS.top_height / 2
+        if logo_available() then
+            local lw, lh = logo_virtual_size(math.min(W * 0.42, 420), 42)
+            render_logo(DS.bar_pad_x, top_y - lh / 2 - 1, lw, lh)
+        elseif state.title and #state.title > 0 then
+            clear_logo()
             ass:new_event()
             ass:append(string.format("{\\an4\\fs%d\\b1\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
                                      DS.title_size, DS.font, COL.white, a(0)))
-            ass:pos(DS.bar_pad_x, DS.top_height / 2 - 2)
+            ass:pos(DS.bar_pad_x, top_y - 2)
             ass:append(state.title)
+        else
+            clear_logo()
         end
-        local top_y = DS.top_height / 2
         local clx = W - DS.bar_pad_x - DS.btn_size / 2
         local maxx = clx - 28
         local minx = maxx - 28
@@ -690,6 +795,19 @@ local function render()
     hitboxes.seekbar = { x1 = sb_x1, y1 = sb_y - 12, x2 = sb_x2, y2 = sb_y + 12 }
 
     local dur = (state.duration and state.duration > 0) and state.duration or nil
+
+    -- Small now-playing identity directly above the progress bar. For episodes this
+    -- is the forced media title from Swift: “Series · S1E2 · Episode Name”. Movies
+    -- use their media name. Clipped to the seekbar width so it never hits controls.
+    if state.title and #state.title > 0 then
+        ass:new_event()
+        ass:append(string.format("{\\an1\\fs%d\\b1\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&\\clip(%d,%d,%d,%d)}",
+                                 DS.now_title_size, DS.font, COL.white, a(0x24),
+                                 math.floor(sb_x1), math.floor(sb_y - 28), math.floor(sb_x2), math.floor(sb_y - 8)))
+        ass:pos(sb_x1, sb_y - 14)
+        ass:append(state.title)
+    end
+
     local function time_to_x(t)
         if not dur then return sb_x1 end
         return sb_x1 + sb_w * clamp(t / dur, 0, 1)
@@ -735,6 +853,12 @@ local function render()
     ass:draw_start()
     ass:round_rect_cw(sb_x1, sb_y - sb_hh, fill_x, sb_y + sb_hh, DS.corner_r)
     ass:draw_stop()
+
+    -- Solar signature at the live edge of playback: replaces the old blue-only feel
+    -- with Solfin's sun motif while staying tiny enough not to fight thumbnails/chapters.
+    if dur and frac > 0.006 then
+        icon_solar_mark(ass, fill_x, sb_y, 3.2, a, state.hovered == "seekbar" or state.drag == "seek")
+    end
 
     -- Chapter ticks
     if dur and #state.chapters > 1 then
@@ -1265,6 +1389,18 @@ end)
 
 mp.observe_property("media-title", "string", function(_, v)
     state.title = v or ""; request_tick()
+end)
+
+mp.register_event("shutdown", function()
+    clear_thumb()
+    clear_logo()
+end)
+
+mp.register_script_message("set-logo", function(path, width, height)
+    user_opts.logo_path = path or ""
+    user_opts.logo_width = tonumber(width) or 0
+    user_opts.logo_height = tonumber(height) or 0
+    request_tick()
 end)
 
 -- thumbfast announces its thumbnail dimensions / availability here.

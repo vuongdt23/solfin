@@ -9,7 +9,7 @@ public extension APIClient {
 
     // Common set of fields we want back on items.
     private static let itemFields =
-        "Overview,MediaSources,MediaStreams,ProductionYear,IndexNumber,ParentIndexNumber,DateCreated,OfficialRating,CommunityRating,Genres,ParentBackdropItemId,ParentBackdropImageTags,SeriesPrimaryImageTag"
+        "Overview,MediaSources,MediaStreams,ProductionYear,IndexNumber,ParentIndexNumber,DateCreated,OfficialRating,CommunityRating,Genres,ParentBackdropItemId,ParentBackdropImageTags,ParentLogoItemId,ParentLogoImageTag,SeriesPrimaryImageTag"
 
     /// Top-level libraries ("Views") for the signed-in user.
     func views() async throws -> [BaseItem] {
@@ -219,11 +219,18 @@ public extension APIClient {
     /// Transparent title treatment used by featured media when Jellyfin has one.
     func logoImageURL(for item: BaseItem, maxWidth: Int? = 1000) -> URL? {
         guard let tag = item.imageTags?["Logo"] else { return nil }
-        var comps = URLComponents(url: baseURL.appendingPathComponent("Items/\(item.id)/Images/Logo"),
+        return logoImageURL(itemId: item.id, tag: tag, maxWidth: maxWidth)
+    }
+
+    /// Transparent title logo by item id. `tag` is optional so episodes can ask for
+    /// their parent series logo even when browse metadata did not include that tag.
+    func logoImageURL(itemId: String, tag: String? = nil, maxWidth: Int? = 1000) -> URL? {
+        var comps = URLComponents(url: baseURL.appendingPathComponent("Items/\(itemId)/Images/Logo"),
                                   resolvingAgainstBaseURL: false)
-        var query = [URLQueryItem(name: "tag", value: tag),
-                     URLQueryItem(name: "quality", value: "100")]
+        var query = [URLQueryItem(name: "quality", value: "100")]
+        if let tag { query.append(URLQueryItem(name: "tag", value: tag)) }
         if let maxWidth { query.append(URLQueryItem(name: "maxWidth", value: String(maxWidth))) }
+        if let token = session?.accessToken { query.append(URLQueryItem(name: "api_key", value: token)) }
         comps?.queryItems = query
         return comps?.url
     }

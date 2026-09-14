@@ -18,6 +18,7 @@ final class NowPlaying: ObservableObject {
     @Published var selectedAudioTrack: Int?
     @Published var selectedVideoTrack: Int?
     @Published var selectedSubtitleTrack: Int?
+    @Published var isLaunching = false
     @AppStorage("solfin.autoplayNext") var autoplayNext: Bool = true
 
     private var controller: PlaybackController?
@@ -29,15 +30,23 @@ final class NowPlaying: ObservableObject {
     private var currentItem: BaseItem?
     private var onError: ((String) -> Void)?
     private var userStopped = false
+    private var playbackGeneration = UUID()
 
     var isActive: Bool {
-        controller != nil && state != .stopped && state != .idle
+        // Do not surface the Now Playing bar until mpv has actually launched and
+        // playback has transitioned out of the preflight/network startup phase.
+        controller != nil && (state == .playing || state == .paused)
     }
 
     func play(item: BaseItem, api: APIClient, config: PlaybackController.Config,
               startOver: Bool = false, audioTrack: Int? = nil,
               videoTrack: Int? = nil, subtitleTrack: Int? = nil,
               onError: @escaping (String) -> Void) {
+        // Invalidate callbacks from any previous mpv session before stopping it; its
+        // async teardown can otherwise race the new startup and clear the loading UI.
+        let generation = UUID()
+        playbackGeneration = generation
+
         // Tear down any previous session first (mark so its stop doesn't cancel autoplay).
         userStopped = true
         progressTask?.cancel()
@@ -54,6 +63,7 @@ final class NowPlaying: ObservableObject {
         itemName = item.name
         subtitle = Self.episodeSubtitle(item)
         state = .starting
+        isLaunching = true
         positionSeconds = Ticks.toSeconds(item.userData?.playbackPositionTicks)
         durationSeconds = Ticks.toSeconds(item.runTimeTicks)
         artworkURL = api.playablePosterURL(for: item, maxHeight: 160)
@@ -71,9 +81,11 @@ final class NowPlaying: ObservableObject {
         var appliedInitialTracks = false
         c.onStateChange = { [weak self] state, pos in
             Task { @MainActor in
-                self?.state = state
-                self?.positionSeconds = pos
-                self?.updateProgressClock(for: state)
+                guard let self, self.playbackGeneration == generation else { return }
+                self.state = state
+                self.positionSeconds = pos
+                if state != .starting { self.isLaunching = false }
+                self.updateProgressClock(for: state)
                 if state == .playing, !appliedInitialTracks {
                     appliedInitialTracks = true
                     if let audioTrack { c.selectAudioTrack(id: audioTrack) }
@@ -86,13 +98,14 @@ final class NowPlaying: ObservableObject {
         }
         c.onMediaInfoChange = { [weak self] duration, seekable in
             Task { @MainActor in
-                if duration > 0 { self?.durationSeconds = duration }
-                self?.isSeekable = seekable
+                guard let self, self.playbackGeneration == generation else { return }
+                if duration > 0 { self.durationSeconds = duration }
+                self.isSeekable = seekable
             }
         }
         c.onPlaybackStreams = { [weak self] streams, defaultAudio, defaultSubtitle in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.playbackGeneration == generation else { return }
                 self.mediaStreams = streams
                 self.selectedAudioTrack = audioTrack
                     ?? self.defaultTrackIndex(type: "Audio", serverDefault: defaultAudio)
@@ -103,17 +116,27 @@ final class NowPlaying: ObservableObject {
                                                                serverDefault: defaultSubtitle))
             }
         }
-        c.onError = { err in
-            Task { @MainActor in onError(err.localizedDescription) }
+        c.onError = { [weak self] err in
+            Task { @MainActor in
+                guard let self, self.playbackGeneration == generation else { return }
+                self.isLaunching = false
+                onError(err.localizedDescription)
+            }
         }
         c.onFinished = { [weak self] naturalEnd in
-            Task { @MainActor in self?.handleFinished(naturalEnd: naturalEnd) }
+            Task { @MainActor in
+                guard let self, self.playbackGeneration == generation else { return }
+                self.isLaunching = false
+                self.handleFinished(naturalEnd: naturalEnd)
+            }
         }
         controller = c
         c.start()
     }
 
     func stop() {
+        playbackGeneration = UUID()
+        isLaunching = false
         userStopped = true
         progressTask?.cancel()
         controller?.stop()
@@ -218,8 +241,8 @@ final class NowPlaying: ObservableObject {
 
     static func episodeSubtitle(_ item: BaseItem) -> String? {
         guard item.type == "Episode" else { return nil }
-        let s = item.parentIndexNumber.map { "S\($0)" } ?? ""
-        let e = item.indexNumber.map { "E\($0)" } ?? ""
+        let s = item.parentIndexNumber.map { String(format: "S%02d", $0) } ?? ""
+        let e = item.indexNumber.map { String(format: "E%02d", $0) } ?? ""
         return "\(item.seriesName ?? "") · \(s)\(e)".trimmingCharacters(in: .whitespaces)
     }
 }
