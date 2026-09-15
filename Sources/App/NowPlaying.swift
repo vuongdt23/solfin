@@ -194,6 +194,9 @@ final class NowPlaying: ObservableObject {
     func selectAudioTrack(_ id: Int) { selectedAudioTrack = id; controller?.selectAudioTrack(id: id) }
     func selectVideoTrack(_ id: Int) { selectedVideoTrack = id; controller?.selectVideoTrack(id: id) }
     func selectSubtitleTrack(_ id: Int?) { selectedSubtitleTrack = id; controller?.selectSubtitleTrack(id: id) }
+    func setSubtitleDelay(_ seconds: Double) { controller?.setSubtitleDelay(seconds) }
+    func setSubtitlePosition(_ percent: Int) { controller?.setSubtitlePosition(percent) }
+    func setSubtitleScale(_ scale: Double) { controller?.setSubtitleScale(scale) }
     func playPrevious() {
         guard hasPreviousInQueue, !isQueueTransitioning else { return }
         if queueIndex > 0 { isQueueTransitioning = true }

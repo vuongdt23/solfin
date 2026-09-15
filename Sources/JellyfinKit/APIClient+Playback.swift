@@ -42,6 +42,24 @@ public struct DirectPlayPlan: Sendable {
 
 public extension APIClient {
 
+    /// Upload a local external subtitle to Jellyfin, matching the web client's
+    /// Videos/{id}/Subtitles endpoint.
+    func uploadSubtitle(itemId: String, data: Data, fileExtension: String,
+                        language: String, forced: Bool = false,
+                        hearingImpaired: Bool = false) async throws {
+        let format = fileExtension.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        let payload: [String: Any] = [
+            "Language": language,
+            "Format": format,
+            "IsForced": forced,
+            "IsHearingImpaired": hearingImpaired,
+            "Data": data.base64EncodedString()
+        ]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let request = try makeRequest(path: "Videos/\(itemId)/Subtitles", method: "POST", body: body)
+        try await send(request)
+    }
+
     /// Ask the server for media sources and resolve a direct-play plan for `item`.
     /// v1 does not negotiate transcoding: we require a direct-play/-stream source.
     func directPlayPlan(for item: BaseItem) async throws -> DirectPlayPlan {
