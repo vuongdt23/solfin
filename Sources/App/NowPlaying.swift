@@ -57,10 +57,8 @@ final class NowPlaying: ObservableObject {
         controller?.stop()
         userStopped = false
 
-        let playbackQueue = Self.normalizedQueue(queue, currentItem: item)
-        let playbackQueueIndex = queueIndex.flatMap { playbackQueue.indices.contains($0) ? $0 : nil }
-            ?? playbackQueue.firstIndex(where: { $0.id == item.id })
-            ?? 0
+        let playbackQueue = Self.normalizedQueue(queue, currentItem: item, startIndex: queueIndex)
+        let playbackQueueIndex = 0
         let itemToPlay = playbackQueue[playbackQueueIndex]
 
         self.api = api
@@ -294,12 +292,16 @@ final class NowPlaying: ObservableObject {
         }
     }
 
-    private static func normalizedQueue(_ queue: [BaseItem], currentItem: BaseItem) -> [BaseItem] {
+    private static func normalizedQueue(_ queue: [BaseItem], currentItem: BaseItem,
+                                        startIndex: Int?) -> [BaseItem] {
         var seen = Set<String>()
         let unique = queue.filter { seen.insert($0.id).inserted }
-        if unique.isEmpty { return [currentItem] }
-        if unique.contains(where: { $0.id == currentItem.id }) { return unique }
-        return [currentItem] + unique
+        guard !unique.isEmpty else { return [currentItem] }
+
+        let start = startIndex.flatMap { unique.indices.contains($0) ? $0 : nil }
+            ?? unique.firstIndex(where: { $0.id == currentItem.id })
+        guard let start else { return [currentItem] }
+        return Array(unique[start...])
     }
 
     static func episodeSubtitle(_ item: BaseItem) -> String? {

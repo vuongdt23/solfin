@@ -981,7 +981,7 @@ local function render()
 
     -- Previous queued item. Disabled when there is no previous episode.
     place_button("prev")
-    local prev_enabled = state.queue_index > 0
+    local prev_enabled = state.queue_index > 0 or ((state.time_pos or 0) > 5)
     icon_queue_prev_next(ass, cx, row_y,
                          prev_enabled and col_for("prev") or COL.track,
                          a(prev_enabled and 0 or 0x86), false)
@@ -1308,7 +1308,7 @@ local function on_mbtn_up()
     if point_in(hitboxes.playpause, mx, my) then
         mp.commandv("cycle", "pause"); close_menu()
     elseif point_in(hitboxes.prev, mx, my) then
-        if state.queue_index > 0 then mp.commandv("script-message", "solfin-prev") end
+        if state.queue_index > 0 or ((state.time_pos or 0) > 5) then mp.commandv("script-message", "solfin-prev") end
         close_menu()
     elseif point_in(hitboxes.skip_back, mx, my) then
         mp.commandv("seek", -user_opts.jump_amount, "relative+exact"); close_menu()
