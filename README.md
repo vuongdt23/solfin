@@ -124,7 +124,6 @@ solfin/
 - Direct-play only — no transcoding, so very high-bitrate files need adequate bandwidth.
 - Single server; limited keyboard navigation and no library search yet.
   mpv is used from Homebrew (not bundled/notarized).
-- See `docs/PLAN.md` → *As-built deviations* for the full record.
 
 ## Development disclosure
 
