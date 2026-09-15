@@ -25,8 +25,9 @@ state (resume points, watched status) in sync.
 
 - **Native SwiftUI** browsing: Login → Home (Continue Watching, Next Up, library shelves)
   → library grid → item / series detail, with async-cached poster & backdrop art.
-- **Series → seasons → episodes** navigation with **next-episode autoplay** on natural
-  end (never on manual quit), crossing season boundaries.
+- **Series → seasons → episodes** navigation with queue-based playback: starting an
+  episode queues that episode and the following episodes, with next-episode autoplay on
+  natural end (never on manual quit).
 - **Direct play only** — requests the static original file (`?static=true`); no transcode
   negotiation.
 - **Progress sync** — reports `Sessions/Playing` / `Progress` / `Stopped`; honours and
@@ -50,15 +51,16 @@ four targets:
 | Target | Kind | Role |
 |---|---|---|
 | `JellyfinKit` | static lib | Async `URLSession` REST client + `Codable` models: auth (MediaBrowser header + Keychain), browsing, `PlaybackInfo`, direct-stream URLs, progress reporting, seasons/episodes. No third-party deps. |
-| `PlaybackEngine` | static lib | Launches external mpv (`MPVProcess`), drives it over JSON IPC (`MPVIPC`), and orchestrates a play session (`PlaybackController`) — resume, progress timer, exactly-once stop, next-episode signal. |
+| `PlaybackEngine` | static lib | Launches external mpv (`MPVProcess`), drives it over JSON IPC (`MPVIPC`), and orchestrates playback (`PlaybackController`) — resume, progress timer, exactly-once stop, and queue-based episode transitions. |
 | `solfin` | macOS app | SwiftUI UI, `AppState`, `NowPlaying`, and the bundled `Resources/mpv` config + app icon. |
 | `solfin-probe` | CLI tool | Headless harness to exercise the stack against a real server (`info`/`login`/`browse`/`plan`/`play`/`seasons`/`episodes`/`next`). |
 
 **Playback flow:** `POST /Items/{id}/PlaybackInfo` → pick a direct-play source → build
 `…/Videos/{id}/stream?static=true&mediaSourceId=…&api_key=…` → spawn mpv with our
-config-dir + a per-play IPC socket, `loadfile` at the resume position → report
-`Sessions/Playing`, observe `time-pos`/`pause`, post `Progress` ~every 10 s, and
-`Stopped` on end/quit.
+config-dir + a per-play IPC socket at the resume position → report `Sessions/Playing`,
+observe `time-pos`/`pause`, post `Progress` ~every 10 s, and `Stopped` on end/quit.
+Queued episode transitions reuse the same mpv process and call `loadfile` only when the
+next item is selected or reached naturally.
 
 ## Requirements
 
@@ -73,17 +75,17 @@ config-dir + a per-play IPC socket, `loadfile` at the resume position → report
 xcodegen generate                 # regenerate solfin.xcodeproj from project.yml
 open solfin.xcodeproj             # …or build from the CLI:
 xcodebuild -scheme solfin -configuration Debug -destination 'platform=macOS' build
-open ~/Library/Developer/Xcode/DerivedData/solfin-*/Build/Products/Debug/solfin.app
+open ~/Library/Developer/Xcode/DerivedData/solfin-*/Build/Products/Debug/Solfin.app
 ```
 
-In the app: sign in (server URL, username, password), pick a title, hit **Play in mpv**.
+In the app: sign in (server URL, username, password), pick a title, hit **Play**.
 
 ## Testing
 
 Unit tests (no network — `URLProtocol`-mocked):
 
 ```sh
-xcodebuild -scheme solfinTests -configuration Debug -destination 'platform=macOS' test
+xcodebuild test -scheme solfin -destination 'platform=macOS'
 ```
 
 Live end-to-end checks via the probe (reads `SOLFIN_SERVER` / `SOLFIN_USER` /
@@ -113,16 +115,19 @@ solfin/
 ├─ Sources/{JellyfinKit,PlaybackEngine,App,Probe}/
 ├─ Tests/                      XCTest suites
 ├─ Resources/mpv/              mpv.conf, input.conf, solfin-osc + thumbfast + Inter
-├─ Resources/Assets.xcassets/  AppIcon
-└─ docs/PLAN.md                design doc + as-built deviations
+└─ Resources/Assets.xcassets/  AppIcon
 ```
 
 ## Known limitations / not yet done
 
 - Direct-play only — no transcoding, so very high-bitrate files need adequate bandwidth.
-- Single server; no in-app Settings screen, keyboard navigation, or library search yet.
+- Single server; limited keyboard navigation and no library search yet.
   mpv is used from Homebrew (not bundled/notarized).
-- See `docs/PLAN.md` → *As-built deviations* for the full record.
+
+## Development disclosure
+
+This project is developed with AI assistance. Human maintainers review, test, and are
+responsible for all changes before they are merged or released.
 
 ## Acknowledgements
 
