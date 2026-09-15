@@ -507,15 +507,16 @@ local function icon_queue_prev_next(ass, cx, cy, color, ab, forward)
     ass:pos(cx, cy)
     ass:draw_start()
     if forward then
-        -- >>| : two play chevrons plus a stop bar.
-        ass:move_to(-9, -7); ass:line_to(-2, 0); ass:line_to(-9, 7); ass:line_to(-9, -7)
-        ass:move_to(-1, -7); ass:line_to(6, 0); ass:line_to(-1, 7); ass:line_to(-1, -7)
-        ass:rect_cw(8, -7, 10, 7)
+        -- >>| : two play chevrons plus a stop bar. Keep the bar close to,
+        -- but not overlapping, the chevrons so disabled/alpha rendering stays crisp.
+        ass:move_to(-10, -7); ass:line_to(-3, 0); ass:line_to(-10, 7); ass:line_to(-10, -7)
+        ass:move_to(-2, -7);  ass:line_to(5, 0);  ass:line_to(-2, 7);  ass:line_to(-2, -7)
+        ass:rect_cw(7, -7, 9, 7)
     else
-        -- |<< : stop bar plus two reverse chevrons.
-        ass:rect_cw(-10, -7, -8, 7)
-        ass:move_to(6, -7); ass:line_to(-1, 0); ass:line_to(6, 7); ass:line_to(6, -7)
-        ass:move_to(-2, -7); ass:line_to(-9, 0); ass:line_to(-2, 7); ass:line_to(-2, -7)
+        -- |<< : mirror of the forward icon with matching non-overlapping spacing.
+        ass:rect_cw(-9, -7, -7, 7)
+        ass:move_to(2, -7);  ass:line_to(-5, 0); ass:line_to(2, 7);  ass:line_to(2, -7)
+        ass:move_to(10, -7); ass:line_to(3, 0);  ass:line_to(10, 7); ass:line_to(10, -7)
     end
     ass:draw_stop()
 end
