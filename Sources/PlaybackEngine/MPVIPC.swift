@@ -103,11 +103,16 @@ public final class MPVIPC {
     }
 
     /// Build the argument array for a `loadfile` command (pure; unit tested).
-    public static func loadFileArgs(url: String, startSeconds: Double?) -> [Any] {
+    public static func loadFileArgs(url: String, startSeconds: Double?, mediaTitle: String? = nil) -> [Any] {
+        var options: [String] = []
         if let start = startSeconds, start > 0 {
-            return ["loadfile", url, "replace", 0, "start=\(Int(start))"]
+            options.append("start=\(Int(start))")
         }
-        return ["loadfile", url, "replace"]
+        if let mediaTitle, !mediaTitle.isEmpty {
+            options.append("force-media-title=\(mediaTitle)")
+        }
+        guard !options.isEmpty else { return ["loadfile", url, "replace"] }
+        return ["loadfile", url, "replace", 0] + options
     }
 
     /// Send a command array, e.g. `["loadfile", url]`. Returns the request_id used.
@@ -154,8 +159,12 @@ public final class MPVIPC {
         command(["get_property", name])
     }
 
-    public func loadFile(_ url: String, startSeconds: Double? = nil) {
-        command(Self.loadFileArgs(url: url, startSeconds: startSeconds))
+    public func loadFile(_ url: String, startSeconds: Double? = nil, mediaTitle: String? = nil) {
+        command(Self.loadFileArgs(url: url, startSeconds: startSeconds, mediaTitle: mediaTitle))
+    }
+
+    public func scriptMessage(_ args: [Any]) {
+        command(["script-message"] + args)
     }
 
     public func quit() {

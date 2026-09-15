@@ -203,8 +203,15 @@ struct NowPlayingBar: View {
     var body: some View {
         if nowPlaying.isActive, let name = nowPlaying.itemName {
             HStack(spacing: 14) {
-                PosterImage(url: nowPlaying.artworkURL).frame(width: 52, height: 52).clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 9))
+                ZStack {
+                    PosterImage(url: nowPlaying.artworkURL).frame(width: 52, height: 52).clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 9))
+                    if nowPlaying.isQueueTransitioning {
+                        RoundedRectangle(cornerRadius: 9).fill(.black.opacity(0.38))
+                        ProgressView().controlSize(.small).scaleEffect(0.82).tint(.white)
+                    }
+                }
+                .frame(width: 52, height: 52)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(name).font(.callout.weight(.semibold)).lineLimit(1)
                     Text(nowPlaying.subtitle ?? nowPlaying.state.rawValue.capitalized)
@@ -218,11 +225,16 @@ struct NowPlayingBar: View {
                 }).disabled(!nowPlaying.isSeekable).accessibilityLabel("Playback position")
                 Text("−\(timeString(max(0, nowPlaying.durationSeconds - displayPosition)))")
                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                control("gobackward.15", "Back 15 seconds") { nowPlaying.skip(seconds: -15) }
+                control("backward.end.fill", "Previous episode", enabled: nowPlaying.hasPreviousInQueue && !nowPlaying.isQueueTransitioning) { nowPlaying.playPrevious() }
+                control("gobackward.15", "Back 15 seconds", enabled: !nowPlaying.isQueueTransitioning) { nowPlaying.skip(seconds: -15) }
                 control(nowPlaying.state == .paused ? "play.fill" : "pause.fill",
-                        nowPlaying.state == .paused ? "Play" : "Pause") { nowPlaying.togglePause() }
-                control("goforward.30", "Forward 30 seconds") { nowPlaying.skip(seconds: 30) }
-                trackMenu
+                        nowPlaying.state == .paused ? "Play" : "Pause", enabled: !nowPlaying.isQueueTransitioning) { nowPlaying.togglePause() }
+                control("goforward.30", "Forward 30 seconds", enabled: !nowPlaying.isQueueTransitioning) { nowPlaying.skip(seconds: 30) }
+                control("forward.end.fill", "Next episode", enabled: nowPlaying.hasNextInQueue && !nowPlaying.isQueueTransitioning) { nowPlaying.playNext() }
+                if nowPlaying.isQueueTransitioning {
+                    ProgressView().controlSize(.small).scaleEffect(0.72)
+                }
+                trackMenu.disabled(nowPlaying.isQueueTransitioning).opacity(nowPlaying.isQueueTransitioning ? 0.35 : 1)
                 control("xmark", "Stop") { nowPlaying.stop() }
             }
             .padding(10)
@@ -283,9 +295,12 @@ struct NowPlayingBar: View {
         track.stream.displayTitle ?? track.stream.language ?? "Track \(track.id)"
     }
     private var displayPosition: Double { dragging ? draftPosition : nowPlaying.positionSeconds }
-    private func control(_ icon: String, _ label: String, action: @escaping () -> Void) -> some View {
+    private func control(_ icon: String, _ label: String, enabled: Bool = true,
+                         action: @escaping () -> Void) -> some View {
         Button(action: action) { Image(systemName: icon).frame(width: 26, height: 26) }
             .buttonStyle(.plain).accessibilityLabel(label)
+            .disabled(!enabled)
+            .opacity(enabled ? 1 : 0.35)
     }
     private func timeString(_ seconds: Double) -> String {
         let value = max(0, Int(seconds)); let hours = value / 3600

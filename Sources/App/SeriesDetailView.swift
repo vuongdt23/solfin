@@ -78,9 +78,9 @@ struct SeriesDetailView: View {
                                     .buttonStyle(.plain).font(.callout.weight(.semibold)).foregroundStyle(.white)
                             }
                         }
-                        if let next = nextEpisode {
-                            Button { play(next, startOver: false) } label: {
-                                Label(playLabel(next), systemImage: "play.fill").padding(.horizontal, 8).padding(.vertical, 3)
+                        if let episode = defaultPlaybackEpisode {
+                            Button { play(episode, startOver: false, queue: allQueuedEpisodes, queueIndex: allQueuedEpisodes.firstIndex(where: { $0.id == episode.id })) } label: {
+                                Label("Play", systemImage: "play.fill").padding(.horizontal, 8).padding(.vertical, 3)
                             }.buttonStyle(.borderedProminent).controlSize(.large).tint(.white).foregroundStyle(.black)
                         }
                     }
@@ -134,8 +134,8 @@ struct SeriesDetailView: View {
                 ForEach(episodes) { episode in
                     NavigationLink(value: episode) { EpisodeCard(episode: episode) }.buttonStyle(.plain)
                         .contextMenu {
-                            Button(resumeSeconds(episode) > 0 ? "Resume" : "Play") { play(episode, startOver: false) }
-                            if resumeSeconds(episode) > 0 { Button("Start Over") { play(episode, startOver: true) } }
+                            Button(resumeSeconds(episode) > 0 ? "Resume" : "Play") { playEpisodeFromGrid(episode, startOver: false) }
+                            if resumeSeconds(episode) > 0 { Button("Start Over") { playEpisodeFromGrid(episode, startOver: true) } }
                         }
                 }
             }.opacity(loadingEpisodes ? 0.55 : 1)
@@ -155,16 +155,25 @@ struct SeriesDetailView: View {
     }
 
     private var selectedSeason: BaseItem? { seasons.first { $0.id == selectedSeasonId } }
-    private var nextEpisode: BaseItem? { episodes.first { $0.userData?.played != true } }
+    private var defaultPlaybackEpisode: BaseItem? {
+        episodes.first { resumeSeconds($0) > 0 }
+            ?? episodes.first { $0.userData?.played != true }
+            ?? episodes.first
+    }
+    private var allQueuedEpisodes: [BaseItem] { episodes }
     private func heroPill(_ text: String) -> some View {
         Text(text).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.9))
             .padding(.horizontal, 9).padding(.vertical, 5).background(.black.opacity(0.3), in: Capsule())
     }
     private func resumeSeconds(_ episode: BaseItem) -> Double { Ticks.toSeconds(episode.userData?.playbackPositionTicks) }
-    private func playLabel(_ episode: BaseItem) -> String { resumeSeconds(episode) > 0 ? "Resume Episode" : "Play Episode" }
-    private func play(_ episode: BaseItem, startOver: Bool) {
+    private func playEpisodeFromGrid(_ episode: BaseItem, startOver: Bool) {
+        let q = allQueuedEpisodes
+        play(episode, startOver: startOver, queue: q, queueIndex: q.firstIndex(where: { $0.id == episode.id }))
+    }
+    private func play(_ episode: BaseItem, startOver: Bool, queue: [BaseItem] = [], queueIndex: Int? = nil) {
         appState.playbackError = nil
-        nowPlaying.play(item: episode, api: appState.api, config: appState.makePlaybackConfig(), startOver: startOver) { appState.playbackError = $0 }
+        nowPlaying.play(item: episode, api: appState.api, config: appState.makePlaybackConfig(),
+                        startOver: startOver, queue: queue, queueIndex: queueIndex) { appState.playbackError = $0 }
     }
     private func loadSeasons() async {
         loadError = nil

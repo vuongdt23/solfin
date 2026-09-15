@@ -36,6 +36,16 @@ final class MPVCommandTests: XCTestCase {
         XCTAssertEqual(nilStart.count, 3)
     }
 
+    func testLoadFileArgsWithMediaTitle() {
+        let args = MPVIPC.loadFileArgs(url: "u", startSeconds: 0,
+                                       mediaTitle: "Series · S01E02 · Title")
+        XCTAssertEqual(args[0] as? String, "loadfile")
+        XCTAssertEqual(args[1] as? String, "u")
+        XCTAssertEqual(args[2] as? String, "replace")
+        XCTAssertEqual(args[3] as? Int, 0)
+        XCTAssertEqual(args[4] as? String, "force-media-title=Series · S01E02 · Title")
+    }
+
     func testObservePropertyEncodes() throws {
         // observe_property command form: ["observe_property", id, name]
         let dict = try decode(MPVIPC.encodeCommand(["observe_property", 1, "time-pos"], requestId: 3))

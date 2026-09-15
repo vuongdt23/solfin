@@ -112,6 +112,8 @@ local state = {
     chapters     = {},             -- {{title=,time=}, ...}
     audio_tracks = {},             -- {{id,title,lang,codec,selected}, ...}
     sub_tracks   = {},
+    queue_index  = 0,              -- zero-based index supplied by Solfin
+    queue_count  = 1,
     menu         = { open = false, kind = nil, items = {}, scroll = 0 },  -- popup track/settings menu
     thumbfast    = nil,            -- {width,height,disabled,available} from thumbfast-info
     thumb_shown  = false,          -- whether we currently have a thumbnail requested
@@ -496,6 +498,25 @@ local function icon_close(ass, cx, cy, color, ab)
     ass:pos(cx, cy)
     ass:draw_start()
     ass:move_to(-7, -7); ass:line_to(7, 7); ass:move_to(7, -7); ass:line_to(-7, 7)
+    ass:draw_stop()
+end
+
+local function icon_queue_prev_next(ass, cx, cy, color, ab, forward)
+    ass:new_event()
+    ass:append(shape_style(color, ab))
+    ass:pos(cx, cy)
+    ass:draw_start()
+    if forward then
+        -- >>| : two play chevrons plus a stop bar.
+        ass:move_to(-9, -7); ass:line_to(-2, 0); ass:line_to(-9, 7); ass:line_to(-9, -7)
+        ass:move_to(-1, -7); ass:line_to(6, 0); ass:line_to(-1, 7); ass:line_to(-1, -7)
+        ass:rect_cw(8, -7, 10, 7)
+    else
+        -- |<< : stop bar plus two reverse chevrons.
+        ass:rect_cw(-10, -7, -8, 7)
+        ass:move_to(6, -7); ass:line_to(-1, 0); ass:line_to(6, 7); ass:line_to(6, -7)
+        ass:move_to(-2, -7); ass:line_to(-9, 0); ass:line_to(-2, 7); ass:line_to(-2, -7)
+    end
     ass:draw_stop()
 end
 
@@ -958,6 +979,15 @@ local function render()
         return (state.hovered == name) and COL.accent or COL.white
     end
 
+    -- Previous queued item. Disabled when there is no previous episode.
+    place_button("prev")
+    local prev_enabled = state.queue_index > 0 or ((state.time_pos or 0) > 5)
+    icon_queue_prev_next(ass, cx, row_y,
+                         prev_enabled and col_for("prev") or COL.track,
+                         a(prev_enabled and 0 or 0x86), false)
+
+    cx = cx + DS.btn_size + DS.btn_gap
+
     -- Skip back: text is cleaner and more legible than tiny custom vector arrows.
     place_button("skip_back")
     ass:new_event()
@@ -994,6 +1024,15 @@ local function render()
                              DS.control_size, DS.font, col_for("skip_fwd"), a(0)))
     ass:pos(cx, row_y)
     ass:append("+" .. tostring(user_opts.jump_amount))
+
+    cx = cx + DS.btn_size + DS.btn_gap
+
+    -- Next queued item. Disabled when this is the end of the queue.
+    place_button("next")
+    local has_next = state.queue_index + 1 < state.queue_count
+    icon_queue_prev_next(ass, cx, row_y,
+                         has_next and col_for("next") or COL.track,
+                         a(has_next and 0 or 0x86), true)
 
     -- Timecodes (position / duration), left cluster
     local pos_txt = format_time(state.time_pos)
@@ -1112,7 +1151,7 @@ local function resolve_hover()
         local visible_count = state.menu.visible_count or #state.menu.items
         for i = 1, visible_count do names[#names + 1] = "menu_row_" .. i end
     end
-    for _, n in ipairs({ "close", "maximize", "minimize", "playpause", "skip_back", "skip_fwd", "speed", "audio",
+    for _, n in ipairs({ "close", "maximize", "minimize", "playpause", "prev", "skip_back", "skip_fwd", "next", "speed", "audio",
                          "subtitle", "media_info", "fullscreen", "volume", "volslider", "seekbar" }) do
         names[#names + 1] = n
     end
@@ -1268,10 +1307,16 @@ local function on_mbtn_up()
 
     if point_in(hitboxes.playpause, mx, my) then
         mp.commandv("cycle", "pause"); close_menu()
+    elseif point_in(hitboxes.prev, mx, my) then
+        if state.queue_index > 0 or ((state.time_pos or 0) > 5) then mp.commandv("script-message", "solfin-prev") end
+        close_menu()
     elseif point_in(hitboxes.skip_back, mx, my) then
         mp.commandv("seek", -user_opts.jump_amount, "relative+exact"); close_menu()
     elseif point_in(hitboxes.skip_fwd, mx, my) then
         mp.commandv("seek", user_opts.jump_amount, "relative+exact"); close_menu()
+    elseif point_in(hitboxes.next, mx, my) then
+        if state.queue_index + 1 < state.queue_count then mp.commandv("script-message", "solfin-next") end
+        close_menu()
     elseif point_in(hitboxes.audio, mx, my) then
         open_menu("audio")
     elseif point_in(hitboxes.subtitle, mx, my) then
@@ -1400,6 +1445,12 @@ mp.register_script_message("set-logo", function(path, width, height)
     user_opts.logo_path = path or ""
     user_opts.logo_width = tonumber(width) or 0
     user_opts.logo_height = tonumber(height) or 0
+    request_tick()
+end)
+
+mp.register_script_message("solfin-queue", function(index, count)
+    state.queue_index = tonumber(index) or 0
+    state.queue_count = math.max(tonumber(count) or 1, 1)
     request_tick()
 end)
 
