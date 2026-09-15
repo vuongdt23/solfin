@@ -115,8 +115,7 @@ solfin/
 ├─ Sources/{JellyfinKit,PlaybackEngine,App,Probe}/
 ├─ Tests/                      XCTest suites
 ├─ Resources/mpv/              mpv.conf, input.conf, solfin-osc + thumbfast + Inter
-├─ Resources/Assets.xcassets/  AppIcon
-└─ docs/PLAN.md                design doc + as-built deviations
+└─ Resources/Assets.xcassets/  AppIcon
 ```
 
 ## Known limitations / not yet done
