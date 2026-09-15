@@ -250,13 +250,11 @@ private struct FeaturedMediaBar: View {
                                     .frame(maxWidth: min(820, proxy.size.width * 0.68), alignment: .leading)
                             }
                             HStack(spacing: 12) {
-                                if item.type != "Series" {
-                                    Button { play(item) } label: {
-                                        Label(playLabel(item), systemImage: "play.fill")
-                                            .font(.headline.weight(.semibold))
-                                            .padding(.horizontal, 22).padding(.vertical, 12)
-                                    }.buttonStyle(.plain).background(.white, in: Capsule()).foregroundStyle(.black)
-                                }
+                                Button { playFeatured(item) } label: {
+                                    Label(playLabel(item), systemImage: "play.fill")
+                                        .font(.headline.weight(.semibold))
+                                        .padding(.horizontal, 22).padding(.vertical, 12)
+                                }.buttonStyle(.plain).background(.white, in: Capsule()).foregroundStyle(.black)
                                 NavigationLink(value: item) {
                                     Image(systemName: "info").font(.headline).frame(width: 46, height: 46)
                                 }.buttonStyle(.plain).background(.white.opacity(0.22), in: Circle()).foregroundStyle(.white)
@@ -327,8 +325,28 @@ private struct FeaturedMediaBar: View {
         let minutes = Int(Ticks.toSeconds(ticks) / 60)
         return minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
     }
-    private func playLabel(_ item: BaseItem) -> String {
-        Ticks.toSeconds(item.userData?.playbackPositionTicks) > 0 ? "Resume" : "Play"
+    private func playLabel(_ item: BaseItem) -> String { "Play" }
+    private func playFeatured(_ item: BaseItem) {
+        if item.type == "Series" {
+            Task { await playSeries(item) }
+        } else {
+            play(item)
+        }
+    }
+    private func playSeries(_ series: BaseItem) async {
+        appState.playbackError = nil
+        do {
+            let episodes = try await appState.api.episodes(seriesId: series.id)
+            guard let episode = episodes.first(where: { Ticks.toSeconds($0.userData?.playbackPositionTicks) > 0 })
+                    ?? episodes.first(where: { $0.userData?.played != true })
+                    ?? episodes.first else { return }
+            nowPlaying.play(item: episode, api: appState.api, config: appState.makePlaybackConfig(),
+                            queue: episodes, queueIndex: episodes.firstIndex(where: { $0.id == episode.id })) {
+                appState.playbackError = $0
+            }
+        } catch {
+            appState.playbackError = error.localizedDescription
+        }
     }
     private func play(_ item: BaseItem) {
         appState.playbackError = nil

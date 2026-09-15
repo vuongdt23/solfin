@@ -19,6 +19,9 @@ final class NowPlaying: ObservableObject {
     @Published var selectedVideoTrack: Int?
     @Published var selectedSubtitleTrack: Int?
     @Published var isLaunching = false
+    @Published var isQueueTransitioning = false
+    @Published var queue: [BaseItem] = []
+    @Published var queueIndex: Int = 0
     @AppStorage("solfin.autoplayNext") var autoplayNext: Bool = true
 
     private var controller: PlaybackController?
@@ -35,12 +38,13 @@ final class NowPlaying: ObservableObject {
     var isActive: Bool {
         // Do not surface the Now Playing bar until mpv has actually launched and
         // playback has transitioned out of the preflight/network startup phase.
-        controller != nil && (state == .playing || state == .paused)
+        controller != nil && (state == .playing || state == .paused || (state == .starting && !isLaunching) || isQueueTransitioning)
     }
 
     func play(item: BaseItem, api: APIClient, config: PlaybackController.Config,
               startOver: Bool = false, audioTrack: Int? = nil,
               videoTrack: Int? = nil, subtitleTrack: Int? = nil,
+              queue: [BaseItem] = [], queueIndex: Int? = nil,
               onError: @escaping (String) -> Void) {
         // Invalidate callbacks from any previous mpv session before stopping it; its
         // async teardown can otherwise race the new startup and clear the loading UI.
@@ -53,21 +57,32 @@ final class NowPlaying: ObservableObject {
         controller?.stop()
         userStopped = false
 
+        let playbackQueue = Self.normalizedQueue(queue, currentItem: item)
+        let playbackQueueIndex = queueIndex.flatMap { playbackQueue.indices.contains($0) ? $0 : nil }
+            ?? playbackQueue.firstIndex(where: { $0.id == item.id })
+            ?? 0
+        let itemToPlay = playbackQueue[playbackQueueIndex]
+
         self.api = api
         self.config = config
-        self.currentItem = item
+        self.currentItem = itemToPlay
+        self.queue = playbackQueue
+        self.queueIndex = playbackQueueIndex
         self.onError = onError
 
-        let c = PlaybackController(api: api, item: item, config: config,
-                                   startOverride: startOver ? 0 : nil)
-        itemName = item.name
-        subtitle = Self.episodeSubtitle(item)
+        let c = PlaybackController(api: api, item: itemToPlay, config: config,
+                                   startOverride: startOver ? 0 : nil,
+                                   queue: playbackQueue, queueIndex: playbackQueueIndex,
+                                   autoplayQueuedItems: autoplayNext)
+        itemName = itemToPlay.name
+        subtitle = Self.episodeSubtitle(itemToPlay)
         state = .starting
         isLaunching = true
-        positionSeconds = Ticks.toSeconds(item.userData?.playbackPositionTicks)
-        durationSeconds = Ticks.toSeconds(item.runTimeTicks)
-        artworkURL = api.playablePosterURL(for: item, maxHeight: 160)
-        let itemSource = item.mediaSources?.first
+        isQueueTransitioning = false
+        positionSeconds = Ticks.toSeconds(itemToPlay.userData?.playbackPositionTicks)
+        durationSeconds = Ticks.toSeconds(itemToPlay.runTimeTicks)
+        artworkURL = api.playablePosterURL(for: itemToPlay, maxHeight: 160)
+        let itemSource = itemToPlay.mediaSources?.first
         mediaStreams = itemSource?.mediaStreams ?? []
         selectedAudioTrack = audioTrack
             ?? defaultTrackIndex(type: "Audio", serverDefault: itemSource?.defaultAudioStreamIndex)
@@ -82,9 +97,15 @@ final class NowPlaying: ObservableObject {
         c.onStateChange = { [weak self] state, pos in
             Task { @MainActor in
                 guard let self, self.playbackGeneration == generation else { return }
+                if state == .starting && !self.isLaunching {
+                    self.isQueueTransitioning = true
+                }
                 self.state = state
                 self.positionSeconds = pos
-                if state != .starting { self.isLaunching = false }
+                if state != .starting {
+                    self.isLaunching = false
+                    self.isQueueTransitioning = false
+                }
                 self.updateProgressClock(for: state)
                 if state == .playing, !appliedInitialTracks {
                     appliedInitialTracks = true
@@ -93,6 +114,23 @@ final class NowPlaying: ObservableObject {
                     if let subtitleTrack {
                         c.selectSubtitleTrack(id: subtitleTrack == -1 ? nil : subtitleTrack)
                     }
+                }
+            }
+        }
+        c.onItemChange = { [weak self] item, index, count in
+            Task { @MainActor in
+                guard let self, self.playbackGeneration == generation else { return }
+                if self.currentItem?.id != item.id { self.isQueueTransitioning = true }
+                self.currentItem = item
+                self.queueIndex = index
+                self.itemName = item.name
+                self.subtitle = Self.episodeSubtitle(item)
+                self.positionSeconds = Ticks.toSeconds(item.userData?.playbackPositionTicks)
+                self.durationSeconds = Ticks.toSeconds(item.runTimeTicks)
+                self.artworkURL = api.playablePosterURL(for: item, maxHeight: 160)
+                self.isSeekable = self.durationSeconds > 0
+                if self.queue.count != count, count > 0 {
+                    self.queue = Array(self.queue.prefix(count))
                 }
             }
         }
@@ -137,6 +175,7 @@ final class NowPlaying: ObservableObject {
     func stop() {
         playbackGeneration = UUID()
         isLaunching = false
+        isQueueTransitioning = false
         userStopped = true
         progressTask?.cancel()
         controller?.stop()
@@ -157,6 +196,19 @@ final class NowPlaying: ObservableObject {
     func selectAudioTrack(_ id: Int) { selectedAudioTrack = id; controller?.selectAudioTrack(id: id) }
     func selectVideoTrack(_ id: Int) { selectedVideoTrack = id; controller?.selectVideoTrack(id: id) }
     func selectSubtitleTrack(_ id: Int?) { selectedSubtitleTrack = id; controller?.selectSubtitleTrack(id: id) }
+    func playPrevious() {
+        guard hasPreviousInQueue, !isQueueTransitioning else { return }
+        if queueIndex > 0 { isQueueTransitioning = true }
+        controller?.playPrevious()
+    }
+    func playNext() {
+        guard hasNextInQueue, !isQueueTransitioning else { return }
+        isQueueTransitioning = true
+        controller?.playNext()
+    }
+
+    var hasPreviousInQueue: Bool { queueIndex > 0 || positionSeconds > 5 }
+    var hasNextInQueue: Bool { queueIndex + 1 < queue.count }
 
     var audioTracks: [(id: Int, stream: MediaStream)] { tracks(type: "Audio") }
     var videoTracks: [(id: Int, stream: MediaStream)] { tracks(type: "Video") }
@@ -236,7 +288,18 @@ final class NowPlaying: ObservableObject {
             selectedAudioTrack = nil
             selectedVideoTrack = nil
             selectedSubtitleTrack = nil
+            isQueueTransitioning = false
+            queue = []
+            queueIndex = 0
         }
+    }
+
+    private static func normalizedQueue(_ queue: [BaseItem], currentItem: BaseItem) -> [BaseItem] {
+        var seen = Set<String>()
+        let unique = queue.filter { seen.insert($0.id).inserted }
+        if unique.isEmpty { return [currentItem] }
+        if unique.contains(where: { $0.id == currentItem.id }) { return unique }
+        return [currentItem] + unique
     }
 
     static func episodeSubtitle(_ item: BaseItem) -> String? {

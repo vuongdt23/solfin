@@ -23,9 +23,12 @@ public final class PlaybackController {
     }
 
     private let api: APIClient
-    private let item: BaseItem
+    private var item: BaseItem
     private let config: Config
     private let startOverride: Double?
+    private let queuedItems: [BaseItem]
+    private var queueIndex: Int
+    private let autoplayQueuedItems: Bool
 
     private let mpv = MPVProcess()
     private var ipc: MPVIPC?
@@ -56,6 +59,7 @@ public final class PlaybackController {
     private var isSeekable = false
     private var didReportStopped = false
     private var naturalEnd = false
+    private var suppressReplacementEndFile = false
     private var state: State = .idle
     private var hasStartedPlayback = false
     private var progressTimer: DispatchSourceTimer?
@@ -76,6 +80,8 @@ public final class PlaybackController {
                                     _ defaultAudioStreamIndex: Int?,
                                     _ defaultSubtitleStreamIndex: Int?) -> Void)?
     public var onError: ((Error) -> Void)?
+    /// Delivered on the main queue whenever the controller starts a different queued item.
+    public var onItemChange: ((_ item: BaseItem, _ queueIndex: Int, _ queueCount: Int) -> Void)?
     /// Delivered on the main queue when playback ends. `naturalEnd` is true only when
     /// mpv reported an "eof" end-file reason (the file played to completion) — the
     /// signal the app uses to decide whether to autoplay the next episode.
@@ -83,11 +89,29 @@ public final class PlaybackController {
 
     /// `startOverride` forces a start position in seconds (e.g. 0 to "start over"),
     /// ignoring the item's saved resume point.
-    public init(api: APIClient, item: BaseItem, config: Config, startOverride: Double? = nil) {
+    public init(api: APIClient, item: BaseItem, config: Config, startOverride: Double? = nil,
+                queue: [BaseItem] = [], queueIndex: Int? = nil,
+                autoplayQueuedItems: Bool = true) {
         self.api = api
         self.item = item
         self.config = config
         self.startOverride = startOverride
+        if queue.isEmpty {
+            self.queuedItems = [item]
+            self.queueIndex = 0
+        } else {
+            self.queuedItems = queue
+            if let queueIndex, queue.indices.contains(queueIndex) {
+                self.queueIndex = queueIndex
+                self.item = queue[queueIndex]
+            } else if let found = queue.firstIndex(where: { $0.id == item.id }) {
+                self.queueIndex = found
+                self.item = queue[found]
+            } else {
+                self.queueIndex = 0
+            }
+        }
+        self.autoplayQueuedItems = autoplayQueuedItems
     }
 
     // MARK: - Lifecycle
@@ -99,31 +123,14 @@ public final class PlaybackController {
         }
         setState(.starting)
 
-        SolfinLog.info("Playback requested for item=\(item.id) title=\(Self.displayTitle(for: item))", category: .playback)
+        let launchItem = item
+        SolfinLog.info("Playback requested for item=\(launchItem.id) title=\(Self.displayTitle(for: launchItem))", category: .playback)
 
         Task {
             do {
-                let directPlanStarted = Date()
-                var plan = try await api.directPlayPlan(for: item)
-                SolfinLog.info("directPlayPlan resolved in \(Int(Date().timeIntervalSince(directPlanStarted) * 1000))ms stream=\(SolfinLog.redactedURL(plan.streamURL))", category: .playback)
-                if let startOverride { plan.resumeSeconds = startOverride }
-                self.plan = plan
-                self.prepareTrackMaps(for: plan)
-                DispatchQueue.main.async {
-                    self.onPlaybackStreams?(plan.mediaStreams,
-                                            plan.defaultAudioStreamIndex,
-                                            plan.defaultSubtitleStreamIndex)
-                }
-
-                // Prefer the prewarmed on-disk logo. On the first cold route we allow a
-                // blocking download so the OSC still gets the logo; subsequent plays are
-                // cache hits and do not slow launch.
-                let logoStarted = Date()
-                let logoOverlay = await LogoOverlayCache.shared.overlay(for: item, api: api,
-                                                                        downloadIfNeeded: true)
-                SolfinLog.info("logo overlay \(logoOverlay == nil ? "unavailable" : "ready") in \(Int(Date().timeIntervalSince(logoStarted) * 1000))ms", category: .cache)
-
-                let title = Self.displayTitle(for: item)
+                let prepared = try await self.preparePlanAndArtwork(for: launchItem, startOverride: startOverride)
+                let plan = prepared.plan
+                let title = prepared.title
                 let mpvLogPath = SolfinLog.makeMPVLogPath(title: title)
                 let launchStarted = Date()
                 try mpv.launch(binaryPath: binary, configDir: config.configDir,
@@ -131,7 +138,7 @@ public final class PlaybackController {
                                initialURL: plan.streamURL.absoluteString,
                                startSeconds: plan.resumeSeconds,
                                mediaTitle: title,
-                               logoOverlay: logoOverlay,
+                               logoOverlay: prepared.logoOverlay,
                                mpvLogPath: mpvLogPath,
                                mpvMessageLevel: SolfinLog.currentLevel.mpvMessageLevel)
                 SolfinLog.info("mpv Process.run returned in \(Int(Date().timeIntervalSince(launchStarted) * 1000))ms log=\(mpvLogPath ?? "off")", category: .mpv)
@@ -147,6 +154,7 @@ public final class PlaybackController {
                 }
                 connectIPC(resumeSeconds: plan.resumeSeconds)
                 try? await api.reportPlaybackStart(plan)
+                self.sendQueueStateToOSC()
             } catch {
                 SolfinLog.error("Playback startup failed: \(error.localizedDescription)", category: .playback)
                 emitError(error)
@@ -187,6 +195,27 @@ public final class PlaybackController {
         ipc?.command(["seek", max(0, seconds), "absolute+exact"])
     }
 
+    public var hasPreviousItem: Bool { queueIndex > 0 }
+    public var hasNextItem: Bool { queueIndex + 1 < queuedItems.count }
+
+    public func playPrevious() {
+        queue.async {
+            if self.positionSeconds > 5 || !self.hasPreviousItem {
+                self.positionSeconds = 0
+                self.ipc?.command(["seek", 0, "absolute+exact"])
+            } else {
+                self.switchToQueueIndex(self.queueIndex - 1, startOverride: 0)
+            }
+        }
+    }
+
+    public func playNext() {
+        queue.async {
+            guard self.hasNextItem else { return }
+            self.switchToQueueIndex(self.queueIndex + 1, startOverride: 0)
+        }
+    }
+
     /// Track selectors take Jellyfin's `MediaStream.Index`, not mpv's unrelated ID.
     public func selectAudioTrack(id: Int) {
         queue.async {
@@ -215,6 +244,98 @@ public final class PlaybackController {
         }
     }
 
+    // MARK: - Queue / item preparation
+
+    private func preparePlanAndArtwork(for item: BaseItem, startOverride: Double?) async throws -> (plan: DirectPlayPlan, title: String, logoOverlay: MPVProcess.OverlayImage?) {
+        let directPlanStarted = Date()
+        var plan = try await api.directPlayPlan(for: item)
+        SolfinLog.info("directPlayPlan resolved in \(Int(Date().timeIntervalSince(directPlanStarted) * 1000))ms stream=\(SolfinLog.redactedURL(plan.streamURL))", category: .playback)
+        if let startOverride { plan.resumeSeconds = startOverride }
+        self.plan = plan
+        self.prepareTrackMaps(for: plan)
+        DispatchQueue.main.async {
+            self.onItemChange?(item, self.queueIndex, self.queuedItems.count)
+            self.onPlaybackStreams?(plan.mediaStreams,
+                                    plan.defaultAudioStreamIndex,
+                                    plan.defaultSubtitleStreamIndex)
+        }
+
+        // Prefer the prewarmed on-disk logo. On the first cold route we allow a
+        // blocking download so the OSC still gets the logo; subsequent plays are
+        // cache hits and do not slow launch.
+        let logoStarted = Date()
+        let logoOverlay = await LogoOverlayCache.shared.overlay(for: item, api: api,
+                                                                downloadIfNeeded: true)
+        SolfinLog.info("logo overlay \(logoOverlay == nil ? "unavailable" : "ready") in \(Int(Date().timeIntervalSince(logoStarted) * 1000))ms", category: .cache)
+        return (plan, Self.displayTitle(for: item), logoOverlay)
+    }
+
+    /// Must be called on `queue`.
+    private func switchToQueueIndex(_ index: Int, startOverride: Double?, suppressCurrentEndFile: Bool = true) {
+        guard queuedItems.indices.contains(index), !didReportStopped else { return }
+        let previousPlan = plan
+        let previousPosition = positionSeconds
+        if let previousPlan {
+            Task { try? await api.reportPlaybackStopped(previousPlan, positionSeconds: previousPosition) }
+        }
+
+        queueIndex = index
+        item = queuedItems[index]
+        positionSeconds = 0
+        durationSeconds = 0
+        isSeekable = false
+        isPaused = false
+        naturalEnd = false
+        hasStartedPlayback = false
+        suppressReplacementEndFile = suppressCurrentEndFile
+        setState(.starting)
+        emitMediaInfo()
+
+        let nextItem = item
+        Task {
+            do {
+                let prepared = try await self.preparePlanAndArtwork(for: nextItem, startOverride: startOverride)
+                self.queue.async {
+                    guard !self.didReportStopped, self.item.id == nextItem.id else { return }
+                    self.positionSeconds = prepared.plan.resumeSeconds
+                    self.isPaused = false
+                    self.ipc?.loadFile(prepared.plan.streamURL.absoluteString,
+                                       startSeconds: prepared.plan.resumeSeconds,
+                                       mediaTitle: prepared.title)
+                    self.sendLogoToOSC(prepared.logoOverlay)
+                    self.sendQueueStateToOSC()
+                }
+                try? await api.reportPlaybackStart(prepared.plan)
+            } catch {
+                SolfinLog.error("Queued playback failed: \(error.localizedDescription)", category: .playback)
+                emitError(error)
+                self.queue.async {
+                    if self.hasNextItem {
+                        self.switchToQueueIndex(self.queueIndex + 1, startOverride: 0)
+                    } else {
+                        self.finalizeLocked()
+                    }
+                }
+            }
+        }
+    }
+
+    private func sendQueueStateToOSC() {
+        queue.async {
+            self.ipc?.scriptMessage(["solfin-queue", String(self.queueIndex), String(self.queuedItems.count)])
+        }
+    }
+
+    /// Must be called on `queue`.
+    private func sendLogoToOSC(_ logoOverlay: MPVProcess.OverlayImage?) {
+        if let logoOverlay {
+            ipc?.scriptMessage(["set-logo", logoOverlay.path,
+                                String(logoOverlay.width), String(logoOverlay.height)])
+        } else {
+            ipc?.scriptMessage(["set-logo", "", "0", "0"])
+        }
+    }
+
     // MARK: - IPC
 
     private func connectIPC(resumeSeconds: Double) {
@@ -235,30 +356,7 @@ public final class PlaybackController {
         ipc.observeProperty("track-list", id: trackListId)
         self.ipc = ipc
 
-        queue.async {
-            if !self.didRequestAudioSelection {
-                self.requestedAudioStreamIndex = self.plan?.defaultAudioStreamIndex
-                self.needsApplyAudioSelection = self.requestedAudioStreamIndex != nil
-            }
-            if !self.didRequestVideoSelection {
-                self.needsApplyVideoSelection = self.requestedVideoStreamIndex != nil
-            }
-            if !self.didRequestSubtitleSelection {
-                self.requestedSubtitleStreamIndex = self.plan?.defaultSubtitleStreamIndex
-                // Apply once even when the server default is nil so mpv does not
-                // auto-select a subtitle behind the app's back.
-                self.needsApplySubtitleSelection = true
-            }
-            self.applyRequestedAudioSelection()
-            self.applyRequestedVideoSelection()
-            self.applyRequestedSubtitleSelection()
-
-            // Sidecars are separate HTTP resources, so explicitly add every one to
-            // mpv. "auto" keeps the current/default subtitle selection unchanged.
-            for subtitle in self.plan?.externalSubtitles ?? [] {
-                self.loadExternalSubtitle(streamIndex: subtitle.streamIndex)
-            }
-        }
+        queue.async { self.configureInitialTrackSelectionsLocked() }
     }
 
     private func handle(_ msg: [String: Any]) {
@@ -304,6 +402,7 @@ public final class PlaybackController {
                 }
             case "file-loaded":
                 SolfinLog.debug("mpv file-loaded; waiting for playback-restart/first frame", category: .mpv)
+                self.configureInitialTrackSelectionsLocked()
             case "playback-restart":
                 if !self.hasStartedPlayback {
                     SolfinLog.info("mpv playback became ready via playback-restart", category: .mpv)
@@ -312,8 +411,27 @@ public final class PlaybackController {
                 self.setState(self.isPaused ? .paused : .playing)
             case "end-file":
                 // reason: "eof" (completed) | "stop" | "quit" | "error" | "redirect"
-                if (msg["reason"] as? String) == "eof" { self.naturalEnd = true }
+                let reason = msg["reason"] as? String
+                if self.suppressReplacementEndFile, reason != "eof" {
+                    self.suppressReplacementEndFile = false
+                    return
+                }
+                if reason == "eof" {
+                    self.naturalEnd = true
+                    if self.autoplayQueuedItems, self.hasNextItem {
+                        self.switchToQueueIndex(self.queueIndex + 1, startOverride: 0, suppressCurrentEndFile: false)
+                        return
+                    }
+                }
                 self.finalizeLocked()
+            case "client-message":
+                guard let args = msg["args"] as? [Any],
+                      let name = args.first as? String else { return }
+                switch name {
+                case "solfin-next": self.playNext()
+                case "solfin-prev": self.playPrevious()
+                default: break
+                }
             case "shutdown":
                 self.finalizeLocked()
             default:
@@ -323,6 +441,32 @@ public final class PlaybackController {
     }
 
     // MARK: - Track mapping
+
+    /// Must be called on `queue`.
+    private func configureInitialTrackSelectionsLocked() {
+        if !didRequestAudioSelection {
+            requestedAudioStreamIndex = plan?.defaultAudioStreamIndex
+            needsApplyAudioSelection = requestedAudioStreamIndex != nil
+        }
+        if !didRequestVideoSelection {
+            needsApplyVideoSelection = requestedVideoStreamIndex != nil
+        }
+        if !didRequestSubtitleSelection {
+            requestedSubtitleStreamIndex = plan?.defaultSubtitleStreamIndex
+            // Apply once even when the server default is nil so mpv does not
+            // auto-select a subtitle behind the app's back.
+            needsApplySubtitleSelection = true
+        }
+        applyRequestedAudioSelection()
+        applyRequestedVideoSelection()
+        applyRequestedSubtitleSelection()
+
+        // Sidecars are separate HTTP resources, so explicitly add every one to
+        // mpv. "auto" keeps the current/default subtitle selection unchanged.
+        for subtitle in plan?.externalSubtitles ?? [] {
+            loadExternalSubtitle(streamIndex: subtitle.streamIndex)
+        }
+    }
 
     /// Jellyfin indexes every stream in one source-wide sequence. mpv IDs are
     /// 1-based within each media type and omit sidecars from the main file.

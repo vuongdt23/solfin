@@ -376,15 +376,32 @@ struct ItemDetailView: View {
         return minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
     }
     private func resumeSeconds(_ item: BaseItem) -> Double { Ticks.toSeconds(item.userData?.playbackPositionTicks) }
-    private func playLabel(_ item: BaseItem) -> String {
-        let seconds = resumeSeconds(item); return seconds > 0 ? "Resume · \(Int(seconds / 60)) min" : "Play"
-    }
+    private func playLabel(_ item: BaseItem) -> String { "Play" }
     private func play(_ item: BaseItem, startOver: Bool = false) {
         appState.playbackError = nil
-        nowPlaying.play(item: item, api: appState.api, config: appState.makePlaybackConfig(),
-                        startOver: startOver, audioTrack: selectedAudioTrack,
-                        videoTrack: selectedVideoTrack, subtitleTrack: selectedSubtitleTrack) {
-            appState.playbackError = $0
+        guard item.type == "Episode", let seriesId = item.seriesId else {
+            nowPlaying.play(item: item, api: appState.api, config: appState.makePlaybackConfig(),
+                            startOver: startOver, audioTrack: selectedAudioTrack,
+                            videoTrack: selectedVideoTrack, subtitleTrack: selectedSubtitleTrack) {
+                appState.playbackError = $0
+            }
+            return
+        }
+
+        Task { @MainActor in
+            do {
+                let episodes = try await appState.api.episodes(seriesId: seriesId)
+                nowPlaying.play(item: item, api: appState.api, config: appState.makePlaybackConfig(),
+                                startOver: startOver, audioTrack: selectedAudioTrack,
+                                videoTrack: selectedVideoTrack, subtitleTrack: selectedSubtitleTrack,
+                                queue: episodes,
+                                queueIndex: episodes.firstIndex(where: { $0.id == item.id })) {
+                    appState.playbackError = $0
+                }
+            } catch {
+                pendingPlayAction = nil
+                appState.playbackError = error.localizedDescription
+            }
         }
     }
     private func load() async {
