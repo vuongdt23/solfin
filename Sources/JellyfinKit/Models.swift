@@ -142,6 +142,11 @@ public struct MediaSource: Codable, Sendable, Hashable {
     public let defaultAudioStreamIndex: Int?
     public let defaultSubtitleStreamIndex: Int?
     public let mediaStreams: [MediaStream]?
+    public let path: String?
+    public let size: Int64?
+    public let bitrate: Int?
+    public let videoType: String?
+    public let protocolName: String?
 
     enum CodingKeys: String, CodingKey {
         case id = "Id"
@@ -152,6 +157,11 @@ public struct MediaSource: Codable, Sendable, Hashable {
         case defaultAudioStreamIndex = "DefaultAudioStreamIndex"
         case defaultSubtitleStreamIndex = "DefaultSubtitleStreamIndex"
         case mediaStreams = "MediaStreams"
+        case path = "Path"
+        case size = "Size"
+        case bitrate = "Bitrate"
+        case videoType = "VideoType"
+        case protocolName = "Protocol"
     }
 }
 

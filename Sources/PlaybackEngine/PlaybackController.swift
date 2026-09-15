@@ -244,6 +244,11 @@ public final class PlaybackController {
         }
     }
 
+    /// Edit subtitle rendering while the file continues playing.
+    public func setSubtitleDelay(_ seconds: Double) { queue.async { self.ipc?.setSubtitleDelay(seconds) } }
+    public func setSubtitlePosition(_ percent: Int) { queue.async { self.ipc?.setSubtitlePosition(percent) } }
+    public func setSubtitleScale(_ scale: Double) { queue.async { self.ipc?.setSubtitleScale(scale) } }
+
     // MARK: - Queue / item preparation
 
     private func preparePlanAndArtwork(for item: BaseItem, startOverride: Double?) async throws -> (plan: DirectPlayPlan, title: String, logoOverlay: MPVProcess.OverlayImage?) {

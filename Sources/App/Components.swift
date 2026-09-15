@@ -195,10 +195,67 @@ struct BackdropHero: View {
     }
 }
 
+private struct SubtitleEditorView: View {
+    @EnvironmentObject private var nowPlaying: NowPlaying
+    @Environment(\.dismiss) private var dismiss
+    @State private var delay = 0.0
+    @State private var position = 100.0
+    @State private var scale = 1.0
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            HStack { Text("Edit subtitles").font(.title2.bold()); Spacer(); Button("Done") { dismiss() } }
+            Text("Changes apply immediately to the active mpv session.").foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack { Text("Timing"); Spacer(); Text(String(format: "%+.1f s", delay)).monospacedDigit().foregroundStyle(.secondary) }
+                Slider(value: $delay, in: -10...10, step: 0.1) { _ in nowPlaying.setSubtitleDelay(delay) }
+                HStack { Button("−0.5 s") { delay -= 0.5; nowPlaying.setSubtitleDelay(delay) }; Button("Reset") { delay = 0; nowPlaying.setSubtitleDelay(0) }; Button("+0.5 s") { delay += 0.5; nowPlaying.setSubtitleDelay(delay) } }
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack { Text("Vertical position"); Spacer(); Text("\(Int(position))%").foregroundStyle(.secondary) }
+                Slider(value: $position, in: 0...100, step: 1) { _ in nowPlaying.setSubtitlePosition(Int(position)) }
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack { Text("Size"); Spacer(); Text(String(format: "%.1f×", scale)).foregroundStyle(.secondary) }
+                Slider(value: $scale, in: 0.5...2, step: 0.05) { _ in nowPlaying.setSubtitleScale(scale) }
+            }
+        }.padding(28).frame(width: 430).onAppear { delay = 0; position = 100; scale = 1 }
+    }
+}
+
+private struct MediaInfoView: View {
+    @EnvironmentObject private var nowPlaying: NowPlaying
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack { Text("Media information").font(.title2.bold()); Spacer(); Button("Done") { dismiss() } }
+            info("Title", nowPlaying.itemName ?? "Unknown")
+            info("Duration", duration)
+            info("Position", durationText(nowPlaying.positionSeconds))
+            info("Seekable", nowPlaying.isSeekable ? "Yes" : "No")
+            Divider()
+            Text("Tracks").font(.headline)
+            ForEach(Array(nowPlaying.mediaStreams.enumerated()), id: \.offset) { _, stream in
+                HStack {
+                    Text(stream.type ?? "Track").foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
+                    Text(stream.displayTitle ?? stream.language ?? stream.codec ?? "Unknown")
+                    Spacer()
+                    if let codec = stream.codec { Text(codec.uppercased()).font(.caption).foregroundStyle(.secondary) }
+                }
+            }
+        }.padding(28).frame(width: 500).fixedSize(horizontal: false, vertical: true)
+    }
+    private var duration: String { durationText(nowPlaying.durationSeconds) }
+    private func durationText(_ value: Double) -> String { let s = max(0, Int(value)); return String(format: "%d:%02d:%02d", s / 3600, s % 3600 / 60, s % 60) }
+    private func info(_ key: String, _ value: String) -> some View { HStack { Text(key).foregroundStyle(.secondary); Spacer(); Text(value) } }
+}
+
 struct NowPlayingBar: View {
     @EnvironmentObject private var nowPlaying: NowPlaying
     @State private var dragging = false
     @State private var draftPosition = 0.0
+    @State private var showSubtitleEditor = false
+    @State private var showMediaInfo = false
 
     var body: some View {
         if nowPlaying.isActive, let name = nowPlaying.itemName {
@@ -235,8 +292,19 @@ struct NowPlayingBar: View {
                     ProgressView().controlSize(.small).scaleEffect(0.72)
                 }
                 trackMenu.disabled(nowPlaying.isQueueTransitioning).opacity(nowPlaying.isQueueTransitioning ? 0.35 : 1)
+                Button { showSubtitleEditor = true } label: {
+                    Image(systemName: "textformat.size").frame(width: 26, height: 26)
+                }
+                .buttonStyle(.plain).help("Edit subtitles")
+                .disabled(nowPlaying.isQueueTransitioning || nowPlaying.subtitleTracks.isEmpty)
+                Button { showMediaInfo = true } label: {
+                    Image(systemName: "info.circle").frame(width: 26, height: 26)
+                }
+                .buttonStyle(.plain).help("Media information")
                 control("xmark", "Stop") { nowPlaying.stop() }
             }
+            .sheet(isPresented: $showSubtitleEditor) { SubtitleEditorView() }
+            .popover(isPresented: $showMediaInfo) { MediaInfoView() }
             .padding(10)
             .glassSurface(cornerRadius: 18)
             .transition(.move(edge: .bottom).combined(with: .opacity))

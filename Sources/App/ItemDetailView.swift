@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import JellyfinKit
 import PlaybackEngine
 
@@ -17,6 +18,9 @@ struct ItemDetailView: View {
     @State private var selectedVideoTrack: Int?
     @State private var selectedSubtitleTrack: Int? = -1
     @State private var pendingPlayAction: PlayAction?
+    @State private var showSubtitleImporter = false
+    @State private var showMediaInfo = false
+    @State private var uploadMessage: String?
 
     private enum PlayAction: Equatable {
         case primary
@@ -76,6 +80,7 @@ struct ItemDetailView: View {
                         }
                         playbackError
                         trackPanel(item)
+                        detailActions(item)
                     }
                     .frame(maxWidth: 1280, alignment: .leading)
                     .padding(.horizontal, 48)
@@ -245,6 +250,27 @@ struct ItemDetailView: View {
                 }
             }.frame(maxWidth: 1040, alignment: .leading)
         }
+    }
+
+    private func detailActions(_ item: BaseItem) -> some View {
+        HStack(spacing: 10) {
+            Button { showSubtitleImporter = true } label: { Label("Upload subtitle", systemImage: "arrow.up.doc") }.buttonStyle(.bordered).tint(.white)
+            Button { showMediaInfo = true } label: { Label("Media info", systemImage: "info.circle") }.buttonStyle(.bordered).tint(.white)
+            if let uploadMessage { Text(uploadMessage).font(.caption).foregroundStyle(.white.opacity(0.75)) }
+        }
+        .fileImporter(isPresented: $showSubtitleImporter, allowedContentTypes: [.text, .data], allowsMultipleSelection: false) { result in
+            guard case .success(let urls) = result, let url = urls.first else { return }
+            Task { @MainActor in
+                do {
+                    let accessed = url.startAccessingSecurityScopedResource(); defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                    let data = try Data(contentsOf: url)
+                    try await appState.api.uploadSubtitle(itemId: item.id, data: data, fileExtension: url.pathExtension, language: "eng")
+                    uploadMessage = "Subtitle uploaded"
+                    self.item = try await appState.api.item(id: item.id)
+                } catch { uploadMessage = "Upload failed: \(error.localizedDescription)" }
+            }
+        }
+        .popover(isPresented: $showMediaInfo) { MediaInfoDetailView(item: item) }
     }
 
     @ViewBuilder private func trackPanel(_ item: BaseItem) -> some View {

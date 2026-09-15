@@ -141,6 +141,11 @@ public final class MPVIPC {
         command(["set_property", name, value])
     }
 
+    /// Update subtitle presentation settings without reloading the media.
+    public func setSubtitleDelay(_ seconds: Double) { setProperty("sub-delay", seconds) }
+    public func setSubtitlePosition(_ percent: Int) { setProperty("sub-pos", percent) }
+    public func setSubtitleScale(_ scale: Double) { setProperty("sub-scale", scale) }
+
     /// Build the `sub-add` arguments used for Jellyfin sidecars.
     public static func addSubtitleArgs(url: String, title: String? = nil,
                                        language: String? = nil) -> [Any] {
