@@ -10,6 +10,10 @@ struct SettingsView: View {
     @AppStorage(SolfinLog.directoryKey) private var logDirectory = ""
     @StateObject private var configStore = MPVConfigurationStore()
     @State private var validationMessage: String?
+    @State private var cacheStats = MediaAssetCache.Statistics(assetCount: 0, variantCount: 0, sourceBytes: 0, variantBytes: 0, location: "")
+    @State private var cacheMaxEntries = 500
+    @State private var cacheMaxMB = 500
+    @State private var cacheMessage: String?
 
     var body: some View {
         TabView {
@@ -30,6 +34,9 @@ struct SettingsView: View {
             playbackSettings
                 .tabItem { Label("Playback", systemImage: "play.rectangle") }
 
+            cacheSettings
+                .tabItem { Label("Cache", systemImage: "externaldrive") }
+
             MPVConfigurationView(store: configStore)
                 .tabItem { Label("mpv Config", systemImage: "doc.text") }
 
@@ -46,6 +53,77 @@ struct SettingsView: View {
         }
         .frame(minWidth: 820, idealWidth: 960, minHeight: 560, idealHeight: 680)
         .onAppear { configStore.load(bundledConfigDir: appState.mpvConfigDir) }
+    }
+
+    private var cacheSettings: some View {
+        Form {
+            Section("Overview") {
+                LabeledContent("Cached images", value: "\(cacheStats.assetCount)")
+                LabeledContent("BGRA variants", value: "\(cacheStats.variantCount)")
+                LabeledContent("Source data", value: ByteCountFormatter.string(fromByteCount: cacheStats.sourceBytes, countStyle: .file))
+                LabeledContent("BGRA data", value: ByteCountFormatter.string(fromByteCount: cacheStats.variantBytes, countStyle: .file))
+                LabeledContent("Total", value: ByteCountFormatter.string(fromByteCount: cacheStats.totalBytes, countStyle: .file))
+            }
+            Section("Limits") {
+                Picker("Maximum entries", selection: $cacheMaxEntries) {
+                    Text("50").tag(50)
+                    Text("100").tag(100)
+                    Text("250").tag(250)
+                    Text("500").tag(500)
+                    Text("1,000").tag(1_000)
+                    Text("2,500").tag(2_500)
+                    Text("5,000").tag(5_000)
+                    Text("10,000").tag(10_000)
+                    Text("Unlimited").tag(0)
+                }
+                .pickerStyle(.menu)
+                Picker("Maximum size", selection: $cacheMaxMB) {
+                    Text("50 MB").tag(50)
+                    Text("100 MB").tag(100)
+                    Text("250 MB").tag(250)
+                    Text("500 MB").tag(500)
+                    Text("1 GB").tag(1_000)
+                    Text("2 GB").tag(2_000)
+                    Text("5 GB").tag(5_000)
+                    Text("Unlimited").tag(0)
+                }
+                .pickerStyle(.menu)
+                Button("Run Cleanup") { runCacheCleanup() }
+            }
+            Section("Storage") {
+                LabeledContent("Location", value: cacheStats.location).textSelection(.enabled)
+                HStack {
+                    Button("Refresh") { refreshCache() }
+                    Button("Reveal in Finder") { NSWorkspace.shared.open(URL(fileURLWithPath: cacheStats.location)) }
+                    Button("Clear Cache", role: .destructive) { clearCache() }
+                }
+                if let cacheMessage { Text(cacheMessage).font(.caption).foregroundStyle(.secondary) }
+            }
+        }
+        .formStyle(.grouped).padding(12)
+        .task { refreshCache() }
+    }
+
+    private func refreshCache() {
+        Task { cacheStats = await MediaAssetCache.shared.statistics() }
+    }
+
+    private func runCacheCleanup() {
+        Task {
+            let maxBytes = cacheMaxMB == 0 ? Int64.max : Int64(cacheMaxMB) * 1_024 * 1_024
+            let maxEntries = cacheMaxEntries == 0 ? Int.max : cacheMaxEntries
+            await MediaAssetCache.shared.cleanup(maxEntries: maxEntries, maxBytes: maxBytes)
+            cacheMessage = "Cleanup completed."
+            cacheStats = await MediaAssetCache.shared.statistics()
+        }
+    }
+
+    private func clearCache() {
+        Task {
+            await MediaAssetCache.shared.clear()
+            cacheMessage = "Cache cleared."
+            cacheStats = await MediaAssetCache.shared.statistics()
+        }
     }
 
     private var playbackSettings: some View {

@@ -25,6 +25,9 @@ targets:
     platform: macOS
     sources:
       - path: Sources/PlaybackEngine
+    settings:
+      base:
+        SWIFT_INCLUDE_PATHS: /usr/include
     dependencies:
       - target: JellyfinKit
 

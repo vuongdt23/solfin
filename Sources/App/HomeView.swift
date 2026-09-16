@@ -1,5 +1,6 @@
 import SwiftUI
 import JellyfinKit
+import PlaybackEngine
 
 struct HomeView: View {
     @EnvironmentObject private var appState: AppState
@@ -163,11 +164,8 @@ private struct FeaturedTitle: View {
 
     var body: some View {
         if let url = appState.api.logoImageURL(for: item) {
-            AsyncImage(url: url) { phase in
-                if let image = phase.image { image.resizable().aspectRatio(contentMode: .fit) }
-                else { fallback }
-            }
-            .frame(width: 560, height: 170, alignment: .leading)
+            CachedImage(url: url, contentMode: .fit)
+                .frame(width: 560, height: 170, alignment: .leading)
         } else { fallback }
     }
 
@@ -284,6 +282,13 @@ private struct FeaturedMediaBar: View {
         .containerRelativeFrame(.vertical, alignment: .top) { available, _ in max(820, available * 0.96) }
         .ignoresSafeArea(edges: .top)
         .onHover { hovering = $0 }
+        .task(id: items.map(\.id).joined(separator: ",")) {
+            // Warm the shared logo overlay cache for every item in the media bar so
+            // starting playback from the homepage does not need a cold download.
+            for item in items {
+                await LogoOverlayCache.shared.prefetch(for: item, api: appState.api)
+            }
+        }
         .task(id: "\(selection)-\(hovering)-\(autoAdvance)") {
             guard autoAdvance, !reduceMotion, !hovering, items.count > 1 else { return }
             try? await Task.sleep(for: .seconds(10))
@@ -296,10 +301,7 @@ private struct FeaturedMediaBar: View {
 
     @ViewBuilder private var heroArtwork: some View {
         if let url = appState.api.backdropImageURL(for: item, maxWidth: nil) {
-            AsyncImage(url: url) { phase in
-                if let image = phase.image { image.resizable().aspectRatio(contentMode: .fill) }
-                else { Color.secondary.opacity(0.12) }
-            }
+            CachedImage(url: url)
         } else {
             LinearGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.45), SolfinDesign.spaceBlack],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
