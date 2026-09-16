@@ -13,18 +13,11 @@ struct SeriesDetailView: View {
     @State private var loadingEpisodes = false
     @State private var episodeLoadID = UUID()
     @State private var overviewExpanded = false
+    @State private var heroAvailableWidth: CGFloat = 1600
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                seriesHero
-                VStack(alignment: .leading, spacing: 32) {
-                    if !seasons.isEmpty { seasonsShelf }
-                    episodeHeader
-                    episodeContent
-                }
-                .padding(.horizontal, 38).padding(.top, 34).padding(.bottom, 70)
-            }
+            seriesHero
         }
         .background(SolfinDesign.solarBackground)
         .navigationTitle(series.name)
@@ -32,67 +25,139 @@ struct SeriesDetailView: View {
     }
 
     private var seriesHero: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .bottomLeading) {
-                if let url = appState.api.backdropImageURL(for: series, maxWidth: nil) {
-                    CachedImage(url: url)
-                        .frame(width: proxy.size.width, height: proxy.size.height).clipped()
-                } else {
-                    LinearGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.38), SolfinDesign.spaceBlack], startPoint: .topLeading, endPoint: .bottomTrailing)
-                }
-                ZStack {
-                    RadialGradient(colors: [SolfinDesign.solarGold.opacity(0.62), SolfinDesign.solarOrange.opacity(0.3), .clear], center: .topTrailing, startRadius: 0, endRadius: 760)
-                    RadialGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.34), .clear], center: .bottomLeading, startRadius: 40, endRadius: 780)
-                }
-                .blendMode(.screen)
-                LinearGradient(colors: [.black.opacity(0.04), .black.opacity(0.12), SolfinDesign.spaceBlack.opacity(0.58)], startPoint: .top, endPoint: .bottom)
-                LinearGradient(colors: [.black.opacity(0.28), .clear], startPoint: .leading, endPoint: .trailing)
+        ZStack(alignment: .top) {
+            seriesBackdrop
 
-                HStack(alignment: .bottom) {
-                    VStack(alignment: .leading, spacing: 16) {
-                        FeaturedTitleView(item: series, availableWidth: proxy.size.width)
-                        HStack(spacing: 10) {
-                            if let year = series.productionYear { heroPill(String(year)) }
-                            if let count = series.childCount { heroPill("\(count) season\(count == 1 ? "" : "s")") }
-                            if let official = series.officialRating { heroPill(official) }
-                            if let rating = series.communityRating {
-                                Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                                    .font(.caption.weight(.semibold)).foregroundStyle(.yellow)
-                            }
-                        }
-                        if let genres = series.genres, !genres.isEmpty {
-                            Text(genres.prefix(4).joined(separator: "  ·  ")).font(.callout.weight(.semibold)).foregroundStyle(.white.opacity(0.8))
-                        }
-                        if let overview = series.overview, !overview.isEmpty {
-                            Text(overview)
-                                .font(.system(size: 16, weight: .regular))
-                                .lineSpacing(5)
-                                .foregroundStyle(.white.opacity(0.88))
-                                .lineLimit(overviewExpanded ? nil : 5)
-                                .frame(maxWidth: min(980, proxy.size.width * 0.66), alignment: .leading)
-                            if overview.count > 520 {
-                                Button(overviewExpanded ? "Show Less" : "More") { withAnimation { overviewExpanded.toggle() } }
-                                    .buttonStyle(.plain).font(.callout.weight(.semibold)).foregroundStyle(.white)
-                            }
-                        }
-                        if let episode = defaultPlaybackEpisode {
-                            Button { play(episode, startOver: false, queue: allQueuedEpisodes, queueIndex: allQueuedEpisodes.firstIndex(where: { $0.id == episode.id })) } label: {
-                                Label("Play", systemImage: "play.fill").padding(.horizontal, 8).padding(.vertical, 3)
-                            }.buttonStyle(.borderedProminent).controlSize(.large).tint(.white).foregroundStyle(.black)
-                        }
-                    }
-                    Spacer()
-                }.padding(.horizontal, 48).padding(.bottom, 54)
-            }.frame(width: proxy.size.width, height: proxy.size.height)
+            // All of the series content shares the artwork canvas. The stack is
+            // intentionally allowed to outgrow the 16:9 backdrop on smaller
+            // windows, so the episode shelf can continue naturally into a short
+            // scroll instead of being clipped inside the hero.
+            VStack(alignment: .leading, spacing: 28) {
+                heroCopy(availableWidth: heroAvailableWidth)
+                if !seasons.isEmpty { seasonsShelf }
+                episodeHeader
+                episodeContent
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 38)
+            .padding(.top, 64)
+            .padding(.bottom, 70)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(key: SeriesHeroWidthKey.self, value: proxy.size.width)
+                }
+            }
         }
-        .containerRelativeFrame(.vertical, alignment: .top) { available, _ in
-            max(700, available - 44)
+        .background(SolfinDesign.solarBackground)
+        .onPreferenceChange(SeriesHeroWidthKey.self) { width in
+            guard width > 0, abs(width - heroAvailableWidth) > 1 else { return }
+            heroAvailableWidth = width
+        }
+    }
+
+    private var seriesBackdrop: some View {
+        ZStack {
+            Color.black
+            if let url = appState.api.backdropImageURL(for: series, maxWidth: nil) {
+                CachedImage(url: url, contentMode: .fit)
+            } else {
+                LinearGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.38), SolfinDesign.spaceBlack],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+            }
+            ZStack {
+                RadialGradient(colors: [SolfinDesign.solarGold.opacity(0.62), SolfinDesign.solarOrange.opacity(0.3), .clear],
+                               center: .topTrailing, startRadius: 0, endRadius: 760)
+                RadialGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.34), .clear],
+                               center: .bottomLeading, startRadius: 40, endRadius: 780)
+            }
+            .blendMode(.screen)
+            LinearGradient(stops: [
+                .init(color: .black.opacity(0.16), location: 0),
+                .init(color: .clear, location: 0.30),
+                .init(color: SolfinDesign.spaceBlack.opacity(0.28), location: 0.62),
+                .init(color: SolfinDesign.spaceBlack.opacity(0.98), location: 1)
+            ], startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [.black.opacity(0.42), .clear, .black.opacity(0.08)],
+                           startPoint: .leading, endPoint: .trailing)
+        }
+        .aspectRatio(16 / 9, contentMode: .fit)
+        .frame(maxWidth: .infinity)
+        .allowsHitTesting(false)
+    }
+
+    private func heroCopy(availableWidth: CGFloat) -> some View {
+        let contentWidth = max(0, availableWidth - 76)
+        let copyWidth = min(820, max(220, contentWidth * 0.58))
+        return VStack(alignment: .leading, spacing: 15) {
+            FeaturedTitleView(item: series, availableWidth: copyWidth)
+            heroMetadata
+            if let genres = series.genres, !genres.isEmpty {
+                Text(genres.prefix(4).joined(separator: "  ·  "))
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.8))
+            }
+            if let overview = series.overview, !overview.isEmpty {
+                Text(overview)
+                    .font(.system(size: 16, weight: .regular))
+                    .lineSpacing(5)
+                    .foregroundStyle(.white.opacity(0.88))
+                    .lineLimit(overviewExpanded ? nil : 3)
+                    .frame(maxWidth: min(760, availableWidth * 0.42), alignment: .leading)
+                if overview.count > 380 {
+                    Button(overviewExpanded ? "Show Less" : "More") { withAnimation { overviewExpanded.toggle() } }
+                        .buttonStyle(.plain)
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.white)
+                }
+            }
+            if let episode = defaultPlaybackEpisode {
+                Button { play(episode, startOver: false, queue: allQueuedEpisodes,
+                              queueIndex: allQueuedEpisodes.firstIndex(where: { $0.id == episode.id })) } label: {
+                    Label(playLabel(for: episode), systemImage: "play.fill")
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(.white)
+                .foregroundStyle(.black)
+            }
+        }
+        .frame(maxWidth: copyWidth, alignment: .leading)
+    }
+
+    private var heroMetadata: some View {
+        HStack(spacing: 10) {
+            if let year = series.productionYear { heroPill(String(year)) }
+            if let count = seasonCount { heroPill("\(count) season\(count == 1 ? "" : "s")") }
+            if let official = series.officialRating { heroPill(official) }
+            if let rating = series.communityRating {
+                Label(String(format: "%.1f", rating), systemImage: "star.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.yellow)
+            }
+            if let status = series.status, !status.isEmpty {
+                Text(status)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(status.caseInsensitiveCompare("Continuing") == .orderedSame
+                                     ? SolfinDesign.solarGold : .white.opacity(0.78))
+            }
         }
     }
 
     private var seasonsShelf: some View {
-        VStack(alignment: .leading, spacing: 15) {
-            Text("Seasons").font(.title2.weight(.semibold))
+        VStack(alignment: .leading, spacing: 13) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Seasons").font(.title3.weight(.semibold))
+                    if let season = selectedSeason, let summary = seasonSummary(season) {
+                        Text(summary)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer()
+            }
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 16) {
                     ForEach(seasons) { season in
@@ -102,20 +167,29 @@ struct SeriesDetailView: View {
                             Task { await loadEpisodes(seasonId: season.id) }
                         } label: {
                             SeasonCard(season: season, selected: season.id == selectedSeasonId)
-                        }.buttonStyle(.plain)
+                        }
+                        .buttonStyle(.plain)
                     }
-                }.padding(.vertical, 6).padding(.horizontal, 2)
+                }
+                .padding(.vertical, 6)
+                .padding(.horizontal, 2)
             }
         }
+        .padding(.top, 2)
     }
 
     private var episodeHeader: some View {
-        HStack {
+        HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(selectedSeason?.name ?? "Episodes").font(.title2.weight(.semibold))
-                if !episodes.isEmpty { Text("\(episodes.count) episodes").font(.callout).foregroundStyle(.secondary) }
+                Text(selectedSeason?.name ?? "Episodes").font(.title3.weight(.semibold))
+                if !episodes.isEmpty {
+                    Text(episodeHeaderSummary).font(.callout).foregroundStyle(.secondary)
+                }
             }
             Spacer()
+            if loadingEpisodes && !episodes.isEmpty {
+                ProgressView().controlSize(.small).tint(SolfinDesign.solarOrange)
+            }
         }
     }
 
@@ -125,17 +199,34 @@ struct SeriesDetailView: View {
             EmptyContentView(title: "Episodes unavailable", message: loadError, systemImage: "wifi.exclamationmark") {
                 if let selectedSeasonId { Task { await loadEpisodes(seasonId: selectedSeasonId) } }
             }
-        } else if episodes.isEmpty { EmptyContentView(title: "No episodes", message: "This season does not contain any episodes.") }
-        else {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 330, maximum: 430), spacing: 18)], alignment: .leading, spacing: 22) {
+        } else if episodes.isEmpty {
+            EmptyContentView(title: "No episodes", message: "This season does not contain any episodes.")
+        } else {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 330, maximum: 430), spacing: 18)],
+                      alignment: .leading, spacing: 22) {
                 ForEach(episodes) { episode in
-                    NavigationLink(value: episode) { EpisodeCard(episode: episode) }.buttonStyle(.plain)
-                        .contextMenu {
-                            Button(resumeSeconds(episode) > 0 ? "Resume" : "Play") { playEpisodeFromGrid(episode, startOver: false) }
-                            if resumeSeconds(episode) > 0 { Button("Start Over") { playEpisodeFromGrid(episode, startOver: true) } }
+                    ZStack(alignment: .topTrailing) {
+                        NavigationLink(value: episode) { EpisodeCard(episode: episode) }
+                            .buttonStyle(.plain)
+                        WatchedToggle(isPlayed: episode.userData?.played == true) { played in
+                            Task { await setPlayed(episode, played: played) }
                         }
+                    }
+                    .contextMenu {
+                        Button(resumeSeconds(episode) > 0 ? "Resume" : "Play") {
+                            playEpisodeFromGrid(episode, startOver: false)
+                        }
+                        if resumeSeconds(episode) > 0 {
+                            Button("Start Over") { playEpisodeFromGrid(episode, startOver: true) }
+                        }
+                        Divider()
+                        Button(episode.userData?.played == true ? "Mark Unwatched" : "Mark Watched") {
+                            Task { await setPlayed(episode, played: episode.userData?.played != true) }
+                        }
+                    }
                 }
-            }.opacity(loadingEpisodes ? 0.55 : 1)
+            }
+            .opacity(loadingEpisodes ? 0.55 : 1)
         }
     }
 
@@ -148,21 +239,40 @@ struct SeriesDetailView: View {
                     RoundedRectangle(cornerRadius: 4).fill(.secondary.opacity(0.08)).frame(height: 12)
                 }
             }
-        }.redacted(reason: .placeholder)
+        }
+        .redacted(reason: .placeholder)
     }
 
     private var selectedSeason: BaseItem? { seasons.first { $0.id == selectedSeasonId } }
+    private var seasonCount: Int? { seasons.isEmpty ? series.childCount : seasons.count }
+    private var episodeHeaderSummary: String {
+        let unplayed = selectedSeason?.userData?.unplayedItemCount
+        if let unplayed, unplayed > 0 { return "\(episodes.count) episodes · \(unplayed) unwatched" }
+        return "\(episodes.count) episodes"
+    }
     private var defaultPlaybackEpisode: BaseItem? {
         episodes.first { resumeSeconds($0) > 0 }
             ?? episodes.first { $0.userData?.played != true }
             ?? episodes.first
     }
     private var allQueuedEpisodes: [BaseItem] { episodes }
+
+    private func seasonSummary(_ season: BaseItem) -> String? {
+        var values: [String] = []
+        if let year = season.productionYear { values.append(String(year)) }
+        if let unplayed = season.userData?.unplayedItemCount, unplayed > 0 {
+            values.append("\(unplayed) unwatched")
+        }
+        return values.isEmpty ? nil : values.joined(separator: " · ")
+    }
+
     private func heroPill(_ text: String) -> some View {
         Text(text).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.9))
-            .padding(.horizontal, 9).padding(.vertical, 5).background(.black.opacity(0.3), in: Capsule())
+            .padding(.horizontal, 9).padding(.vertical, 5)
+            .background(.black.opacity(0.3), in: Capsule())
     }
     private func resumeSeconds(_ episode: BaseItem) -> Double { Ticks.toSeconds(episode.userData?.playbackPositionTicks) }
+    private func playLabel(for episode: BaseItem) -> String { resumeSeconds(episode) > 0 ? "Resume" : "Play" }
     private func playEpisodeFromGrid(_ episode: BaseItem, startOver: Bool) {
         let q = allQueuedEpisodes
         play(episode, startOver: startOver, queue: q, queueIndex: q.firstIndex(where: { $0.id == episode.id }))
@@ -172,11 +282,24 @@ struct SeriesDetailView: View {
         nowPlaying.play(item: episode, api: appState.api, config: appState.makePlaybackConfig(),
                         startOver: startOver, queue: queue, queueIndex: queueIndex) { appState.playbackError = $0 }
     }
+    private func setPlayed(_ episode: BaseItem, played: Bool) async {
+        do {
+            try await appState.api.setPlayed(itemId: episode.id, played: played)
+            guard let selectedSeasonId else { return }
+            await loadEpisodes(seasonId: selectedSeasonId)
+            seasons = try await appState.api.seasons(seriesId: series.id)
+        } catch {
+            loadError = error.localizedDescription
+        }
+    }
     private func loadSeasons() async {
         loadError = nil
         do {
             seasons = try await appState.api.seasons(seriesId: series.id)
-            if let first = seasons.first { selectedSeasonId = first.id; await loadEpisodes(seasonId: first.id) }
+            if let first = seasons.first {
+                selectedSeasonId = first.id
+                await loadEpisodes(seasonId: first.id)
+            }
         } catch { loadError = error.localizedDescription }
     }
     private func loadEpisodes(seasonId: String) async {
@@ -193,14 +316,22 @@ struct SeriesDetailView: View {
     }
 }
 
+private struct SeriesHeroWidthKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 private struct FeaturedTitleView: View {
     @EnvironmentObject private var appState: AppState
     let item: BaseItem
     let availableWidth: CGFloat
 
-    private var logoWidth: CGFloat { min(1120, max(760, availableWidth * 0.58)) }
-    private var logoHeight: CGFloat { min(380, max(280, availableWidth * 0.22)) }
-    private var fallbackSize: CGFloat { min(88, max(58, availableWidth * 0.052)) }
+    private var logoWidth: CGFloat { min(820, max(480, availableWidth * 0.44)) }
+    private var logoHeight: CGFloat { min(230, max(150, availableWidth * 0.14)) }
+    private var fallbackSize: CGFloat { min(70, max(48, availableWidth * 0.042)) }
 
     var body: some View {
         if let url = appState.api.logoImageURL(for: item, maxWidth: 1400) {
@@ -224,9 +355,48 @@ private struct SeasonCard: View {
                 .frame(width: 170, height: 255).clipped()
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(selected ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: selected ? 3 : 1) }
-            Text(season.name).font(.callout.weight(selected ? .semibold : .regular)).foregroundStyle(.white).lineLimit(1)
+            Text(season.name).font(.system(size: 17, weight: selected ? .semibold : .regular)).foregroundStyle(.white).lineLimit(1)
             if let count = season.childCount { Text("\(count) episodes").font(.caption).foregroundStyle(.white.opacity(0.58)) }
         }.frame(width: 170, alignment: .leading)
+    }
+}
+
+private struct EpisodeArtwork: View {
+    @EnvironmentObject private var appState: AppState
+    let episode: BaseItem
+
+    var body: some View {
+        ZStack {
+            PosterImage(url: appState.api.episodeArtworkURL(for: episode, maxWidth: 1280))
+            if usesPortraitArtwork {
+                LinearGradient(colors: [.clear, .black.opacity(0.18)], startPoint: .center, endPoint: .bottom)
+            }
+        }
+    }
+
+    private var usesPortraitArtwork: Bool {
+        guard let ratio = episode.primaryImageAspectRatio else { return false }
+        return ratio < 1.25
+    }
+}
+
+private struct WatchedToggle: View {
+    let isPlayed: Bool
+    let action: (Bool) -> Void
+
+    var body: some View {
+        Button { action(!isPlayed) } label: {
+            Image(systemName: isPlayed ? "checkmark.circle.fill" : "circle")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(isPlayed ? SolfinDesign.solarGold : .white.opacity(0.9))
+                .shadow(color: .black.opacity(0.55), radius: 5)
+                .frame(width: 34, height: 34)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .padding(10)
+        .help(isPlayed ? "Mark unwatched" : "Mark watched")
+        .accessibilityLabel(isPlayed ? "Mark unwatched" : "Mark watched")
     }
 }
 
@@ -240,11 +410,16 @@ struct EpisodeCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             ZStack(alignment: .bottomLeading) {
-                PosterImage(url: appState.api.primaryImageURL(for: episode, maxHeight: 320))
+                EpisodeArtwork(episode: episode)
                     .aspectRatio(16/9, contentMode: .fill)
                     .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                 LinearGradient(colors: [.clear, .black.opacity(0.40)], startPoint: .center, endPoint: .bottom)
                     .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                if episode.userData?.played == true {
+                    LinearGradient(colors: [SolfinDesign.solarOrange.opacity(0.14), .clear],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                }
                 if hovering {
                     RoundedRectangle(cornerRadius: 21, style: .continuous)
                         .fill(RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.34), SolfinDesign.solarRed.opacity(0.18), SolfinDesign.nebulaPurple.opacity(0.22), .clear], center: .center, startRadius: 10, endRadius: 180))
@@ -281,7 +456,7 @@ struct EpisodeCard: View {
             .scaleEffect(hovering ? 1.015 : 1)
 
             HStack(alignment: .firstTextBaseline) {
-                Text(episodeTitle).font(.system(size: 19, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+                Text(episodeTitle).font(.system(size: 17, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
                 Spacer()
                 if let runtime { Text(runtime).font(.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.58)) }
             }

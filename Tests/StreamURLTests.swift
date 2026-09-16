@@ -2,13 +2,14 @@ import XCTest
 @testable import JellyfinKit
 
 final class StreamURLTests: XCTestCase {
-    private func makeClient(token: String? = "TESTTOKEN") -> APIClient {
+    private func makeClient(token: String? = "TESTTOKEN",
+                            urlSession: URLSession = .shared) -> APIClient {
         let base = URL(string: "http://localhost:8096")!
         let info = ClientInfo(deviceId: "DEV123")
         let session = token.map {
             ServerSession(serverURL: base, userId: "u1", userName: "admin", accessToken: $0)
         }
-        return APIClient(baseURL: base, clientInfo: info, session: session)
+        return APIClient(baseURL: base, clientInfo: info, session: session, urlSession: urlSession)
     }
 
     func testDirectStreamURLUsesFirstContainerToken() throws {
@@ -96,6 +97,32 @@ final class StreamURLTests: XCTestCase {
         XCTAssertEqual(q["tag"], "tagABC")
         XCTAssertEqual(q["maxHeight"], "300")
         XCTAssertEqual(q["quality"], "96")
+    }
+
+    func testEpisodeArtworkURLPrefersEpisodePrimaryImage() throws {
+        let client = makeClient()
+        let item = try decodeItem(#"{"Id":"episode1","Name":"Episode","Type":"Episode","ImageTags":{"Primary":"episodeTag"}}"#)
+        let url = try XCTUnwrap(client.episodeArtworkURL(for: item, maxWidth: 1280))
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        let query = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value) })
+
+        XCTAssertEqual(components.path, "/Items/episode1/Images/Primary")
+        XCTAssertEqual(query["tag"], "episodeTag")
+        XCTAssertEqual(query["maxWidth"], "1280")
+        XCTAssertEqual(query["quality"], "100")
+    }
+
+    func testSetPlayedUsesPlayedItemsEndpointAndMethod() async throws {
+        MockURLProtocol.handler = { _ in (204, Data()) }
+        let client = makeClient(urlSession: MockURLProtocol.makeSession())
+
+        try await client.setPlayed(itemId: "episode1", played: true)
+        XCTAssertEqual(MockURLProtocol.lastRequest?.httpMethod, "POST")
+        XCTAssertEqual(MockURLProtocol.lastRequest?.url?.path, "/Users/u1/PlayedItems/episode1")
+
+        try await client.setPlayed(itemId: "episode1", played: false)
+        XCTAssertEqual(MockURLProtocol.lastRequest?.httpMethod, "DELETE")
+        XCTAssertEqual(MockURLProtocol.lastRequest?.url?.path, "/Users/u1/PlayedItems/episode1")
     }
 
     func testOriginalResolutionImageURLsOmitResizeParameters() throws {

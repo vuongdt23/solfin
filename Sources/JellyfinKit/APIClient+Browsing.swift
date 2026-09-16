@@ -9,7 +9,7 @@ public extension APIClient {
 
     // Common set of fields we want back on items.
     private static let itemFields =
-        "Overview,MediaSources,MediaStreams,ProductionYear,IndexNumber,ParentIndexNumber,DateCreated,OfficialRating,CommunityRating,Genres,ParentBackdropItemId,ParentBackdropImageTags,ParentLogoItemId,ParentLogoImageTag,SeriesPrimaryImageTag"
+        "Overview,MediaSources,MediaStreams,ProductionYear,IndexNumber,ParentIndexNumber,DateCreated,PremiereDate,EndDate,Status,AirDays,CumulativeRunTimeTicks,RecursiveItemCount,ChildCount,PrimaryImageAspectRatio,OfficialRating,CommunityRating,Genres,ParentBackdropItemId,ParentBackdropImageTags,ParentLogoItemId,ParentLogoImageTag,SeriesPrimaryImageTag"
 
     /// Top-level libraries ("Views") for the signed-in user.
     func views() async throws -> [BaseItem] {
@@ -202,6 +202,15 @@ public extension APIClient {
         return try decode(BaseItem.self, from: try await send(req))
     }
 
+    /// Set the signed-in user's watched state for an item.
+    /// Jellyfin uses POST to mark an item played and DELETE to mark it unplayed.
+    func setPlayed(itemId: String, played: Bool) async throws {
+        let uid = try requireUser()
+        let method = played ? "POST" : "DELETE"
+        let req = try makeRequest(path: "Users/\(uid)/PlayedItems/\(itemId)", method: method)
+        try await send(req)
+    }
+
     // MARK: - Image / stream URLs
 
     /// Primary image URL for an item (nil if it has no primary image tag).
@@ -275,6 +284,21 @@ public extension APIClient {
         if let maxWidth { query.append(URLQueryItem(name: "maxWidth", value: String(maxWidth))) }
         comps?.queryItems = query
         return comps?.url
+    }
+
+    /// Episode artwork for a wide card or hero. Jellyfin stores many episode stills
+    /// as a 16:9 Primary image, so prefer that before the series poster.
+    func episodeArtworkURL(for item: BaseItem, maxWidth: Int? = 1280) -> URL? {
+        if let tag = item.imageTags?["Primary"] {
+            var comps = URLComponents(url: baseURL.appendingPathComponent("Items/\(item.id)/Images/Primary"),
+                                      resolvingAgainstBaseURL: false)
+            var query = [URLQueryItem(name: "tag", value: tag),
+                         URLQueryItem(name: "quality", value: "100")]
+            if let maxWidth { query.append(URLQueryItem(name: "maxWidth", value: String(maxWidth))) }
+            comps?.queryItems = query
+            return comps?.url
+        }
+        return playablePosterURL(for: item, maxHeight: 720)
     }
 
     /// Direct static-file stream URL (raw file, no transcode). Token in query so mpv can fetch it.

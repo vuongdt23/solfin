@@ -94,7 +94,14 @@ struct ItemDetailView: View {
     }
 
     @ViewBuilder private func backdrop(_ item: BaseItem, size: CGSize) -> some View {
-        if let url = backdropURL(item) {
+        // Episode stills are often much smaller than a series backdrop. Use the
+        // still as a deliberate foreground frame and let a blurred copy fill the
+        // canvas so the lower-resolution source feels atmospheric rather than
+        // stretched or replaced by the series poster.
+        if item.type == "Episode",
+           let episodeImage = appState.api.primaryImageURL(for: item, maxHeight: nil, quality: 100) {
+            episodeArtworkBackdrop(item, url: episodeImage, size: size)
+        } else if let url = backdropURL(item) {
             CachedImage(url: url)
                 .frame(width: size.width, height: size.height).clipped()
         } else if let poster = appState.api.playablePosterURL(for: item, maxHeight: nil) {
@@ -107,6 +114,51 @@ struct ItemDetailView: View {
             LinearGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.38), SolfinDesign.spaceBlack],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
         }
+    }
+
+    private func episodeArtworkBackdrop(_ item: BaseItem, url: URL, size: CGSize) -> some View {
+        let imageWidth = min(1_020, max(520, size.width * 0.58))
+        let imageAspect = max(1.25, min(2.0, item.primaryImageAspectRatio ?? (16.0 / 9.0)))
+        let imageHeight = min(size.height * 0.64, imageWidth / imageAspect)
+
+        return ZStack(alignment: .topTrailing) {
+            // Keep the still part of the scene itself: a quiet blurred wash gives
+            // the source image presence without making a separate floating card.
+            CachedImage(url: url)
+                .frame(width: size.width, height: size.height)
+                .clipped()
+                .blur(radius: 34)
+                .scaleEffect(1.10)
+                .opacity(0.42)
+
+            RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.22), .clear],
+                           center: .topTrailing, startRadius: 0, endRadius: 520)
+                .frame(width: size.width * 0.62, height: size.height * 0.72)
+                .blur(radius: 28)
+
+            CachedImage(url: url, contentMode: .fill)
+                .frame(width: imageWidth, height: imageHeight)
+                .mask {
+                    LinearGradient(stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .black.opacity(0.72), location: 0.14),
+                        .init(color: .black, location: 0.34),
+                        .init(color: .black, location: 1)
+                    ], startPoint: .leading, endPoint: .trailing)
+                }
+                .padding(.top, 42)
+                .padding(.trailing, max(34, size.width * 0.055))
+
+            // These fades tie the right-hand image into the information column and
+            // into the dark lower portion of the hero without adding labels.
+            LinearGradient(colors: [.black.opacity(0.94), .black.opacity(0.28), .clear],
+                           startPoint: .leading, endPoint: .trailing)
+            LinearGradient(colors: [.clear, SolfinDesign.spaceBlack.opacity(0.72)],
+                           startPoint: .top, endPoint: .bottom)
+            LinearGradient(colors: [.black.opacity(0.18), .clear],
+                           startPoint: .top, endPoint: .bottom)
+        }
+        .clipped()
     }
 
     private var cinematicScrim: some View {
