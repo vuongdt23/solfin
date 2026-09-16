@@ -237,8 +237,10 @@ private struct SeasonCard: View {
 
 struct EpisodeCard: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var nowPlaying: NowPlaying
     let episode: BaseItem
     @State private var hovering = false
+    @State private var playButtonHovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -253,12 +255,24 @@ struct EpisodeCard: View {
                         .fill(RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.34), SolfinDesign.solarRed.opacity(0.18), SolfinDesign.nebulaPurple.opacity(0.22), .clear], center: .center, startRadius: 10, endRadius: 180))
                         .blur(radius: 16)
                         .padding(-14)
-                    Image(systemName: "play.fill").font(.title3).foregroundStyle(.white)
-                        .frame(width: 50, height: 50)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay { Circle().strokeBorder(SolfinDesign.solarOrange.opacity(0.45)) }
-                        .shadow(color: SolfinDesign.solarOrange.opacity(0.35), radius: 18, y: 5)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    Button {
+                        nowPlaying.play(item: episode, api: appState.api, config: appState.makePlaybackConfig()) {
+                            appState.playbackError = $0
+                        }
+                    } label: {
+                        Image(systemName: "play.fill").font(.title3).foregroundStyle(.white)
+                            .frame(width: 50, height: 50)
+                            .background(playButtonHovering ? SolfinDesign.solarOrange.opacity(0.78) : .clear, in: Circle())
+                            .background(.ultraThinMaterial, in: Circle())
+                            .overlay { Circle().strokeBorder(playButtonHovering ? SolfinDesign.solarGold : SolfinDesign.solarOrange.opacity(0.45), lineWidth: playButtonHovering ? 2 : 1) }
+                            .shadow(color: SolfinDesign.solarOrange.opacity(playButtonHovering ? 0.7 : 0.35), radius: playButtonHovering ? 26 : 18, y: 5)
+                            .scaleEffect(playButtonHovering ? 1.12 : 1)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Play")
+                    .onHover { playButtonHovering = $0 }
+                    .animation(.easeOut(duration: 0.16), value: playButtonHovering)
+                    .accessibilityLabel("Play \(episode.name)")
                 }
                 if let pct = episode.userData?.playedPercentage, pct > 0 {
                     GeometryReader { geo in
