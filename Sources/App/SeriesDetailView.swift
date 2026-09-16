@@ -35,11 +35,8 @@ struct SeriesDetailView: View {
         GeometryReader { proxy in
             ZStack(alignment: .bottomLeading) {
                 if let url = appState.api.backdropImageURL(for: series, maxWidth: nil) {
-                    AsyncImage(url: url) { phase in
-                        if let image = phase.image { image.resizable().aspectRatio(contentMode: .fill) }
-                        else { Color.secondary.opacity(0.1) }
-                    }
-                    .frame(width: proxy.size.width, height: proxy.size.height).clipped()
+                    CachedImage(url: url)
+                        .frame(width: proxy.size.width, height: proxy.size.height).clipped()
                 } else {
                     LinearGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.38), SolfinDesign.spaceBlack], startPoint: .topLeading, endPoint: .bottomTrailing)
                 }
@@ -207,10 +204,8 @@ private struct FeaturedTitleView: View {
 
     var body: some View {
         if let url = appState.api.logoImageURL(for: item, maxWidth: 1400) {
-            AsyncImage(url: url) { phase in
-                if let image = phase.image { image.resizable().aspectRatio(contentMode: .fit) }
-                else { fallback }
-            }.frame(width: logoWidth, height: logoHeight, alignment: .leading)
+            CachedImage(url: url, contentMode: .fit)
+                .frame(width: logoWidth, height: logoHeight, alignment: .leading)
         } else { fallback }
     }
     private var fallback: some View {

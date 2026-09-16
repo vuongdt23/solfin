@@ -1,16 +1,49 @@
 import SwiftUI
 import JellyfinKit
+import PlaybackEngine
+
+struct CachedImage: View {
+    let url: URL?
+    let contentMode: ContentMode
+    @State private var image: NSImage?
+    @State private var loading = false
+
+    init(url: URL?, contentMode: ContentMode = .fill) {
+        self.url = url
+        self.contentMode = contentMode
+    }
+
+    var body: some View {
+        Group {
+            if let image { Image(nsImage: image).resizable().aspectRatio(contentMode: contentMode) }
+            else if loading { ZStack { Color.secondary.opacity(0.1); ProgressView().controlSize(.small) } }
+            else { Color.secondary.opacity(0.1) }
+        }
+        .task(id: url) {
+            guard let url else { image = nil; return }
+            loading = true
+            image = await MediaAssetCache.shared.image(for: url)
+            loading = false
+        }
+    }
+}
 
 struct PosterImage: View {
     let url: URL?
+    @State private var image: NSImage?
+    @State private var loading = false
+
     var body: some View {
-        AsyncImage(url: url) { phase in
-            switch phase {
-            case .success(let image): image.resizable().aspectRatio(contentMode: .fill)
-            case .failure: placeholder
-            case .empty: ZStack { Color.secondary.opacity(0.1); if url != nil { ProgressView().controlSize(.small) } else { icon } }
-            @unknown default: placeholder
-            }
+        Group {
+            if let image { Image(nsImage: image).resizable().aspectRatio(contentMode: .fill) }
+            else if loading { ZStack { Color.secondary.opacity(0.1); ProgressView().controlSize(.small) } }
+            else { placeholder }
+        }
+        .task(id: url) {
+            guard let url else { image = nil; return }
+            loading = true
+            image = await MediaAssetCache.shared.image(for: url)
+            loading = false
         }
     }
     private var placeholder: some View { ZStack { Color.secondary.opacity(0.1); icon } }
@@ -208,10 +241,7 @@ struct BackdropHero: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             if let url {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image { image.resizable().aspectRatio(contentMode: .fill) }
-                    else { Color.secondary.opacity(0.1) }
-                }.frame(height: height).clipped()
+                CachedImage(url: url).frame(height: height).clipped()
                 LinearGradient(colors: [.clear, .black.opacity(0.22), Color(nsColor: .windowBackgroundColor)],
                                startPoint: .top, endPoint: .bottom).frame(height: height)
             }

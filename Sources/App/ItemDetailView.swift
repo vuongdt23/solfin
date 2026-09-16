@@ -95,21 +95,13 @@ struct ItemDetailView: View {
 
     @ViewBuilder private func backdrop(_ item: BaseItem, size: CGSize) -> some View {
         if let url = backdropURL(item) {
-            AsyncImage(url: url) { phase in
-                if let image = phase.image { image.resizable().aspectRatio(contentMode: .fill) }
-                else { Color.secondary.opacity(0.1) }
-            }
-            .frame(width: size.width, height: size.height).clipped()
+            CachedImage(url: url)
+                .frame(width: size.width, height: size.height).clipped()
         } else if let poster = appState.api.playablePosterURL(for: item, maxHeight: nil) {
             ZStack {
-                AsyncImage(url: poster) { phase in
-                    if let image = phase.image { image.resizable().aspectRatio(contentMode: .fill) }
-                    else { Color.secondary.opacity(0.1) }
-                }
-                .frame(width: size.width, height: size.height).clipped().blur(radius: 24).scaleEffect(1.08)
-                AsyncImage(url: poster) { phase in
-                    if let image = phase.image { image.resizable().aspectRatio(contentMode: .fit) }
-                }.padding(.vertical, 40)
+                CachedImage(url: poster)
+                    .frame(width: size.width, height: size.height).clipped().blur(radius: 24).scaleEffect(1.08)
+                CachedImage(url: poster, contentMode: .fit).padding(.vertical, 40)
             }
         } else {
             LinearGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.38), SolfinDesign.spaceBlack],
@@ -147,11 +139,8 @@ struct ItemDetailView: View {
                     .foregroundStyle(.white.opacity(0.68))
             }
             if let logoURL = appState.api.logoImageURL(for: item, maxWidth: nil) {
-                AsyncImage(url: logoURL) { phase in
-                    if let image = phase.image { image.resizable().aspectRatio(contentMode: .fit) }
-                    else { titleFallback(item, size: titleSize) }
-                }
-                .frame(width: logoWidth, height: logoHeight, alignment: .leading)
+                CachedImage(url: logoURL, contentMode: .fit)
+                    .frame(width: logoWidth, height: logoHeight, alignment: .leading)
             } else { titleFallback(item, size: titleSize) }
             heroMetadata(item)
             actions(item)
