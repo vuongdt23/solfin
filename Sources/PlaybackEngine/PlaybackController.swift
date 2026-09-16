@@ -8,15 +8,6 @@ public final class PlaybackController {
 
     public enum State: String, Sendable { case idle, starting, playing, paused, stopped }
 
-    public struct PlaybackError: Error, LocalizedError, Sendable {
-        public let message: String
-        public var errorDescription: String? { message }
-
-        public init(message: String) {
-            self.message = message
-        }
-    }
-
     public struct Config {
         public var mpvBinaryPath: String?
         public var configDir: String?
@@ -72,6 +63,7 @@ public final class PlaybackController {
     private var state: State = .idle
     private var hasStartedPlayback = false
     private var progressTimer: DispatchSourceTimer?
+
     private let timePosId = 1
     private let pauseId = 2
     private let durationId = 3
@@ -425,37 +417,16 @@ public final class PlaybackController {
             case "end-file":
                 // reason: "eof" (completed) | "stop" | "quit" | "error" | "redirect"
                 let reason = msg["reason"] as? String
-                let mpvError = msg["error"] as? String
                 if self.suppressReplacementEndFile, reason != "eof" {
                     self.suppressReplacementEndFile = false
                     return
                 }
                 if reason == "eof" {
-                    // mpv reports a truncated HTTP stream as an ordinary EOF. Do not
-                    // treat that as completion: the next episode would otherwise
-                    // autoplay and the UI would look as if playback had crashed.
-                    let remaining = self.durationSeconds - self.positionSeconds
-                    let endedPrematurely = self.hasStartedPlayback &&
-                        self.durationSeconds > 0 && remaining > 5
-                    if endedPrematurely {
-                        let detail = mpvError.map { ": \($0)" } ?? ""
-                        SolfinLog.error("mpv ended before media completed: position=\(Int(self.positionSeconds)) duration=\(Int(self.durationSeconds)) reason=\(reason ?? "nil")\(detail)", category: .mpv)
-                        // network-retry.lua owns recovery. Keep the controller alive
-                        // until it reports that its retry budget is exhausted.
+                    self.naturalEnd = true
+                    if self.autoplayQueuedItems, self.hasNextItem {
+                        self.switchToQueueIndex(self.queueIndex + 1, startOverride: 0, suppressCurrentEndFile: false)
                         return
-                    } else {
-                        self.naturalEnd = true
-                        if self.autoplayQueuedItems, self.hasNextItem {
-                            self.switchToQueueIndex(self.queueIndex + 1, startOverride: 0, suppressCurrentEndFile: false)
-                            return
-                        }
                     }
-                } else if reason == "error" {
-                    let detail = mpvError.map { ": \($0)" } ?? ""
-                    SolfinLog.error("mpv playback error\(detail)", category: .mpv)
-                    // The mpv retry script will either recover or send the exhausted
-                    // message below. Do not finalize on the first transient error.
-                    return
                 }
                 self.finalizeLocked()
             case "client-message":
@@ -464,11 +435,6 @@ public final class PlaybackController {
                 switch name {
                 case "solfin-next": self.playNext()
                 case "solfin-prev": self.playPrevious()
-                case "solfin-network-retry-exhausted":
-                    self.emitError(PlaybackError(message: "Playback stopped because the media server or network connection failed. Please try again."))
-                    self.finalizeLocked()
-                case "solfin-network-retrying":
-                    SolfinLog.info("mpv is retrying the network stream", category: .mpv)
                 default: break
                 }
             case "shutdown":
@@ -646,6 +612,7 @@ public final class PlaybackController {
 
         progressTimer?.cancel()
         progressTimer = nil
+
         let pos = positionSeconds
         if let plan {
             Task { try? await api.reportPlaybackStopped(plan, positionSeconds: pos) }
