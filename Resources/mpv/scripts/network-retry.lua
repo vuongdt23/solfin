@@ -5,8 +5,8 @@
 
 local msg = require "mp.msg"
 
-local max_retries = 6
-local backoff = { 0.5, 1, 2, 4, 8, 15 }
+local max_retries = 10
+local backoff = { 0.25, 0.5, 1, 1, 2, 2, 4, 4, 8, 8 }
 local retries = 0
 local retry_timer
 local replacing = false
@@ -53,10 +53,17 @@ mp.register_event("end-file", function(event)
     if reason == "eof" or reason == "error" then
         if retryable() then
             retry()
-        elseif reason == "error" then
+        else
+            -- This includes the case where the final buffered data has drained
+            -- and mpv can no longer report a useful remaining duration.
             mp.commandv("script-message", "solfin-network-retry-exhausted")
         end
     end
+end)
+
+mp.register_event("playback-restart", function()
+    -- A reload that reaches playback is a successful recovery.
+    retries = 0
 end)
 
 mp.register_event("shutdown", function()
