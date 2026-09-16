@@ -19,8 +19,10 @@ struct PosterImage: View {
 
 struct PosterCard: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var nowPlaying: NowPlaying
     let item: BaseItem
     @State private var hovering = false
+    @State private var playButtonHovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -38,13 +40,23 @@ struct PosterCard: View {
                         .fill(RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.32), SolfinDesign.solarRed.opacity(0.18), SolfinDesign.nebulaPurple.opacity(0.22), .clear], center: .center, startRadius: 10, endRadius: 140))
                         .blur(radius: 16)
                         .padding(-14)
+                        .allowsHitTesting(false)
                         .transition(.opacity)
-                    Image(systemName: "play.fill").font(.title2).foregroundStyle(.white)
-                        .frame(width: 52, height: 52)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay { Circle().strokeBorder(SolfinDesign.solarOrange.opacity(0.45)) }
-                        .shadow(color: SolfinDesign.solarOrange.opacity(0.35), radius: 18, y: 5)
-                        .transition(.scale.combined(with: .opacity))
+                    Button {
+                        nowPlaying.play(item: item, api: appState.api, config: appState.makePlaybackConfig()) { appState.playbackError = $0 }
+                    } label: {
+                        Image(systemName: "play.fill").font(.title2).foregroundStyle(.white)
+                            .frame(width: 52, height: 52)
+                            .background(playButtonHovering ? SolfinDesign.solarOrange.opacity(0.78) : .clear, in: Circle())
+                            .background(.ultraThinMaterial, in: Circle())
+                            .overlay { Circle().strokeBorder(playButtonHovering ? SolfinDesign.solarGold : SolfinDesign.solarOrange.opacity(0.45), lineWidth: playButtonHovering ? 2 : 1) }
+                            .shadow(color: SolfinDesign.solarOrange.opacity(playButtonHovering ? 0.7 : 0.35), radius: playButtonHovering ? 26 : 18, y: 5)
+                            .scaleEffect(playButtonHovering ? 1.12 : 1)
+                    }
+                    .buttonStyle(.plain).help("Play")
+                    .onHover { playButtonHovering = $0 }
+                    .animation(.easeOut(duration: 0.16), value: playButtonHovering)
+                    .accessibilityLabel("Play \(item.name)")
                 }
             }
             .frame(width: 160, height: 240)
@@ -89,12 +101,14 @@ struct PosterCard: View {
 
 struct LandscapeCard: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var nowPlaying: NowPlaying
     let item: BaseItem
     @State private var hovering = false
+    @State private var playButtonHovering = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .bottom) {
+            ZStack {
                 PosterImage(url: appState.api.backdropImageURL(for: item, maxWidth: 640)
                             ?? appState.api.primaryImageURL(for: item, maxHeight: 260))
                     .frame(width: 250, height: 141)
@@ -106,13 +120,23 @@ struct LandscapeCard: View {
                         .fill(RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.34), SolfinDesign.solarRed.opacity(0.18), SolfinDesign.nebulaPurple.opacity(0.22), .clear], center: .center, startRadius: 8, endRadius: 140))
                         .blur(radius: 16)
                         .padding(-14)
+                        .allowsHitTesting(false)
                         .transition(.opacity)
-                    Image(systemName: "play.fill").font(.headline).foregroundStyle(.white)
-                        .frame(width: 46, height: 46)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay { Circle().strokeBorder(SolfinDesign.solarOrange.opacity(0.45)) }
-                        .shadow(color: SolfinDesign.solarOrange.opacity(0.35), radius: 18, y: 5)
-                        .transition(.scale.combined(with: .opacity))
+                    Button {
+                        nowPlaying.play(item: item, api: appState.api, config: appState.makePlaybackConfig()) { appState.playbackError = $0 }
+                    } label: {
+                        Image(systemName: "play.fill").font(.headline).foregroundStyle(.white)
+                            .frame(width: 46, height: 46)
+                            .background(playButtonHovering ? SolfinDesign.solarOrange.opacity(0.78) : .clear, in: Circle())
+                            .background(.ultraThinMaterial, in: Circle())
+                            .overlay { Circle().strokeBorder(playButtonHovering ? SolfinDesign.solarGold : SolfinDesign.solarOrange.opacity(0.45), lineWidth: playButtonHovering ? 2 : 1) }
+                            .shadow(color: SolfinDesign.solarOrange.opacity(playButtonHovering ? 0.7 : 0.35), radius: playButtonHovering ? 26 : 18, y: 5)
+                            .scaleEffect(playButtonHovering ? 1.12 : 1)
+                    }
+                    .buttonStyle(.plain).help("Play")
+                    .onHover { playButtonHovering = $0 }
+                    .animation(.easeOut(duration: 0.16), value: playButtonHovering)
+                    .accessibilityLabel("Play \(item.name)")
                 }
                 if let pct = item.userData?.playedPercentage, pct > 0 {
                     GeometryReader { geo in
