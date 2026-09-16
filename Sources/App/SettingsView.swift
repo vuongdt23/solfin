@@ -239,7 +239,7 @@ struct SettingsView: View {
 
 private struct MPVConfigurationView: View {
     @ObservedObject var store: MPVConfigurationStore
-    @State private var showBundled = true
+    @AppStorage("solfin.mpvShowBundledConfiguration") private var showBundled = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
