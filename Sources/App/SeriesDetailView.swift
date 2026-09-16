@@ -272,11 +272,11 @@ struct EpisodeCard: View {
             .scaleEffect(hovering ? 1.015 : 1)
 
             HStack(alignment: .firstTextBaseline) {
-                Text(episodeTitle).font(.headline).foregroundStyle(.white).lineLimit(1)
+                Text(episodeTitle).font(.system(size: 19, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
                 Spacer()
                 if let runtime { Text(runtime).font(.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.58)) }
             }
-            if let overview = episode.overview { Text(overview).font(.caption).foregroundStyle(.white.opacity(0.6)).lineLimit(2).lineSpacing(2) }
+            if let overview = episode.overview { Text(overview).font(.system(size: 14, weight: .regular)).foregroundStyle(.white.opacity(0.6)).lineLimit(2).lineSpacing(2) }
         }
         .contentShape(Rectangle()).onHover { hovering = $0 }
         .animation(.spring(response: 0.28, dampingFraction: 0.8), value: hovering)

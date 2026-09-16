@@ -120,9 +120,9 @@ private struct SearchEpisodeRow: View {
             PosterImage(url: appState.api.primaryImageURL(for: episode, maxHeight: 180))
                 .frame(width: 160, height: 90).clipped().clipShape(RoundedRectangle(cornerRadius: 8))
             VStack(alignment: .leading, spacing: 5) {
-                Text(episode.name).font(.headline)
+                Text(episode.name).font(.system(size: 18, weight: .semibold))
                 Text(subtitle).font(.callout).foregroundStyle(.secondary)
-                if let overview = episode.overview { Text(overview).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
+                if let overview = episode.overview { Text(overview).font(.system(size: 14)).foregroundStyle(.secondary).lineLimit(2) }
             }
             Spacer()
             Image(systemName: "chevron.right").foregroundStyle(.tertiary)
