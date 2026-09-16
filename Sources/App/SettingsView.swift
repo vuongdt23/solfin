@@ -11,8 +11,8 @@ struct SettingsView: View {
     @StateObject private var configStore = MPVConfigurationStore()
     @State private var validationMessage: String?
     @State private var cacheStats = MediaAssetCache.Statistics(assetCount: 0, variantCount: 0, sourceBytes: 0, variantBytes: 0, location: "")
-    @State private var cacheMaxEntries = 500
-    @State private var cacheMaxMB = 500
+    @AppStorage("solfin.cacheMaxEntries") private var cacheMaxEntries = 500
+    @AppStorage("solfin.cacheMaxMB") private var cacheMaxMB = 500
     @State private var cacheMessage: String?
 
     var body: some View {
@@ -239,7 +239,7 @@ struct SettingsView: View {
 
 private struct MPVConfigurationView: View {
     @ObservedObject var store: MPVConfigurationStore
-    @State private var showBundled = true
+    @AppStorage("solfin.mpvShowBundledConfiguration") private var showBundled = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
