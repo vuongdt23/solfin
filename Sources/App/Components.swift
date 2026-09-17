@@ -97,7 +97,9 @@ struct PosterCard: View {
             .shadow(color: SolfinDesign.solarOrange.opacity(hovering ? 0.22 : 0), radius: 24, y: 10)
             .shadow(color: SolfinDesign.nebulaPurple.opacity(hovering ? 0.18 : 0), radius: 30, y: 14)
             .shadow(color: .black.opacity(hovering ? 0.36 : 0.14), radius: hovering ? 18 : 6, y: hovering ? 10 : 3)
-            .scaleEffect(hovering ? 1.035 : 1)
+            // Keep the card's hit area and position stable while hovering. Scaling the
+            // whole card makes neighboring cards steal hover events on macOS, which can
+            // cause the hover effect to flicker or appear on the wrong card.
             Text(item.name).font(.system(size: 17, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
             if let subtitle { Text(subtitle).font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.64)).lineLimit(1) }
         }
@@ -183,7 +185,6 @@ struct LandscapeCard: View {
             .shadow(color: SolfinDesign.solarOrange.opacity(hovering ? 0.22 : 0), radius: 24, y: 10)
             .shadow(color: SolfinDesign.nebulaPurple.opacity(hovering ? 0.18 : 0), radius: 30, y: 14)
             .shadow(color: .black.opacity(hovering ? 0.34 : 0.1), radius: hovering ? 16 : 5, y: 6)
-            .scaleEffect(hovering ? 1.026 : 1)
             Text(item.type == "Episode" ? (item.seriesName ?? item.name) : item.name)
                 .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
             if let subtitle { Text(subtitle).font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.64)).lineLimit(1) }
@@ -230,7 +231,7 @@ struct LibraryBanner: View {
         .compositingGroup()
         .shadow(color: SolfinDesign.solarOrange.opacity(hovering ? 0.22 : 0), radius: 24, y: 10)
         .shadow(color: SolfinDesign.nebulaPurple.opacity(hovering ? 0.16 : 0), radius: 30, y: 14)
-        .scaleEffect(hovering ? 1.025 : 1).onHover { hovering = $0 }
+        .onHover { hovering = $0 }
         .animation(.spring(response: 0.28, dampingFraction: 0.8), value: hovering)
     }
 }

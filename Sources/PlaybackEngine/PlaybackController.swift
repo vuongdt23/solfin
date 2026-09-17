@@ -307,6 +307,9 @@ public final class PlaybackController {
                     self.ipc?.loadFile(prepared.plan.streamURL.absoluteString,
                                        startSeconds: prepared.plan.resumeSeconds,
                                        mediaTitle: prepared.title)
+                    // `file-loaded` will configure the new plan's source-wide
+                    // tracks and sidecars. Doing it before that event is too early:
+                    // mpv can discard a sub-add when loadFile replaces the file.
                     self.sendLogoToOSC(prepared.logoOverlay)
                     self.sendQueueStateToOSC()
                 }
@@ -407,6 +410,9 @@ public final class PlaybackController {
                 }
             case "file-loaded":
                 SolfinLog.debug("mpv file-loaded; waiting for playback-restart/first frame", category: .mpv)
+                // This runs for both the initial file and files introduced by
+                // queue transitions. Reapply the resolved plan because queued
+                // items have different stream indexes and sidecar URLs.
                 self.configureInitialTrackSelectionsLocked()
             case "playback-restart":
                 if !self.hasStartedPlayback {
@@ -571,7 +577,7 @@ public final class PlaybackController {
                   let filename = track["external-filename"] as? String,
                   let mpvID = Self.intValue(track["id"]),
                   let streamIndex = pendingExternalSubtitleURLs.first(where: {
-                      $0.value == filename
+                      Self.externalSubtitleURLMatches($0.value, filename)
                   })?.key else { continue }
             externalSubtitleTrackIDs[streamIndex] = mpvID
             loadingExternalSubtitleIndexes.remove(streamIndex)
@@ -579,6 +585,21 @@ public final class PlaybackController {
         if needsApplySubtitleSelection {
             applyRequestedSubtitleSelection()
         }
+    }
+
+    /// mpv does not always echo a sub-add URL byte-for-byte. In particular,
+    /// percent escaping and the query string can differ between mpv versions.
+    /// Match the URL first, then its path, so queued items still get their
+    /// Jellyfin sidecars associated with the source-wide stream index.
+    private static func externalSubtitleURLMatches(_ expected: String, _ actual: String) -> Bool {
+        if expected == actual { return true }
+        guard let expectedURL = URL(string: expected),
+              let actualURL = URL(string: actual) else { return false }
+        let expectedPath = expectedURL.path.removingPercentEncoding ?? expectedURL.path
+        let actualPath = actualURL.path.removingPercentEncoding ?? actualURL.path
+        return expectedPath == actualPath
+            && (expectedURL.host == nil || actualURL.host == nil
+                || expectedURL.host?.caseInsensitiveCompare(actualURL.host ?? "") == .orderedSame)
     }
 
     // MARK: - Progress reporting

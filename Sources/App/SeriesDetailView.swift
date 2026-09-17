@@ -161,14 +161,13 @@ struct SeriesDetailView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(alignment: .top, spacing: 16) {
                     ForEach(seasons) { season in
-                        Button {
-                            guard selectedSeasonId != season.id else { return }
-                            selectedSeasonId = season.id
-                            Task { await loadEpisodes(seasonId: season.id) }
-                        } label: {
-                            SeasonCard(season: season, selected: season.id == selectedSeasonId)
-                        }
-                        .buttonStyle(.plain)
+                        SeasonCard(season: season, selected: season.id == selectedSeasonId,
+                                   onSelect: {
+                                       guard selectedSeasonId != season.id else { return }
+                                       selectedSeasonId = season.id
+                                       Task { await loadEpisodes(seasonId: season.id) }
+                                   },
+                                   onPlay: { Task { await playSeason(season) } })
                     }
                 }
                 .padding(.vertical, 6)
@@ -277,6 +276,21 @@ struct SeriesDetailView: View {
         let q = allQueuedEpisodes
         play(episode, startOver: startOver, queue: q, queueIndex: q.firstIndex(where: { $0.id == episode.id }))
     }
+    private func playSeason(_ season: BaseItem) async {
+        appState.playbackError = nil
+        do {
+            let seasonEpisodes = try await appState.api.episodes(seriesId: series.id, seasonId: season.id)
+            guard let first = seasonEpisodes.first(where: { resumeSeconds($0) > 0 })
+                    ?? seasonEpisodes.first(where: { $0.userData?.played != true })
+                    ?? seasonEpisodes.first else { return }
+            selectedSeasonId = season.id
+            episodes = seasonEpisodes
+            play(first, startOver: false, queue: seasonEpisodes,
+                 queueIndex: seasonEpisodes.firstIndex(where: { $0.id == first.id }))
+        } catch {
+            appState.playbackError = error.localizedDescription
+        }
+    }
     private func play(_ episode: BaseItem, startOver: Bool, queue: [BaseItem] = [], queueIndex: Int? = nil) {
         appState.playbackError = nil
         nowPlaying.play(item: episode, api: appState.api, config: appState.makePlaybackConfig(),
@@ -349,15 +363,45 @@ private struct SeasonCard: View {
     @EnvironmentObject private var appState: AppState
     let season: BaseItem
     let selected: Bool
+    let onSelect: () -> Void
+    let onPlay: () -> Void
+    @State private var hovering = false
+    @State private var playHovering = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            PosterImage(url: appState.api.primaryImageURL(for: season, maxHeight: 420))
-                .frame(width: 170, height: 255).clipped()
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(selected ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: selected ? 3 : 1) }
+            ZStack {
+                PosterImage(url: appState.api.primaryImageURL(for: season, maxHeight: 420))
+                    .frame(width: 170, height: 255).clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                Button(action: onPlay) {
+                        Image(systemName: "play.fill")
+                            .font(.title2)
+                            .foregroundStyle(.white)
+                            .frame(width: 58, height: 58)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .overlay { Circle().fill(playHovering ? SolfinDesign.solarOrange.opacity(0.88) : .clear) }
+                            .overlay { Circle().strokeBorder(playHovering ? SolfinDesign.solarGold : .white.opacity(0.72), lineWidth: playHovering ? 2 : 1.5) }
+                            .shadow(color: .black.opacity(playHovering ? 0.55 : 0.35), radius: playHovering ? 14 : 9, y: 5)
+                            .scaleEffect(playHovering ? 1.1 : 1)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Play season")
+                    .accessibilityLabel("Play \(season.name)")
+                    .onHover { playHovering = $0 }
+                    .animation(.easeOut(duration: 0.16), value: playHovering)
+                .opacity(hovering ? 1 : 0)
+                .allowsHitTesting(hovering)
+                .animation(.easeOut(duration: 0.16), value: hovering)
+            }
+            .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(selected ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: selected ? 3 : 1) }
             Text(season.name).font(.system(size: 17, weight: selected ? .semibold : .regular)).foregroundStyle(.white).lineLimit(1)
             if let count = season.childCount { Text("\(count) episodes").font(.caption).foregroundStyle(.white.opacity(0.58)) }
-        }.frame(width: 170, alignment: .leading)
+        }
+        .frame(width: 170, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onSelect)
+        .onHover { hovering = $0 }
     }
 }
 
@@ -409,7 +453,7 @@ struct EpisodeCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            ZStack(alignment: .bottomLeading) {
+            ZStack(alignment: .center) {
                 EpisodeArtwork(episode: episode)
                     .aspectRatio(16/9, contentMode: .fill)
                     .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
@@ -453,7 +497,6 @@ struct EpisodeCard: View {
             .aspectRatio(16/9, contentMode: .fit)
             .overlay { RoundedRectangle(cornerRadius: 13).strokeBorder(hovering ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: hovering ? 2 : 1) }
             .shadow(color: .black.opacity(hovering ? 0.22 : 0.1), radius: hovering ? 14 : 5, y: 6)
-            .scaleEffect(hovering ? 1.015 : 1)
 
             HStack(alignment: .firstTextBaseline) {
                 Text(episodeTitle).font(.system(size: 17, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
@@ -462,6 +505,8 @@ struct EpisodeCard: View {
             }
             if let overview = episode.overview { Text(overview).font(.system(size: 14, weight: .regular)).foregroundStyle(.white.opacity(0.6)).lineLimit(2).lineSpacing(2) }
         }
+        // Do not scale the card itself: on macOS the enlarged hit region can
+        // overlap adjacent grid cells and make hover state oscillate.
         .contentShape(Rectangle()).onHover { hovering = $0 }
         .animation(.spring(response: 0.28, dampingFraction: 0.8), value: hovering)
     }
