@@ -35,7 +35,9 @@ struct HomeView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 if !featured.isEmpty { FeaturedMediaBar(items: featured) }
-                VStack(alignment: .leading, spacing: SolfinDesign.sectionSpacing) {
+                // Give each shelf enough breathing room so the feature artwork and
+                // the library/content areas read as distinct sections.
+                VStack(alignment: .leading, spacing: 44) {
                     if isLoading && resume.isEmpty && nextUp.isEmpty { loadingShelves }
                     if !views.isEmpty { librariesSection }
                     if !resume.isEmpty { landscapeShelf("Continue Watching", resume) }
@@ -48,7 +50,9 @@ struct HomeView: View {
                     }
                 }
                 .padding(.horizontal, SolfinDesign.pagePadding)
-                .padding(.top, featured.isEmpty ? 22 : 0)
+                // Let shelves begin inside the lower fade of the feature artwork,
+                // avoiding a hard transition while keeping most of the artwork visible.
+                .padding(.top, featured.isEmpty ? 22 : -76)
                 .padding(.bottom, SolfinDesign.pagePadding)
             }
         }
@@ -236,7 +240,7 @@ private struct FeaturedPlayButton: View {
                 .padding(.horizontal, 22)
                 .padding(.vertical, 12)
         }
-        .buttonStyle(FeaturedPlayButtonStyle(hovering: hovering))
+        .buttonStyle(SolarPillButtonStyle(hovering: hovering))
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.16), value: hovering)
         .accessibilityLabel(title)
@@ -253,7 +257,7 @@ private struct FeaturedInfoButton: View {
                 .font(.headline.weight(.semibold))
                 .frame(width: 46, height: 46)
         }
-        .buttonStyle(FeaturedInfoButtonStyle(hovering: hovering))
+        .buttonStyle(SolarRoundButtonStyle(hovering: hovering))
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.16), value: hovering)
         .help("Open details")
@@ -274,7 +278,7 @@ private struct FeaturedCarouselButton: View {
                 .frame(width: 44, height: 44)
                 .contentShape(Circle())
         }
-        .buttonStyle(FeaturedCarouselButtonStyle(hovering: hovering))
+        .buttonStyle(SolarRoundButtonStyle(hovering: hovering, idleFill: .black.opacity(0.5)))
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.16), value: hovering)
         .help(help)
@@ -326,6 +330,10 @@ private struct FeaturedMediaBar: View {
                 NavigationLink(value: item) {
                     heroArtwork
                         .frame(width: proxy.size.width, height: proxy.size.height)
+                        // Cached images can retain their aspect-fit layout beyond the
+                        // hero's bounds; clip it so an image edge never renders as a
+                        // one-pixel rule at the bottom of the feature.
+                        .clipped()
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -364,7 +372,9 @@ private struct FeaturedMediaBar: View {
                 VStack {
                     Spacer()
                     HStack(alignment: .bottom, spacing: 28) {
-                        VStack(alignment: .leading, spacing: 17) {
+                        // Separate the title treatment from its metadata and actions;
+                        // the logo should have room to read before the info block begins.
+                        VStack(alignment: .leading, spacing: 25) {
                             FeaturedTitle(item: item)
                             HStack(spacing: 12) {
                                 if let rating = item.communityRating {
@@ -417,7 +427,9 @@ private struct FeaturedMediaBar: View {
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
         .frame(maxWidth: .infinity)
-        .containerRelativeFrame(.vertical, alignment: .top) { available, _ in max(820, available * 0.96) }
+        // Keep the feature artwork prominent without reserving an oversized block
+        // above the homepage shelves.
+        .containerRelativeFrame(.vertical, alignment: .top) { available, _ in max(700, available * 0.78) }
         .ignoresSafeArea(edges: .top)
         .onHover { hovering = $0 }
         .task(id: items.map(\.id).joined(separator: ",")) {

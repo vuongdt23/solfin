@@ -84,6 +84,7 @@ struct ItemDetailView: View {
     @State private var showSubtitleImporter = false
     @State private var showMediaInfo = false
     @State private var uploadMessage: String?
+    @State private var playButtonHovering = false
 
     private enum PlayAction: Equatable {
         case primary
@@ -311,19 +312,23 @@ struct ItemDetailView: View {
         let isWaitingForLaunch = pendingPlayAction != nil
         return HStack(spacing: 10) {
             playButton(item, action: .primary, title: playLabel(item), systemImage: "play.fill",
-                       isPrimary: true, isBusy: pendingPlayAction == .primary && isWaitingForLaunch)
+                       isPrimary: true, isBusy: pendingPlayAction == .primary && isWaitingForLaunch,
+                       hovering: playButtonHovering)
 
             if resumeSeconds(item) > 0 {
                 playButton(item, action: .startOver, title: "Start Over", systemImage: "arrow.counterclockwise",
-                           isPrimary: false, isBusy: pendingPlayAction == .startOver && isWaitingForLaunch)
+                           isPrimary: false, isBusy: pendingPlayAction == .startOver && isWaitingForLaunch,
+                           hovering: playButtonHovering)
             }
         }
         .disabled(isWaitingForLaunch)
+        .onHover { playButtonHovering = $0 }
         .animation(.easeOut(duration: 0.16), value: pendingPlayAction)
     }
 
     private func playButton(_ item: BaseItem, action: PlayAction, title: String,
-                            systemImage: String, isPrimary: Bool, isBusy: Bool) -> some View {
+                            systemImage: String, isPrimary: Bool, isBusy: Bool,
+                            hovering: Bool) -> some View {
         Button {
             guard pendingPlayAction == nil, !nowPlaying.isLaunching else { return }
             pendingPlayAction = action
@@ -345,10 +350,7 @@ struct ItemDetailView: View {
             .frame(height: 42)
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(isPrimary ? .black : .white)
-        .background(isPrimary ? AnyShapeStyle(.white) : AnyShapeStyle(.white.opacity(0.14)), in: Capsule())
-        .overlay { Capsule().strokeBorder(.white.opacity(isPrimary ? 0 : 0.16)) }
+        .buttonStyle(SolarPillButtonStyle(hovering: hovering))
         .opacity(pendingPlayAction == nil || isBusy ? 1 : 0.62)
     }
 

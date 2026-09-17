@@ -116,10 +116,8 @@ struct SeriesDetailView: View {
                     Label(playLabel(for: episode), systemImage: "play.fill")
                         .padding(.horizontal, 8).padding(.vertical, 3)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(SolarPillButtonStyle(hovering: false))
                 .controlSize(.large)
-                .tint(.white)
-                .foregroundStyle(.black)
             }
         }
         .frame(maxWidth: copyWidth, alignment: .leading)
@@ -374,18 +372,13 @@ private struct SeasonCard: View {
                 PosterImage(url: appState.api.primaryImageURL(for: season, maxHeight: 420))
                     .frame(width: 170, height: 255).clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                SolarCardHoverGlow(isHovering: hovering, radius: 160)
                 Button(action: onPlay) {
                         Image(systemName: "play.fill")
                             .font(.title2)
-                            .foregroundStyle(.white)
                             .frame(width: 58, height: 58)
-                            .background(.ultraThinMaterial, in: Circle())
-                            .overlay { Circle().fill(playHovering ? SolfinDesign.solarOrange.opacity(0.88) : .clear) }
-                            .overlay { Circle().strokeBorder(playHovering ? SolfinDesign.solarGold : .white.opacity(0.72), lineWidth: playHovering ? 2 : 1.5) }
-                            .shadow(color: .black.opacity(playHovering ? 0.55 : 0.35), radius: playHovering ? 14 : 9, y: 5)
-                            .scaleEffect(playHovering ? 1.1 : 1)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(SolarRoundButtonStyle(hovering: playHovering, idleFill: .black.opacity(0.28)))
                     .help("Play season")
                     .accessibilityLabel("Play \(season.name)")
                     .onHover { playHovering = $0 }
@@ -465,24 +458,16 @@ struct EpisodeCard: View {
                         .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                 }
                 if hovering {
-                    RoundedRectangle(cornerRadius: 21, style: .continuous)
-                        .fill(RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.34), SolfinDesign.solarRed.opacity(0.18), SolfinDesign.nebulaPurple.opacity(0.22), .clear], center: .center, startRadius: 10, endRadius: 180))
-                        .blur(radius: 16)
-                        .padding(-14)
+                    SolarCardHoverGlow(isHovering: hovering)
                     Button {
                         nowPlaying.play(item: episode, api: appState.api, config: appState.makePlaybackConfig()) {
                             appState.playbackError = $0
                         }
                     } label: {
-                        Image(systemName: "play.fill").font(.title3).foregroundStyle(.white)
+                        Image(systemName: "play.fill").font(.title3)
                             .frame(width: 50, height: 50)
-                            .background(playButtonHovering ? SolfinDesign.solarOrange.opacity(0.78) : .clear, in: Circle())
-                            .background(.ultraThinMaterial, in: Circle())
-                            .overlay { Circle().strokeBorder(playButtonHovering ? SolfinDesign.solarGold : SolfinDesign.solarOrange.opacity(0.45), lineWidth: playButtonHovering ? 2 : 1) }
-                            .shadow(color: SolfinDesign.solarOrange.opacity(playButtonHovering ? 0.7 : 0.35), radius: playButtonHovering ? 26 : 18, y: 5)
-                            .scaleEffect(playButtonHovering ? 1.12 : 1)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(SolarRoundButtonStyle(hovering: playButtonHovering, idleFill: .clear))
                     .help("Play")
                     .onHover { playButtonHovering = $0 }
                     .animation(.easeOut(duration: 0.16), value: playButtonHovering)
