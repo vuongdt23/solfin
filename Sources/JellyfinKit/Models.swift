@@ -57,6 +57,12 @@ public struct BaseItem: Codable, Sendable, Identifiable, Hashable {
     public let productionYear: Int?
     public let runTimeTicks: Int64?
     public let dateCreated: String?
+    public let premiereDate: String?
+    public let endDate: String?
+    public let status: String?
+    public let airDays: [String]?
+    public let cumulativeRunTimeTicks: Int64?
+    public let recursiveItemCount: Int?
     public let officialRating: String?
     public let communityRating: Double?
     public let genres: [String]?
@@ -68,6 +74,7 @@ public struct BaseItem: Codable, Sendable, Identifiable, Hashable {
     public let seriesPrimaryImageTag: String?
     public let childCount: Int?
     public let imageTags: [String: String]?
+    public let primaryImageAspectRatio: Double?
     public let backdropImageTags: [String]?
     public let parentBackdropItemId: String?
     public let parentBackdropImageTags: [String]?
@@ -85,6 +92,12 @@ public struct BaseItem: Codable, Sendable, Identifiable, Hashable {
         case productionYear = "ProductionYear"
         case runTimeTicks = "RunTimeTicks"
         case dateCreated = "DateCreated"
+        case premiereDate = "PremiereDate"
+        case endDate = "EndDate"
+        case status = "Status"
+        case airDays = "AirDays"
+        case cumulativeRunTimeTicks = "CumulativeRunTimeTicks"
+        case recursiveItemCount = "RecursiveItemCount"
         case officialRating = "OfficialRating"
         case communityRating = "CommunityRating"
         case genres = "Genres"
@@ -96,6 +109,7 @@ public struct BaseItem: Codable, Sendable, Identifiable, Hashable {
         case seriesPrimaryImageTag = "SeriesPrimaryImageTag"
         case childCount = "ChildCount"
         case imageTags = "ImageTags"
+        case primaryImageAspectRatio = "PrimaryImageAspectRatio"
         case backdropImageTags = "BackdropImageTags"
         case parentBackdropItemId = "ParentBackdropItemId"
         case parentBackdropImageTags = "ParentBackdropImageTags"
@@ -113,11 +127,17 @@ public struct UserItemData: Codable, Sendable, Hashable {
     public let playbackPositionTicks: Int64?
     public let playedPercentage: Double?
     public let played: Bool?
+    public let unplayedItemCount: Int?
+    public let playCount: Int?
+    public let isFavorite: Bool?
 
     enum CodingKeys: String, CodingKey {
         case playbackPositionTicks = "PlaybackPositionTicks"
         case playedPercentage = "PlayedPercentage"
         case played = "Played"
+        case unplayedItemCount = "UnplayedItemCount"
+        case playCount = "PlayCount"
+        case isFavorite = "IsFavorite"
     }
 }
 

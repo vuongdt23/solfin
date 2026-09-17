@@ -3,14 +3,14 @@ import Foundation
 public extension APIClient {
 
     private static let episodeFields =
-        "Overview,MediaSources,MediaStreams,RunTimeTicks,IndexNumber,ParentIndexNumber,SeriesId,SeasonId,ImageTags,ParentBackdropItemId,ParentBackdropImageTags,ParentLogoItemId,ParentLogoImageTag,SeriesPrimaryImageTag,ProductionYear,OfficialRating,CommunityRating,Genres"
+        "Overview,MediaSources,MediaStreams,RunTimeTicks,IndexNumber,ParentIndexNumber,SeriesId,SeasonId,ImageTags,BackdropImageTags,PrimaryImageAspectRatio,ParentBackdropItemId,ParentBackdropImageTags,ParentLogoItemId,ParentLogoImageTag,SeriesPrimaryImageTag,ProductionYear,PremiereDate,EndDate,OfficialRating,CommunityRating,Genres"
 
     /// Seasons of a series, ordered.
     func seasons(seriesId: String) async throws -> [BaseItem] {
         guard let uid = session?.userId else { throw JellyfinError.notAuthenticated }
         let q = [
             URLQueryItem(name: "userId", value: uid),
-            URLQueryItem(name: "Fields", value: "ChildCount,ImageTags"),
+            URLQueryItem(name: "Fields", value: "Overview,ChildCount,ImageTags,BackdropImageTags,PrimaryImageAspectRatio,ProductionYear,PremiereDate,EndDate,Status,CommunityRating,OfficialRating,Genres,ParentBackdropItemId,ParentBackdropImageTags,ParentLogoItemId,ParentLogoImageTag,SeriesPrimaryImageTag"),
         ]
         let req = try makeRequest(path: "Shows/\(seriesId)/Seasons", query: q)
         return try decode(ItemsResponse.self, from: try await send(req)).items
