@@ -183,7 +183,12 @@ struct ItemDetailView: View {
 
     private func episodeBackdrop(_ item: BaseItem, size: CGSize) -> some View {
         ZStack {
-            if let poster = appState.api.playablePosterURL(for: item, maxHeight: nil) {
+            if let hero = appState.api.seriesHeroBackdropURL(for: item, maxWidth: nil) {
+                CachedImage(url: hero, contentMode: .fit)
+                    .frame(width: size.width, height: size.height)
+                    .blur(radius: 28)
+                    .opacity(0.86)
+            } else if let poster = appState.api.playablePosterURL(for: item, maxHeight: nil) {
                 CachedImage(url: poster, contentMode: .fit)
                     .frame(width: size.width, height: size.height)
                     .blur(radius: 28)

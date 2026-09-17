@@ -317,7 +317,6 @@ private struct FeaturedMediaBar: View {
     let items: [BaseItem]
     @State private var selection = 0
     @State private var hovering = false
-    @State private var artworkHovering = false
 
     private var item: BaseItem { items[min(selection, items.count - 1)] }
 
@@ -328,16 +327,10 @@ private struct FeaturedMediaBar: View {
                     heroArtwork
                         .frame(width: proxy.size.width, height: proxy.size.height)
                         .contentShape(Rectangle())
-                        .overlay {
-                            Rectangle()
-                                .fill(.white.opacity(artworkHovering ? 0.025 : 0))
-                        }
-                        .scaleEffect(artworkHovering ? 1.003 : 1)
                 }
                 .buttonStyle(.plain)
                 .id(item.id)
                 .transition(.opacity)
-                .onHover { artworkHovering = $0 }
                 .accessibilityLabel("Open \(item.name)")
                 .accessibilityHint("Shows media details")
 

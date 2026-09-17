@@ -272,6 +272,20 @@ public extension APIClient {
         return comps?.url
     }
 
+    /// The series hero backdrop for an episode. This intentionally ignores an
+    /// episode-specific backdrop so detail pages share the series hero artwork.
+    func seriesHeroBackdropURL(for item: BaseItem, maxWidth: Int? = 2400) -> URL? {
+        guard let parentId = item.parentBackdropItemId,
+              let tag = item.parentBackdropImageTags?.first else { return nil }
+        var comps = URLComponents(url: baseURL.appendingPathComponent("Items/\(parentId)/Images/Backdrop/0"),
+                                  resolvingAgainstBaseURL: false)
+        var query = [URLQueryItem(name: "tag", value: tag),
+                     URLQueryItem(name: "quality", value: "100")]
+        if let maxWidth { query.append(URLQueryItem(name: "maxWidth", value: String(maxWidth))) }
+        comps?.queryItems = query
+        return comps?.url
+    }
+
     /// Episode backdrop, falling back to its series backdrop. Pass nil for original resolution.
     func episodeBackdropURL(for item: BaseItem, maxWidth: Int? = 2400) -> URL? {
         if let own = backdropImageURL(for: item, maxWidth: maxWidth) { return own }
