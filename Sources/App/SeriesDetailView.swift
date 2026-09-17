@@ -202,7 +202,7 @@ struct SeriesDetailView: View {
         } else if episodes.isEmpty {
             EmptyContentView(title: "No episodes", message: "This season does not contain any episodes.")
         } else {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 330, maximum: 430), spacing: 18)],
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 330, maximum: 430), spacing: 18, alignment: .top)],
                       alignment: .leading, spacing: 22) {
                 ForEach(episodes) { episode in
                     ZStack(alignment: .topTrailing) {
@@ -231,7 +231,7 @@ struct SeriesDetailView: View {
     }
 
     private var episodeSkeleton: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 330, maximum: 430), spacing: 18)], spacing: 22) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 330, maximum: 430), spacing: 18, alignment: .top)], spacing: 22) {
             ForEach(0..<6, id: \.self) { _ in
                 VStack(alignment: .leading, spacing: 10) {
                     RoundedRectangle(cornerRadius: 13).fill(.secondary.opacity(0.12)).aspectRatio(16/9, contentMode: .fit)
