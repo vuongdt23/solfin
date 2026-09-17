@@ -4,6 +4,69 @@ import JellyfinKit
 import PlaybackEngine
 
 /// One artwork-led detail surface for every playable video.
+private struct EpisodeDetailView: View {
+    let background: (CGSize) -> AnyView
+    let still: (CGSize) -> AnyView
+    let content: (CGFloat) -> AnyView
+    let moreContent: AnyView?
+    let aura: () -> AnyView
+    let scrim: () -> AnyView
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .top) {
+                background(proxy.size)
+                aura()
+                still(proxy.size)
+                scrim()
+
+                // Keep the episode information, still, and related episodes in one
+                // centered poster canvas. The related block is part of the hero,
+                // rather than a second section that pushes the user into a scroll.
+                content(proxy.size.width)
+                    .frame(maxWidth: 1480, maxHeight: .infinity, alignment: .center)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 42)
+
+                if let moreContent {
+                    VStack {
+                        Spacer()
+                        moreContent
+                    }
+                    .frame(maxWidth: 1480, maxHeight: .infinity, alignment: .bottomLeading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 42)
+                }
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height,
+                   alignment: .top)
+        }
+        .containerRelativeFrame(.vertical, alignment: .top) { available, _ in max(760, available - 8) }
+    }
+}
+
+private struct MovieDetailView: View {
+    let background: (CGSize) -> AnyView
+    let content: (CGFloat) -> AnyView
+    let aura: () -> AnyView
+    let scrim: () -> AnyView
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .bottomLeading) {
+                background(proxy.size)
+                aura()
+                scrim()
+                content(proxy.size.width)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height,
+                   alignment: .bottomLeading)
+        }
+        .containerRelativeFrame(.vertical, alignment: .top) { available, _ in max(720, available - 8) }
+    }
+}
+
 struct ItemDetailView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var nowPlaying: NowPlaying
@@ -49,59 +112,61 @@ struct ItemDetailView: View {
     }
 
     private func playableDetail(_ item: BaseItem) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            immersiveDetail(item)
-            if item.type == "Episode", previousEpisode != nil || nextEpisode != nil {
-                VStack(alignment: .leading, spacing: 15) {
-                    Text("More from \(item.seriesName ?? "this series")").font(.title2.weight(.semibold))
-                    adjacentEpisodeSection
-                }
-                .padding(.horizontal, 42).padding(.vertical, 34)
-            }
+        immersiveDetail(item)
+    }
+
+    @ViewBuilder private func immersiveDetail(_ item: BaseItem) -> some View {
+        if item.type == "Episode" {
+            EpisodeDetailView(
+                background: { AnyView(self.episodeBackdrop(item, size: $0)) },
+                still: { AnyView(self.episodeStill(item, size: $0)) },
+                content: { width in AnyView(detailCopy(item, availableWidth: width, episodeStyle: true)) },
+                moreContent: previousEpisode != nil || nextEpisode != nil ? AnyView(
+                    VStack(alignment: .leading, spacing: 15) {
+                        Text("More from \(item.seriesName ?? "this series")")
+                            .font(.title2.weight(.semibold))
+                        adjacentEpisodeSection
+                    }
+                    .padding(.horizontal, 42)
+                    .padding(.top, 0)
+                    .padding(.bottom, 34)
+                ) : nil,
+                aura: { AnyView(solarAura) },
+                scrim: { AnyView(cinematicScrim) }
+            )
+        } else {
+            MovieDetailView(
+                background: { AnyView(self.backdrop(item, size: $0)) },
+                content: { width in AnyView(detailCopy(item, availableWidth: width)) },
+                aura: { AnyView(solarAura) },
+                scrim: { AnyView(cinematicScrim) }
+            )
         }
     }
 
-    private func immersiveDetail(_ item: BaseItem) -> some View {
-        GeometryReader { proxy in
-            ZStack {
-                backdrop(item, size: proxy.size)
-                solarAura
-                cinematicScrim
-
-                VStack(alignment: .leading, spacing: 0) {
-                    Spacer(minLength: 96)
-                    VStack(alignment: .leading, spacing: 20) {
-                        identity(item, availableWidth: proxy.size.width)
-                        overview(item)
-                        if let genres = item.genres, !genres.isEmpty {
-                            Text(genres.prefix(5).joined(separator: "  ·  "))
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.76))
-                        }
-                        playbackError
-                        trackPanel(item)
-                        detailActions(item)
-                    }
-                    .frame(maxWidth: 1280, alignment: .leading)
-                    .padding(.horizontal, 48)
-                    .padding(.bottom, 50)
-                }
-                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .leading)
+    private func detailCopy(_ item: BaseItem, availableWidth: CGFloat = 1280,
+                            episodeStyle: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            identity(item, availableWidth: availableWidth)
+            overview(item)
+            if let genres = item.genres, !genres.isEmpty {
+                Text(genres.prefix(5).joined(separator: "  ·  "))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.76))
             }
-            .frame(width: proxy.size.width, height: proxy.size.height)
+            playbackError
+            trackPanel(item, episodeStyle: episodeStyle)
+            detailActions(item)
         }
-        .containerRelativeFrame(.vertical, alignment: .top) { available, _ in max(720, available - 8) }
+        .frame(maxWidth: 1280, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 42)
+        .padding(.top, episodeStyle ? 12 : 42)
+        .padding(.bottom, episodeStyle ? 12 : 32)
     }
 
     @ViewBuilder private func backdrop(_ item: BaseItem, size: CGSize) -> some View {
-        // Episode stills are often much smaller than a series backdrop. Use the
-        // still as a deliberate foreground frame and let a blurred copy fill the
-        // canvas so the lower-resolution source feels atmospheric rather than
-        // stretched or replaced by the series poster.
-        if item.type == "Episode",
-           let episodeImage = appState.api.primaryImageURL(for: item, maxHeight: nil, quality: 100) {
-            episodeArtworkBackdrop(item, url: episodeImage, size: size)
-        } else if let url = backdropURL(item) {
+        if let url = backdropURL(item) {
             CachedImage(url: url)
                 .frame(width: size.width, height: size.height).clipped()
         } else if let poster = appState.api.playablePosterURL(for: item, maxHeight: nil) {
@@ -116,54 +181,62 @@ struct ItemDetailView: View {
         }
     }
 
-    private func episodeArtworkBackdrop(_ item: BaseItem, url: URL, size: CGSize) -> some View {
-        let imageWidth = min(1_020, max(520, size.width * 0.58))
-        let imageAspect = max(1.25, min(2.0, item.primaryImageAspectRatio ?? (16.0 / 9.0)))
-        let imageHeight = min(size.height * 0.64, imageWidth / imageAspect)
-
-        return ZStack(alignment: .topTrailing) {
-            // Keep the still part of the scene itself: a quiet blurred wash gives
-            // the source image presence without making a separate floating card.
-            CachedImage(url: url)
-                .frame(width: size.width, height: size.height)
-                .clipped()
-                .blur(radius: 34)
-                .scaleEffect(1.10)
-                .opacity(0.42)
-
-            RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.22), .clear],
-                           center: .topTrailing, startRadius: 0, endRadius: 520)
-                .frame(width: size.width * 0.62, height: size.height * 0.72)
-                .blur(radius: 28)
-
-            CachedImage(url: url, contentMode: .fill)
-                .frame(width: imageWidth, height: imageHeight)
-                .mask {
-                    LinearGradient(stops: [
-                        .init(color: .clear, location: 0),
-                        .init(color: .black.opacity(0.72), location: 0.14),
-                        .init(color: .black, location: 0.34),
-                        .init(color: .black, location: 1)
-                    ], startPoint: .leading, endPoint: .trailing)
-                }
-                .padding(.top, 42)
-                .padding(.trailing, max(34, size.width * 0.055))
-
-            // These fades tie the right-hand image into the information column and
-            // into the dark lower portion of the hero without adding labels.
-            LinearGradient(colors: [.black.opacity(0.94), .black.opacity(0.28), .clear],
-                           startPoint: .leading, endPoint: .trailing)
-            LinearGradient(colors: [.clear, SolfinDesign.spaceBlack.opacity(0.72)],
-                           startPoint: .top, endPoint: .bottom)
-            LinearGradient(colors: [.black.opacity(0.18), .clear],
-                           startPoint: .top, endPoint: .bottom)
+    private func episodeBackdrop(_ item: BaseItem, size: CGSize) -> some View {
+        ZStack {
+            if let hero = appState.api.seriesHeroBackdropURL(for: item, maxWidth: nil) {
+                CachedImage(url: hero, contentMode: .fit)
+                    .frame(width: size.width, height: size.height)
+                    .blur(radius: 28)
+                    .opacity(0.86)
+            } else if let poster = appState.api.playablePosterURL(for: item, maxHeight: nil) {
+                CachedImage(url: poster, contentMode: .fit)
+                    .frame(width: size.width, height: size.height)
+                    .blur(radius: 28)
+                    .opacity(0.86)
+            } else {
+                Color.black
+            }
         }
-        .clipped()
+    }
+
+    private func episodeStill(_ item: BaseItem, size: CGSize) -> some View {
+        let stillURL = appState.api.episodeArtworkURL(for: item, maxWidth: 1600)
+        let width = min(980, max(520, size.width * 0.48))
+        let aspect = max(1.25, min(2.0, item.primaryImageAspectRatio ?? (16.0 / 9.0)))
+        let height = min(size.height * 0.58, width / aspect)
+        let shape = RoundedRectangle(cornerRadius: 30, style: .continuous)
+
+        return HStack {
+            Spacer()
+            ZStack {
+                // A soft duplicate gives the artwork a diffused border instead of
+                // a hard rectangular cutout against the blurred backdrop.
+                CachedImage(url: stillURL)
+                    .frame(width: width + 24, height: height + 24)
+                    .blur(radius: 18)
+                    .opacity(0.28)
+                    .mask(shape.fill(.white))
+
+                CachedImage(url: stillURL)
+                    .frame(width: width, height: height)
+                    // Blur the alpha boundary itself so no crisp rectangular
+                    // edge remains around the still.
+                    .mask {
+                        shape
+                            .fill(.white)
+                            .blur(radius: 18)
+                    }
+                    .opacity(0.94)
+            }
+            .padding(.trailing, max(32, size.width * 0.06))
+        }
+        // Match the still's vertical center to the title / controls block.
+        .frame(maxHeight: .infinity, alignment: .center)
     }
 
     private var cinematicScrim: some View {
         ZStack {
-            LinearGradient(colors: [.black.opacity(0.08), .clear, SolfinDesign.spaceBlack.opacity(0.62)],
+            LinearGradient(colors: [.black.opacity(0.08), .clear, .black.opacity(0.18)],
                            startPoint: .top, endPoint: .bottom)
             LinearGradient(colors: [.black.opacity(0.18), .clear, .black.opacity(0.08)],
                            startPoint: .leading, endPoint: .trailing)
@@ -184,13 +257,17 @@ struct ItemDetailView: View {
         let logoWidth = min(1120, max(620, availableWidth * 0.62))
         let logoHeight = min(360, max(220, availableWidth * 0.21))
         let titleSize = min(88, max(58, availableWidth * 0.052))
-        return VStack(alignment: .leading, spacing: 14) {
-            if let context = contextTitle(item) {
+        return VStack(alignment: .leading, spacing: 10) {
+            if item.type == "Episode", let logoURL = episodeSeriesLogoURL(item) {
+                CachedImage(url: logoURL, contentMode: .fit)
+                    .frame(width: min(220, max(140, availableWidth * 0.16)), height: 38, alignment: .leading)
+                    .opacity(0.82)
+            } else if let context = contextTitle(item) {
                 Text(context.uppercased())
                     .font(.caption.weight(.bold)).tracking(1.6)
                     .foregroundStyle(.white.opacity(0.68))
             }
-            if let logoURL = appState.api.logoImageURL(for: item, maxWidth: nil) {
+            if item.type != "Episode", let logoURL = appState.api.logoImageURL(for: item, maxWidth: nil) {
                 CachedImage(url: logoURL, contentMode: .fit)
                     .frame(width: logoWidth, height: logoHeight, alignment: .leading)
             } else { titleFallback(item, size: titleSize) }
@@ -283,13 +360,14 @@ struct ItemDetailView: View {
                     .foregroundStyle(.white.opacity(0.9))
                     .lineSpacing(5)
                     .multilineTextAlignment(.leading)
-                    .lineLimit(overviewExpanded ? nil : 6)
+                    .lineLimit(overviewExpanded ? nil : 3)
                     .frame(maxWidth: 1040, alignment: .leading)
                 if overview.count > 620 {
                     Button(overviewExpanded ? "Show Less" : "More") { withAnimation { overviewExpanded.toggle() } }
                         .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(.white)
                 }
             }.frame(maxWidth: 1040, alignment: .leading)
+                .padding(.top, 1)
         }
     }
 
@@ -314,7 +392,7 @@ struct ItemDetailView: View {
         .popover(isPresented: $showMediaInfo) { MediaInfoDetailView(item: item) }
     }
 
-    @ViewBuilder private func trackPanel(_ item: BaseItem) -> some View {
+    @ViewBuilder private func trackPanel(_ item: BaseItem, episodeStyle: Bool = false) -> some View {
         let audio = tracks(item, type: "Audio")
         let video = tracks(item, type: "Video")
         let subtitles = tracks(item, type: "Subtitle")
@@ -323,7 +401,7 @@ struct ItemDetailView: View {
                 Text("PLAYBACK OPTIONS")
                     .font(.caption2.weight(.bold)).tracking(1.4)
                     .foregroundStyle(.white.opacity(0.58))
-                    .padding(.horizontal, 16).padding(.vertical, 12)
+                    .padding(.horizontal, 16).padding(.vertical, 9)
                 Divider().overlay(.white.opacity(0.1))
                 if !video.isEmpty {
                     trackRow(title: "Video", icon: "film", selection: $selectedVideoTrack, tracks: video, includesOff: false)
@@ -336,9 +414,14 @@ struct ItemDetailView: View {
                 trackRow(title: "Subtitles", icon: "captions.bubble", selection: $selectedSubtitleTrack,
                          tracks: subtitles, includesOff: true)
             }
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.14)) }
-            .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+            .background {
+                if !episodeStyle {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.14)) }
+                        .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+                }
+            }
             .frame(maxWidth: 920)
         }
     }
@@ -377,7 +460,7 @@ struct ItemDetailView: View {
             .menuStyle(.borderlessButton)
             .tint(.white)
             .frame(maxWidth: 560, alignment: .trailing)
-        }.padding(.horizontal, 16).padding(.vertical, 10)
+        }.padding(.horizontal, 16).padding(.vertical, 7)
     }
 
     private var adjacentEpisodeSection: some View {
@@ -397,7 +480,6 @@ struct ItemDetailView: View {
                     Text(episodeCode(episode)).font(.caption).foregroundStyle(.secondary)
                 }
             }.padding(12).frame(maxWidth: 440, alignment: .leading)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
         }.buttonStyle(.plain)
     }
 
@@ -434,6 +516,10 @@ struct ItemDetailView: View {
                                : appState.api.backdropImageURL(for: item, maxWidth: nil)
     }
     private func contextTitle(_ item: BaseItem) -> String? { item.type == "Episode" ? item.seriesName : item.type }
+    private func episodeSeriesLogoURL(_ item: BaseItem) -> URL? {
+        guard item.type == "Episode", let parentId = item.parentLogoItemId else { return nil }
+        return appState.api.logoImageURL(itemId: parentId, tag: item.parentLogoImageTag, maxWidth: 420)
+    }
     private func episodeCode(_ item: BaseItem) -> String {
         (item.parentIndexNumber.map { String(format: "S%02d", $0) } ?? "") +
         (item.indexNumber.map { String(format: "E%02d", $0) } ?? "")
