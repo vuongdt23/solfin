@@ -12,6 +12,7 @@ struct LibraryView: View {
     @State private var hasMore = true
     @State private var recentSeriesLoaded = false
     @State private var generation = UUID()
+    @State private var filterText = ""
     @AppStorage("solfin.librarySort") private var sortRaw = LibrarySort.name.rawValue
     @AppStorage("solfin.librarySortAscending") private var sortAscending = true
     @AppStorage("solfin.libraryPlayedFilter") private var playedFilterRaw = PlayedFilter.all.rawValue
@@ -35,9 +36,13 @@ struct LibraryView: View {
                                          message: playedFilter == .all
                                          ? "This library does not contain supported video items."
                                          : "Try changing the watched filter.")
+                    } else if filteredItems.isEmpty {
+                        EmptyContentView(title: "No matches",
+                                         message: "No loaded titles match \"\(filterText.trimmingCharacters(in: .whitespacesAndNewlines))\".",
+                                         systemImage: "magnifyingglass")
                     } else {
                         LazyVGrid(columns: columns, alignment: .leading, spacing: density.spacing) {
-                            ForEach(items) { item in
+                            ForEach(filteredItems) { item in
                                 NavigationLink(value: item) { PosterCard(item: item) }.buttonStyle(.plain)
                                     .onAppear { if item.id == items.last?.id { Task { await loadNextPage() } } }
                             }
@@ -60,6 +65,7 @@ struct LibraryView: View {
         .scrollContentBackground(.hidden)
         .navigationTitle("")
         .toolbarBackground(.hidden, for: .windowToolbar)
+        .searchable(text: $filterText, placement: .toolbar, prompt: "Filter loaded titles")
         .task(id: "\(parent.id)-\(sort.rawValue)-\(sortAscending)-\(playedFilter.rawValue)") { await reloadAndWait() }
     }
 
@@ -70,7 +76,9 @@ struct LibraryView: View {
                     .font(.largeTitle.weight(.bold))
                     .foregroundStyle(.white)
                 if let count = totalCount {
-                    Text("\(count) items")
+                    Text(filterText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                         ? "\(count) items"
+                         : "\(filteredItems.count) of \(count) items")
                         .font(.callout.weight(.medium))
                         .foregroundStyle(.white.opacity(0.56))
                 }
@@ -144,6 +152,14 @@ struct LibraryView: View {
         return availableSorts.contains(stored) ? stored : .name
     }
     private var playedFilter: PlayedFilter { PlayedFilter(rawValue: playedFilterRaw) ?? .all }
+    private var filteredItems: [BaseItem] {
+        let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return items }
+        return items.filter { item in
+            item.name.localizedCaseInsensitiveContains(query)
+                || (item.seriesName?.localizedCaseInsensitiveContains(query) == true)
+        }
+    }
     private var density: LibraryDensity { LibraryDensity(rawValue: densityRaw) ?? .standard }
     private var sortBinding: Binding<LibrarySort> {
         Binding(get: { sort }, set: { sortRaw = $0.rawValue })
