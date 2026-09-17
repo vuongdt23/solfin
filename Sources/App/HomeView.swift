@@ -177,6 +177,133 @@ private struct FeaturedTitle: View {
     }
 }
 
+private struct FeaturedPlayButtonStyle: ButtonStyle {
+    let hovering: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(.black)
+            .background(hovering ? Color.white.opacity(0.86) : .white, in: Capsule())
+            .overlay { Capsule().strokeBorder(hovering || configuration.isPressed ? SolfinDesign.solarGold : .clear, lineWidth: configuration.isPressed ? 3 : 2) }
+            .shadow(color: SolfinDesign.solarOrange.opacity(hovering || configuration.isPressed ? 0.42 : 0.16), radius: hovering ? 20 : 10, y: 5)
+            .scaleEffect(configuration.isPressed ? 0.97 : hovering ? 1.035 : 1)
+    }
+}
+
+private struct FeaturedInfoButtonStyle: ButtonStyle {
+    let hovering: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(.white)
+            .background(hovering || configuration.isPressed ? SolfinDesign.solarOrange.opacity(0.72) : .white.opacity(0.22), in: Circle())
+            .overlay { Circle().strokeBorder(hovering || configuration.isPressed ? SolfinDesign.solarGold : .white.opacity(0.2), lineWidth: hovering || configuration.isPressed ? 2 : 1) }
+            .shadow(color: SolfinDesign.solarOrange.opacity(hovering || configuration.isPressed ? 0.48 : 0.12), radius: hovering ? 18 : 8, y: 4)
+            .scaleEffect(configuration.isPressed ? 0.94 : hovering ? 1.08 : 1)
+    }
+}
+
+private struct FeaturedCarouselButtonStyle: ButtonStyle {
+    let hovering: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(.white)
+            .background(hovering || configuration.isPressed ? SolfinDesign.solarOrange.opacity(0.78) : .black.opacity(0.5), in: Circle())
+            .overlay { Circle().strokeBorder(hovering || configuration.isPressed ? SolfinDesign.solarGold : .white.opacity(0.14), lineWidth: hovering || configuration.isPressed ? 2 : 1) }
+            .shadow(color: SolfinDesign.solarOrange.opacity(hovering || configuration.isPressed ? 0.48 : 0.16), radius: hovering ? 20 : 10, y: 5)
+            .scaleEffect(configuration.isPressed ? 0.94 : hovering ? 1.12 : 1)
+    }
+}
+
+private struct FeaturedPagerButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .opacity(configuration.isPressed ? 0.72 : 1)
+            .scaleEffect(configuration.isPressed ? 0.92 : 1)
+    }
+}
+
+private struct FeaturedPlayButton: View {
+    let title: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Label(title, systemImage: "play.fill")
+                .font(.headline.weight(.semibold))
+                .padding(.horizontal, 22)
+                .padding(.vertical, 12)
+        }
+        .buttonStyle(FeaturedPlayButtonStyle(hovering: hovering))
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.16), value: hovering)
+        .accessibilityLabel(title)
+    }
+}
+
+private struct FeaturedInfoButton: View {
+    let item: BaseItem
+    @State private var hovering = false
+
+    var body: some View {
+        NavigationLink(value: item) {
+            Image(systemName: "info")
+                .font(.headline.weight(.semibold))
+                .frame(width: 46, height: 46)
+        }
+        .buttonStyle(FeaturedInfoButtonStyle(hovering: hovering))
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.16), value: hovering)
+        .help("Open details")
+        .accessibilityLabel("Open \(item.name)")
+    }
+}
+
+private struct FeaturedCarouselButton: View {
+    let icon: String
+    let help: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.headline.weight(.semibold))
+                .frame(width: 44, height: 44)
+                .contentShape(Circle())
+        }
+        .buttonStyle(FeaturedCarouselButtonStyle(hovering: hovering))
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.16), value: hovering)
+        .help(help)
+        .accessibilityLabel(help)
+    }
+}
+
+private struct FeaturedPagerDot: View {
+    let index: Int
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Capsule()
+                .fill(.white.opacity(selected ? 1 : hovering ? 0.82 : 0.5))
+                .frame(width: selected ? 22 : hovering ? 13 : 7, height: 7)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(FeaturedPagerButtonStyle())
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.16), value: hovering)
+        .accessibilityLabel("Featured item \(index + 1)")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+}
+
 private func capture<T>(_ operation: () async throws -> T) async -> Result<T, Error> {
     do { return .success(try await operation()) }
     catch { return .failure(error) }
@@ -190,36 +317,56 @@ private struct FeaturedMediaBar: View {
     let items: [BaseItem]
     @State private var selection = 0
     @State private var hovering = false
+    @State private var artworkHovering = false
 
     private var item: BaseItem { items[min(selection, items.count - 1)] }
 
     var body: some View {
         GeometryReader { proxy in
             ZStack {
-                heroArtwork
-                    .frame(width: proxy.size.width, height: proxy.size.height)
-                    .clipped()
-                    .id(item.id).transition(.opacity)
+                NavigationLink(value: item) {
+                    heroArtwork
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .contentShape(Rectangle())
+                        .overlay {
+                            Rectangle()
+                                .fill(.white.opacity(artworkHovering ? 0.025 : 0))
+                        }
+                        .scaleEffect(artworkHovering ? 1.003 : 1)
+                }
+                .buttonStyle(.plain)
+                .id(item.id)
+                .transition(.opacity)
+                .onHover { artworkHovering = $0 }
+                .accessibilityLabel("Open \(item.name)")
+                .accessibilityHint("Shows media details")
+
                 RadialGradient(colors: [SolfinDesign.solarGold.opacity(0.38), SolfinDesign.solarOrange.opacity(0.22), .clear],
                                center: .topTrailing, startRadius: 0, endRadius: 740)
                     .blendMode(.screen)
+                    .allowsHitTesting(false)
                 RadialGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.24), .clear],
                                center: .bottomLeading, startRadius: 20, endRadius: 820)
                     .blendMode(.screen)
+                    .allowsHitTesting(false)
                 LinearGradient(colors: [.black.opacity(0.28), .black.opacity(0.08), .clear],
                                startPoint: .leading, endPoint: .trailing)
+                    .allowsHitTesting(false)
                 LinearGradient(stops: [
                     .init(color: .clear, location: 0.46),
                     .init(color: SolfinDesign.spaceBlack.opacity(0.20), location: 0.66),
                     .init(color: SolfinDesign.spaceBlack.opacity(0.76), location: 0.86),
                     .init(color: SolfinDesign.spaceBlack, location: 1.0)
                 ], startPoint: .top, endPoint: .bottom)
+                    .allowsHitTesting(false)
                 RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.14), SolfinDesign.solarRed.opacity(0.06), .clear],
                                center: UnitPoint(x: 0.76, y: 0.86), startRadius: 60, endRadius: 560)
                     .blendMode(.screen)
+                    .allowsHitTesting(false)
                 RadialGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.12), .clear],
                                center: UnitPoint(x: 0.26, y: 0.90), startRadius: 80, endRadius: 620)
                     .blendMode(.screen)
+                    .allowsHitTesting(false)
 
                 VStack {
                     Spacer()
@@ -248,24 +395,19 @@ private struct FeaturedMediaBar: View {
                                     .frame(maxWidth: min(820, proxy.size.width * 0.68), alignment: .leading)
                             }
                             HStack(spacing: 12) {
-                                Button { playFeatured(item) } label: {
-                                    Label(playLabel(item), systemImage: "play.fill")
-                                        .font(.headline.weight(.semibold))
-                                        .padding(.horizontal, 22).padding(.vertical, 12)
-                                }.buttonStyle(.plain).background(.white, in: Capsule()).foregroundStyle(.black)
-                                NavigationLink(value: item) {
-                                    Image(systemName: "info").font(.headline).frame(width: 46, height: 46)
-                                }.buttonStyle(.plain).background(.white.opacity(0.22), in: Circle()).foregroundStyle(.white)
+                                FeaturedPlayButton(title: playLabel(item)) { playFeatured(item) }
+                                FeaturedInfoButton(item: item)
                             }
                         }
                         Spacer(minLength: 20)
                         HStack(spacing: 7) {
                             ForEach(items.indices, id: \.self) { index in
-                                Capsule().fill(.white.opacity(index == selection ? 1 : 0.5))
-                                    .frame(width: index == selection ? 22 : 7, height: 7)
-                                    .onTapGesture { withAnimation(.easeInOut(duration: 0.45)) { selection = index } }
+                                FeaturedPagerDot(index: index, selected: index == selection) {
+                                    withAnimation(.easeInOut(duration: 0.45)) { selection = index }
+                                }
                             }
-                        }.padding(.bottom, 8)
+                        }
+                        .padding(.bottom, 8)
                     }.padding(.horizontal, 72).padding(.bottom, 118).padding(.top, 40)
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
@@ -274,7 +416,10 @@ private struct FeaturedMediaBar: View {
                     carouselButton("chevron.left", action: previous)
                     Spacer()
                     carouselButton("chevron.right", action: next)
-                }.padding(.horizontal, 12).opacity(hovering ? 1 : 0)
+                }
+                .padding(.horizontal, 12)
+                .opacity(hovering ? 1 : 0)
+                .allowsHitTesting(hovering)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
@@ -309,18 +454,9 @@ private struct FeaturedMediaBar: View {
     }
 
     private func carouselButton(_ icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.headline.weight(.semibold))
-                .frame(width: 44, height: 44)
-                .contentShape(Circle())
-        }
-        .buttonStyle(.borderless)
-        .foregroundStyle(.white)
-        .background(.black.opacity(0.5), in: Circle())
-        .overlay { Circle().strokeBorder(.white.opacity(0.14)) }
-        .contentShape(Circle())
-        .help(icon == "chevron.left" ? "Previous feature" : "Next feature")
+        FeaturedCarouselButton(icon: icon,
+                               help: icon == "chevron.left" ? "Previous feature" : "Next feature",
+                               action: action)
     }
     private func runtime(_ item: BaseItem) -> String? {
         guard let ticks = item.runTimeTicks else { return nil }
