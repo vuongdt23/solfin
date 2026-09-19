@@ -163,21 +163,10 @@ struct HomeView: View {
 }
 
 private struct FeaturedTitle: View {
-    @EnvironmentObject private var appState: AppState
     let item: BaseItem
 
     var body: some View {
-        if let url = appState.api.logoImageURL(for: item) {
-            CachedImage(url: url, contentMode: .fit)
-                .frame(width: 560, height: 170, alignment: .leading)
-        } else { fallback }
-    }
-
-    private var fallback: some View {
-        Text(item.name)
-            .font(.system(size: 74, weight: .heavy, design: .rounded))
-            .tracking(-2.2).foregroundStyle(.white).lineLimit(2)
-            .frame(maxWidth: 820, alignment: .leading)
+        SolarMediaLogo(item: item)
     }
 }
 
@@ -375,31 +364,15 @@ private struct FeaturedMediaBar: View {
                         // Separate the title treatment from its metadata and actions;
                         // the logo should have room to read before the info block begins.
                         VStack(alignment: .leading, spacing: 25) {
-                            FeaturedTitle(item: item)
-                            HStack(spacing: 12) {
-                                if let rating = item.communityRating {
-                                    Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                                        .foregroundStyle(.yellow)
+                            SolarHeroIdentity(
+                                item: item,
+                                runtime: runtime(item),
+                                overview: item.overview
+                            ) {
+                                SolarHeroActions {
+                                    FeaturedPlayButton(title: playLabel(item)) { playFeatured(item) }
+                                    FeaturedInfoButton(item: item)
                                 }
-                                if let year = item.productionYear { Text(String(year)) }
-                                if let official = item.officialRating { Text(official).padding(.horizontal, 7).background(.white.opacity(0.84), in: RoundedRectangle(cornerRadius: 4)).foregroundStyle(.black) }
-                                if let runtime = runtime(item) { Text(runtime) }
-                            }.font(.callout.weight(.semibold)).foregroundStyle(.white.opacity(0.96))
-                            if let genres = item.genres, !genres.isEmpty {
-                                Text(genres.prefix(3).joined(separator: "  ·  "))
-                                    .font(.callout.weight(.bold)).foregroundStyle(.white.opacity(0.94))
-                            }
-                            if let overview = item.overview {
-                                Text(overview)
-                                    .font(.system(size: 18, weight: .medium))
-                                    .lineSpacing(4)
-                                    .foregroundStyle(.white.opacity(0.94))
-                                    .lineLimit(4)
-                                    .frame(maxWidth: min(820, proxy.size.width * 0.68), alignment: .leading)
-                            }
-                            HStack(spacing: 12) {
-                                FeaturedPlayButton(title: playLabel(item)) { playFeatured(item) }
-                                FeaturedInfoButton(item: item)
                             }
                         }
                         Spacer(minLength: 20)

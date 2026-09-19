@@ -14,6 +14,7 @@ struct SeriesDetailView: View {
     @State private var episodeLoadID = UUID()
     @State private var overviewExpanded = false
     @State private var heroAvailableWidth: CGFloat = 1600
+    @State private var heroPlayHovering = false
 
     var body: some View {
         ScrollView {
@@ -89,20 +90,16 @@ struct SeriesDetailView: View {
         let contentWidth = max(0, availableWidth - 76)
         let copyWidth = min(820, max(220, contentWidth * 0.58))
         return VStack(alignment: .leading, spacing: 15) {
-            FeaturedTitleView(item: series, availableWidth: copyWidth)
-            heroMetadata
-            if let genres = series.genres, !genres.isEmpty {
-                Text(genres.prefix(4).joined(separator: "  ·  "))
-                    .font(.callout.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.8))
-            }
+            SolarMediaLogo(item: series,
+                           maxWidth: min(820, max(480, copyWidth * 0.44)),
+                           height: min(230, max(150, copyWidth * 0.14)),
+                           fallbackSize: min(70, max(48, copyWidth * 0.042)))
+            SolarSeriesMetadata(series: series, seasonCount: seasonCount)
+            if let genres = series.genres { SolarGenreRow(genres: genres) }
             if let overview = series.overview, !overview.isEmpty {
-                Text(overview)
-                    .font(.system(size: 16, weight: .regular))
-                    .lineSpacing(5)
-                    .foregroundStyle(.white.opacity(0.88))
-                    .lineLimit(overviewExpanded ? nil : 3)
-                    .frame(maxWidth: min(760, availableWidth * 0.42), alignment: .leading)
+                SolarHeroOverview(text: overview,
+                                  maxWidth: min(760, availableWidth * 0.42),
+                                  lineLimit: overviewExpanded ? nil : 3)
                 if overview.count > 380 {
                     Button(overviewExpanded ? "Show Less" : "More") { withAnimation { overviewExpanded.toggle() } }
                         .buttonStyle(.plain)
@@ -116,31 +113,15 @@ struct SeriesDetailView: View {
                     Label(playLabel(for: episode), systemImage: "play.fill")
                         .padding(.horizontal, 8).padding(.vertical, 3)
                 }
-                .buttonStyle(SolarPillButtonStyle(hovering: false))
+                .buttonStyle(SolarPillButtonStyle(hovering: heroPlayHovering))
+                .onHover { heroPlayHovering = $0 }
+                .animation(.easeOut(duration: 0.16), value: heroPlayHovering)
                 .controlSize(.large)
             }
         }
         .frame(maxWidth: copyWidth, alignment: .leading)
     }
 
-    private var heroMetadata: some View {
-        HStack(spacing: 10) {
-            if let year = series.productionYear { heroPill(String(year)) }
-            if let count = seasonCount { heroPill("\(count) season\(count == 1 ? "" : "s")") }
-            if let official = series.officialRating { heroPill(official) }
-            if let rating = series.communityRating {
-                Label(String(format: "%.1f", rating), systemImage: "star.fill")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.yellow)
-            }
-            if let status = series.status, !status.isEmpty {
-                Text(status)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(status.caseInsensitiveCompare("Continuing") == .orderedSame
-                                     ? SolfinDesign.solarGold : .white.opacity(0.78))
-            }
-        }
-    }
 
     private var seasonsShelf: some View {
         VStack(alignment: .leading, spacing: 13) {
@@ -263,11 +244,6 @@ struct SeriesDetailView: View {
         return values.isEmpty ? nil : values.joined(separator: " · ")
     }
 
-    private func heroPill(_ text: String) -> some View {
-        Text(text).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.9))
-            .padding(.horizontal, 9).padding(.vertical, 5)
-            .background(.black.opacity(0.3), in: Capsule())
-    }
     private func resumeSeconds(_ episode: BaseItem) -> Double { Ticks.toSeconds(episode.userData?.playbackPositionTicks) }
     private func playLabel(for episode: BaseItem) -> String { resumeSeconds(episode) > 0 ? "Resume" : "Play" }
     private func playEpisodeFromGrid(_ episode: BaseItem, startOver: Bool) {
@@ -336,6 +312,7 @@ private struct SeriesHeroWidthKey: PreferenceKey {
     }
 }
 
+/* Migrated to SolarMediaLogo. Kept out of feature views so all logo treatments share one component. */
 private struct FeaturedTitleView: View {
     @EnvironmentObject private var appState: AppState
     let item: BaseItem

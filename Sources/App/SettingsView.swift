@@ -4,6 +4,7 @@ import PlaybackEngine
 
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
     @AppStorage("solfin.autoplayNext") private var autoplayNext = true
     @AppStorage("solfin.featuredAutoAdvance") private var featuredAutoAdvance = true
     @AppStorage(SolfinLog.levelKey) private var logLevelRaw = SolfinLogLevel.info.rawValue
@@ -46,7 +47,10 @@ struct SettingsView: View {
             Form {
                 LabeledContent("Server", value: appState.session?.serverURL.absoluteString ?? "Not connected")
                 LabeledContent("User", value: appState.session?.userName ?? "—")
-                Button("Sign Out", role: .destructive) { appState.signOut() }
+                Button("Sign Out", role: .destructive) {
+                    appState.signOut()
+                    dismiss()
+                }
             }
             .formStyle(.grouped).padding(12)
             .tabItem { Label("Account", systemImage: "person.crop.circle") }

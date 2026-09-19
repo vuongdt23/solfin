@@ -34,6 +34,7 @@ struct RootView: View {
             if appState.isSignedIn { AppShellView() }
             else { LoginView() }
         }
+        .task { await appState.validateStoredSession() }
         .animation(.easeInOut(duration: 0.25), value: appState.isSignedIn)
     }
 }

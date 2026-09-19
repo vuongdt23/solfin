@@ -84,7 +84,8 @@ struct ItemDetailView: View {
     @State private var showSubtitleImporter = false
     @State private var showMediaInfo = false
     @State private var uploadMessage: String?
-    @State private var playButtonHovering = false
+    @State private var primaryPlayButtonHovering = false
+    @State private var startOverButtonHovering = false
 
     private enum PlayAction: Equatable {
         case primary
@@ -255,57 +256,25 @@ struct ItemDetailView: View {
     }
 
     private func identity(_ item: BaseItem, availableWidth: CGFloat) -> some View {
+        let isEpisode = item.type == "Episode"
         let logoWidth = min(1120, max(620, availableWidth * 0.62))
         let logoHeight = min(360, max(220, availableWidth * 0.21))
         let titleSize = min(88, max(58, availableWidth * 0.052))
-        return VStack(alignment: .leading, spacing: 10) {
-            if item.type == "Episode", let logoURL = episodeSeriesLogoURL(item) {
-                CachedImage(url: logoURL, contentMode: .fit)
-                    .frame(width: min(220, max(140, availableWidth * 0.16)), height: 38, alignment: .leading)
-                    .opacity(0.82)
-            } else if let context = contextTitle(item) {
-                Text(context.uppercased())
-                    .font(.caption.weight(.bold)).tracking(1.6)
-                    .foregroundStyle(.white.opacity(0.68))
-            }
-            if item.type != "Episode", let logoURL = appState.api.logoImageURL(for: item, maxWidth: nil) {
-                CachedImage(url: logoURL, contentMode: .fit)
-                    .frame(width: logoWidth, height: logoHeight, alignment: .leading)
-            } else { titleFallback(item, size: titleSize) }
-            heroMetadata(item)
+        let seriesLogo = isEpisode ? episodeSeriesLogoURL(item) : nil
+        return SolarHeroIdentity(
+            item: item,
+            context: isEpisode ? nil : contextTitle(item),
+            episodeCode: isEpisode ? episodeCode(item) : nil,
+            runtime: runtime(item),
+            overview: nil,
+            logoURL: seriesLogo,
+            logoWidth: isEpisode ? min(280, max(180, availableWidth * 0.20)) : logoWidth,
+            logoHeight: isEpisode ? 54 : logoHeight,
+            fallbackSize: titleSize,
+            lookupDefaultLogo: !isEpisode
+        ) {
             actions(item)
         }
-        .shadow(color: .black.opacity(0.48), radius: 12, y: 3)
-    }
-
-    private func titleFallback(_ item: BaseItem, size: CGFloat) -> some View {
-        Text(item.name)
-            .font(.system(size: size, weight: .bold, design: .rounded))
-            .tracking(-1.6).foregroundStyle(.white)
-            .multilineTextAlignment(.leading).lineLimit(2)
-            .frame(maxWidth: 820, alignment: .leading)
-    }
-
-    private func heroMetadata(_ item: BaseItem) -> some View {
-        HStack(spacing: 10) {
-            if item.type == "Episode" { metadataText(episodeCode(item)) }
-            if let year = item.productionYear { metadataText(String(year)) }
-            if let runtime = runtime(item) { metadataText(runtime) }
-            if let rating = item.officialRating {
-                Text(rating).font(.caption.weight(.semibold)).foregroundStyle(.black)
-                    .padding(.horizontal, 7).padding(.vertical, 3).background(.white.opacity(0.86), in: RoundedRectangle(cornerRadius: 4))
-            }
-            if let score = item.communityRating {
-                Label(String(format: "%.1f", score), systemImage: "star.fill").font(.caption.weight(.semibold)).foregroundStyle(.yellow)
-            }
-            if item.userData?.played == true {
-                Image(systemName: "checkmark").font(.caption.bold()).foregroundStyle(.white)
-            }
-        }
-    }
-
-    private func metadataText(_ text: String) -> some View {
-        Text(text).font(.caption.weight(.semibold)).foregroundStyle(.white.opacity(0.9))
     }
 
     private func actions(_ item: BaseItem) -> some View {
@@ -313,16 +282,17 @@ struct ItemDetailView: View {
         return HStack(spacing: 10) {
             playButton(item, action: .primary, title: playLabel(item), systemImage: "play.fill",
                        isPrimary: true, isBusy: pendingPlayAction == .primary && isWaitingForLaunch,
-                       hovering: playButtonHovering)
+                       hovering: primaryPlayButtonHovering)
+                .onHover { primaryPlayButtonHovering = $0 }
 
             if resumeSeconds(item) > 0 {
                 playButton(item, action: .startOver, title: "Start Over", systemImage: "arrow.counterclockwise",
                            isPrimary: false, isBusy: pendingPlayAction == .startOver && isWaitingForLaunch,
-                           hovering: playButtonHovering)
+                           hovering: startOverButtonHovering)
+                    .onHover { startOverButtonHovering = $0 }
             }
         }
         .disabled(isWaitingForLaunch)
-        .onHover { playButtonHovering = $0 }
         .animation(.easeOut(duration: 0.16), value: pendingPlayAction)
     }
 
