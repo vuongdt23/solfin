@@ -83,7 +83,7 @@ public extension APIClient {
 
     /// Recently added videos across all visible libraries.
     func latestItems(limit: Int = 20, parentId: String? = nil,
-                     includeItemTypes: String = "Movie,Series") async throws -> [BaseItem] {
+                     includeItemTypes: String = "Movie,Series", filters: String? = nil) async throws -> [BaseItem] {
         let uid = try requireUser()
         var q = [
             URLQueryItem(name: "UserId", value: uid),
@@ -94,6 +94,7 @@ public extension APIClient {
             URLQueryItem(name: "ImageTypeLimit", value: "1"),
         ]
         if let parentId { q.append(URLQueryItem(name: "ParentId", value: parentId)) }
+        if let filters { q.append(URLQueryItem(name: "Filters", value: filters)) }
         let req = try makeRequest(path: "Users/\(uid)/Items/Latest", query: q)
         return try decode([BaseItem].self, from: try await send(req))
     }
@@ -137,17 +138,17 @@ public extension APIClient {
                                          includeItemTypes: "Series",
                                          recursive: true,
                                          filters: filters)
-        async let episodeResponse = items(parentId: parentId,
-                                          startIndex: 0,
-                                          limit: episodeScanLimit,
-                                          sortBy: "DateCreated",
-                                          sortOrder: "Descending",
-                                          includeItemTypes: "Episode",
-                                          recursive: true,
-                                          filters: filters)
+        // Items/Latest is backed by Jellyfin's recent-items query and is much
+        // cheaper than recursively sorting and materializing a large episode
+        // result set. The previous Items query made this view noticeably slower
+        // than the web UI on larger libraries.
+        async let episodeResponse = latestItems(limit: episodeScanLimit,
+                                                parentId: parentId,
+                                                includeItemTypes: "Episode",
+                                                filters: filters)
 
         var latestEpisodeDateBySeriesId: [String: String] = [:]
-        for episode in try await episodeResponse.items {
+        for episode in try await episodeResponse {
             guard let seriesId = episode.seriesId, let dateCreated = episode.dateCreated else { continue }
             if latestEpisodeDateBySeriesId[seriesId] == nil { latestEpisodeDateBySeriesId[seriesId] = dateCreated }
         }
