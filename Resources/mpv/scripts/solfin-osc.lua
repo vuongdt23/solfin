@@ -1277,8 +1277,9 @@ local function on_mbtn_up()
         request_tick()
         return
     end
-    -- Click actions (only when the OSC is on screen)
-    if state.opacity <= 0 then return end
+    -- Click actions. Controls remain clickable while visible, and a click on
+    -- the video itself toggles playback. Keep this active when the OSC has
+    -- auto-hidden so the video can still be used as a pause/resume surface.
 
     -- Menu scrolling/row selection takes precedence.
     if state.menu.open and state.menu.items then
@@ -1337,7 +1338,14 @@ local function on_mbtn_up()
     elseif point_in(hitboxes.close, mx, my) then
         mp.commandv("quit")
     elseif state.menu.open and not point_in(hitboxes.menu_area, mx, my) then
-        -- Click outside the open panel dismisses it.
+        -- Click outside the open panel dismisses it without also toggling
+        -- playback.
+        close_menu()
+    else
+        -- Any unclaimed left click is on the video frame. This deliberately
+        -- uses mpv's pause property so the IPC observer keeps the app state
+        -- and Jellyfin progress reporting in sync.
+        mp.commandv("cycle", "pause")
         close_menu()
     end
     request_tick()
