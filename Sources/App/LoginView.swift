@@ -1,4 +1,5 @@
 import SwiftUI
+import JellyfinKit
 
 struct LoginView: View {
     @EnvironmentObject private var appState: AppState
@@ -6,6 +7,7 @@ struct LoginView: View {
     @State private var server = ""
     @State private var username = ""
     @State private var password = ""
+    @State private var serverSplashURL: URL?
     @FocusState private var focusedField: Field?
 
     private enum Field { case server, username, password }
@@ -26,14 +28,20 @@ struct LoginView: View {
             if server.isEmpty { server = appState.lastServerURL }
             focusedField = .username
         }
+        .onChange(of: server) { _, value in loadServerSplash(from: value) }
     }
 
     private var atmosphericBackground: some View {
         ZStack {
-            Color(nsColor: .windowBackgroundColor)
-            RadialGradient(colors: [Color.accentColor.opacity(colorScheme == .dark ? 0.22 : 0.12), .clear],
+            if let serverSplashURL {
+                CachedImage(url: serverSplashURL, contentMode: .fill)
+                    .overlay { Color.black.opacity(0.58) }
+            } else {
+                Color(nsColor: .windowBackgroundColor)
+            }
+            RadialGradient(colors: [SolfinDesign.solarOrange.opacity(colorScheme == .dark ? 0.22 : 0.12), .clear],
                            center: .topLeading, startRadius: 20, endRadius: 620)
-            RadialGradient(colors: [Color.cyan.opacity(colorScheme == .dark ? 0.11 : 0.06), .clear],
+            RadialGradient(colors: [SolfinDesign.nebulaPurple.opacity(colorScheme == .dark ? 0.14 : 0.06), .clear],
                            center: .bottomTrailing, startRadius: 40, endRadius: 560)
             VStack {
                 HStack {
@@ -49,11 +57,12 @@ struct LoginView: View {
     private var signInPanel: some View {
         VStack(alignment: .leading, spacing: 26) {
             VStack(alignment: .leading, spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 15, style: .continuous)
-                        .fill(Color.accentColor.gradient)
-                    Image(systemName: "play.fill").font(.system(size: 23, weight: .bold)).foregroundStyle(.white)
-                }.frame(width: 54, height: 54).shadow(color: .black.opacity(0.16), radius: 12, y: 6)
+                Image(nsImage: NSImage(named: NSImage.applicationIconName) ?? NSImage())
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 58, height: 58)
+                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                    .shadow(color: SolfinDesign.solarOrange.opacity(0.24), radius: 16, y: 6)
                 Text("Welcome to Solfin").font(.system(size: 30, weight: .semibold)).tracking(-0.6)
                 Text("Sign in to your Jellyfin server to browse and play your library.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -68,9 +77,8 @@ struct LoginView: View {
                     Text("Password").font(.callout.weight(.medium))
                     SecureField("Your password", text: $password)
                         .focused($focusedField, equals: .password)
-                        .textFieldStyle(.plain).padding(.horizontal, 13).frame(height: 40)
-                        .background(.background.opacity(0.62), in: RoundedRectangle(cornerRadius: 10))
-                        .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(focusedField == .password ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: focusedField == .password ? 2 : 1) }
+                        .solarField()
+                        .overlay { RoundedRectangle(cornerRadius: SolfinDesign.controlRadius).strokeBorder(focusedField == .password ? SolfinDesign.Control.borderFocused : SolfinDesign.Control.border, lineWidth: focusedField == .password ? 2 : 1) }
                         .textContentType(.password)
                 }
             }
@@ -85,6 +93,15 @@ struct LoginView: View {
                 .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
             }
 
+            if appState.isValidatingStoredSession {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Connecting to your server…")
+                }
+                .font(.callout)
+                .foregroundStyle(SolfinDesign.Control.textMuted)
+            }
+
             Button(action: signIn) {
                 HStack(spacing: 8) {
                     if appState.isAuthenticating { ProgressView().controlSize(.small) }
@@ -92,7 +109,7 @@ struct LoginView: View {
                     if !appState.isAuthenticating { Image(systemName: "arrow.right") }
                 }.frame(maxWidth: .infinity).frame(height: 28)
             }
-            .buttonStyle(.borderedProminent).controlSize(.large)
+            .buttonStyle(SolarPrimaryButtonStyle()).controlSize(.large)
             .disabled(appState.isAuthenticating || server.trimmingCharacters(in: .whitespaces).isEmpty || username.isEmpty)
             .keyboardShortcut(.defaultAction)
         }
@@ -107,10 +124,27 @@ struct LoginView: View {
             Text(label).font(.callout.weight(.medium))
             TextField(prompt, text: text)
                 .focused($focusedField, equals: field)
-                .textFieldStyle(.plain).padding(.horizontal, 13).frame(height: 40)
-                .background(.background.opacity(0.62), in: RoundedRectangle(cornerRadius: 10))
-                .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(focusedField == field ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: focusedField == field ? 2 : 1) }
+                .solarField()
+                .overlay { RoundedRectangle(cornerRadius: SolfinDesign.controlRadius).strokeBorder(focusedField == field ? SolfinDesign.Control.borderFocused : SolfinDesign.Control.border, lineWidth: focusedField == field ? 2 : 1) }
                 .textContentType(contentType).autocorrectionDisabled()
+        }
+    }
+
+    private func loadServerSplash(from value: String) {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed), url.host != nil else {
+            serverSplashURL = nil
+            return
+        }
+        let client = APIClient(baseURL: url, clientInfo: ClientInfo(deviceId: UUID().uuidString))
+        Task {
+            do {
+                _ = try await client.publicSystemInfo()
+                guard !Task.isCancelled else { return }
+                await MainActor.run { serverSplashURL = client.brandingSplashscreenURL() }
+            } catch {
+                await MainActor.run { serverSplashURL = nil }
+            }
         }
     }
 

@@ -139,6 +139,13 @@ public final class APIClient: Sendable {
         return try decode(PublicSystemInfo.self, from: try await send(req))
     }
 
+    /// Jellyfin's optional server-managed splash artwork. This endpoint is public
+    /// and can be shown before authentication; callers should always provide a
+    /// local fallback because servers may disable or omit it.
+    public func brandingSplashscreenURL() -> URL {
+        baseURL.appendingPathComponent("Branding/Splashscreen")
+    }
+
     /// Authenticate by username/password. Returns a session; caller persists it.
     public func login(username: String, password: String) async throws -> ServerSession {
         let payload = ["Username": username, "Pw": password]

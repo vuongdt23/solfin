@@ -9,6 +9,7 @@ final class AppState: ObservableObject {
     @Published var loginError: String?
     @Published var isAuthenticating = false
     @Published var playbackError: String?
+    @Published var isValidatingStoredSession = false
 
     // Settings (persisted lightly in UserDefaults).
     @AppStorage("solfin.mpvPath") var mpvPathOverride: String = ""
@@ -30,10 +31,29 @@ final class AppState: ObservableObject {
         if let existing {
             self.session = existing
             self.api = api.authenticated(with: existing)
+            self.isValidatingStoredSession = true
         }
     }
 
     var isSignedIn: Bool { session != nil }
+
+    /// Verifies a restored session before showing the library. If the server has
+    /// moved or is no longer reachable, return the user to login with an explicit
+    /// recovery message instead of leaving them trapped in a broken shell.
+    func validateStoredSession() async {
+        guard isValidatingStoredSession else { return }
+        defer { isValidatingStoredSession = false }
+        guard session != nil else { return }
+        do {
+            _ = try await api.views()
+        } catch {
+            let failedServer = session?.serverURL.absoluteString ?? lastServerURL
+            let info = ClientInfo(deviceId: store.deviceId)
+            session = nil
+            api = APIClient(baseURL: URL(string: lastServerURL) ?? URL(string: "http://localhost:8096")!, clientInfo: info)
+            loginError = "Could not connect to \(failedServer). Your server may have changed. Enter a different server address below to reconnect."
+        }
+    }
 
     func signIn(serverURL: String, username: String, password: String) async {
         isAuthenticating = true
