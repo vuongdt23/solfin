@@ -176,13 +176,14 @@ struct LandscapeCard: View {
     @EnvironmentObject private var nowPlaying: NowPlaying
     let item: BaseItem
     let size: LibraryCardSize
-    let useThumbnailArtwork: Bool = false
+    let useThumbnailArtwork: Bool
     @State private var hovering = false
     @State private var playButtonHovering = false
 
-    init(item: BaseItem, size: LibraryCardSize = .medium) {
+    init(item: BaseItem, size: LibraryCardSize = .medium, useThumbnailArtwork: Bool = false) {
         self.item = item
         self.size = size
+        self.useThumbnailArtwork = useThumbnailArtwork
     }
 
     var body: some View {
