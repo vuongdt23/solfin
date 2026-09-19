@@ -54,14 +54,23 @@ struct PosterCard: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var nowPlaying: NowPlaying
     let item: BaseItem
+    let size: LibraryDensity
     @State private var hovering = false
     @State private var playButtonHovering = false
+
+    init(item: BaseItem, size: LibraryDensity = LibraryDensity(size: .small)) {
+        self.item = item
+        self.size = size
+    }
+
+    private var posterWidth: CGFloat { size.posterWidth }
+    private var posterHeight: CGFloat { size.posterHeight }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ZStack {
                 PosterImage(url: appState.api.primaryImageURL(for: item))
-                    .frame(width: 160, height: 240)
+                    .frame(width: posterWidth, height: posterHeight)
                     .clipShape(RoundedRectangle(cornerRadius: SolfinDesign.posterRadius, style: .continuous))
                     .overlay(alignment: .bottom) { progressBar }
                     .overlay {
@@ -70,7 +79,7 @@ struct PosterCard: View {
                     }
                 if hovering {
                     RoundedRectangle(cornerRadius: SolfinDesign.posterRadius + 8, style: .continuous)
-                        .fill(RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.32), SolfinDesign.solarRed.opacity(0.18), SolfinDesign.nebulaPurple.opacity(0.22), .clear], center: .center, startRadius: 10, endRadius: 140))
+                        .fill(RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.32), SolfinDesign.solarRed.opacity(0.18), SolfinDesign.nebulaPurple.opacity(0.22), .clear], center: .center, startRadius: 10, endRadius: posterWidth * 0.88))
                         .blur(radius: 16)
                         .padding(-14)
                         .allowsHitTesting(false)
@@ -92,7 +101,7 @@ struct PosterCard: View {
                     .accessibilityLabel("Play \(item.name)")
                 }
             }
-            .frame(width: 160, height: 240)
+            .frame(width: posterWidth, height: posterHeight)
             .compositingGroup()
             .shadow(color: SolfinDesign.solarOrange.opacity(hovering ? 0.22 : 0), radius: 24, y: 10)
             .shadow(color: SolfinDesign.nebulaPurple.opacity(hovering ? 0.18 : 0), radius: 30, y: 14)
@@ -100,10 +109,10 @@ struct PosterCard: View {
             // Keep the card's hit area and position stable while hovering. Scaling the
             // whole card makes neighboring cards steal hover events on macOS, which can
             // cause the hover effect to flicker or appear on the wrong card.
-            Text(item.name).font(.system(size: 17, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
-            if let subtitle { Text(subtitle).font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.64)).lineLimit(1) }
+            Text(item.name).font(.system(size: size.titleFont, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+            if let subtitle { Text(subtitle).font(.system(size: size.subtitleFont, weight: .medium)).foregroundStyle(.white.opacity(0.64)).lineLimit(1) }
         }
-        .frame(width: 160, alignment: .leading)
+        .frame(width: posterWidth, alignment: .leading)
         .contentShape(Rectangle())
         .animation(.spring(response: 0.28, dampingFraction: 0.78), value: hovering)
         .onHover { hovering = $0 }
@@ -134,19 +143,54 @@ struct PosterCard: View {
     }
 }
 
+struct ThumbnailCard: View {
+    @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var nowPlaying: NowPlaying
+    let item: BaseItem
+    let size: LibraryCardSize
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: 14) {
+            PosterImage(url: appState.api.thumbnailImageURL(for: item)
+                            ?? appState.api.backdropImageURL(for: item, maxWidth: 1280)
+                            ?? appState.api.primaryImageURL(for: item))
+                .frame(width: size.bannerWidth, height: size.bannerHeight)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(hovering ? 0.35 : 0.1)) }
+            VStack(alignment: .leading, spacing: 5) {
+                Text(item.name).font(.headline).foregroundStyle(.white).lineLimit(2)
+                if let year = item.productionYear { Text(String(year)).font(.subheadline).foregroundStyle(.secondary) }
+            }
+            Spacer()
+        }
+        .frame(width: size.bannerWidth, alignment: .leading)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.16), value: hovering)
+    }
+}
+
 struct LandscapeCard: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var nowPlaying: NowPlaying
     let item: BaseItem
+    let size: LibraryCardSize
+    let useThumbnailArtwork: Bool
     @State private var hovering = false
     @State private var playButtonHovering = false
+
+    init(item: BaseItem, size: LibraryCardSize = .medium, useThumbnailArtwork: Bool = false) {
+        self.item = item
+        self.size = size
+        self.useThumbnailArtwork = useThumbnailArtwork
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack {
-                PosterImage(url: appState.api.backdropImageURL(for: item, maxWidth: 640)
-                            ?? appState.api.primaryImageURL(for: item, maxHeight: 260))
-                    .frame(width: 250, height: 141)
+                PosterImage(url: artworkURL)
+                    .frame(width: size.bannerWidth, height: size.bannerHeight)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 LinearGradient(colors: [.clear, .black.opacity(0.34)], startPoint: .center, endPoint: .bottom)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -179,7 +223,7 @@ struct LandscapeCard: View {
                     }
                 }
             }
-            .frame(width: 250, height: 141)
+            .frame(width: size.bannerWidth, height: size.bannerHeight)
             .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(hovering ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarGold, SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: hovering ? 2 : 1) }
             .compositingGroup()
             .shadow(color: SolfinDesign.solarOrange.opacity(hovering ? 0.22 : 0), radius: 24, y: 10)
@@ -189,9 +233,19 @@ struct LandscapeCard: View {
                 .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
             if let subtitle { Text(subtitle).font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.64)).lineLimit(1) }
         }
-        .frame(width: 250, alignment: .leading)
+        .frame(width: size.bannerWidth, alignment: .leading)
         .contentShape(Rectangle()).onHover { hovering = $0 }
         .animation(.spring(response: 0.28, dampingFraction: 0.8), value: hovering)
+    }
+
+    private var artworkURL: URL? {
+        if useThumbnailArtwork {
+            return appState.api.thumbnailImageURL(for: item, maxWidth: 1280)
+                ?? appState.api.backdropImageURL(for: item, maxWidth: 1280)
+                ?? appState.api.primaryImageURL(for: item, maxHeight: 720)
+        }
+        return appState.api.backdropImageURL(for: item, maxWidth: 640)
+            ?? appState.api.primaryImageURL(for: item, maxHeight: 260)
     }
 
     private var subtitle: String? {
