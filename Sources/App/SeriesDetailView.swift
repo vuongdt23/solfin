@@ -388,6 +388,10 @@ private struct SeasonCard: View {
                 .animation(.easeOut(duration: 0.16), value: hovering)
             }
             .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(selected ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: selected ? 3 : 1) }
+            // Keep the artwork container from expanding to the height proposed by
+            // the surrounding hero stack. Without this constraint the overlay can
+            // stretch into a tall, empty card while the poster remains centered.
+            .frame(width: 170, height: 255)
             Text(season.name).font(.system(size: 17, weight: selected ? .semibold : .regular)).foregroundStyle(.white).lineLimit(1)
             if let count = season.childCount { Text("\(count) episodes").font(.caption).foregroundStyle(.white.opacity(0.58)) }
         }
