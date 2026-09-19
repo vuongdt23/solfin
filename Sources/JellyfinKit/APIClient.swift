@@ -33,7 +33,7 @@ public struct ClientInfo: Sendable {
     public init(client: String = "solfin",
                 device: String = Host.current().localizedName ?? "Mac",
                 deviceId: String,
-                version: String = "1.0.4") {
+                version: String = "1.0.5") {
         self.client = client
         self.device = device
         self.deviceId = deviceId
