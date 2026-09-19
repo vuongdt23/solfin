@@ -123,7 +123,9 @@ struct HomeView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 16) {
                     ForEach(items) { item in
-                        NavigationLink(value: item) { homeCard(item) }.buttonStyle(.plain)
+                        // Continue Watching and Next Up keep their dedicated wide card style,
+                        // independent of the library/home card preference.
+                        NavigationLink(value: item) { LandscapeCard(item: item) }.buttonStyle(.plain)
                     }
                 }.padding(.vertical, 8).padding(.horizontal, 2)
             }
