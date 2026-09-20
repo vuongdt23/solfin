@@ -128,14 +128,6 @@ struct IntegratedSolarSidebar: View {
                                endPoint: .trailing)
                 Rectangle().fill(.ultraThinMaterial).opacity(isExpanded ? 0.12 : 0.06)
             }
-            .overlay(alignment: .trailing) {
-                LinearGradient(colors: [SolfinDesign.spaceBlack.opacity(0.55), .clear],
-                               startPoint: .leading,
-                               endPoint: .trailing)
-                    .frame(width: 28)
-                    .offset(x: 28)
-                    .allowsHitTesting(false)
-            }
         }
         .animation(.spring(response: 0.32, dampingFraction: 0.86), value: isExpanded)
     }
