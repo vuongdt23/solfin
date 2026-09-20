@@ -118,17 +118,9 @@ struct IntegratedSolarSidebar: View {
         .padding(.horizontal, 8)
         .frame(width: width)
         .frame(maxHeight: .infinity)
-        .background {
-            ZStack {
-                // Keep the hero artwork visible beneath the navigation, while the
-                // dark scrim preserves icon and label contrast.
-                Color.black.opacity(isExpanded ? 0.52 : 0.30)
-                LinearGradient(colors: [SolfinDesign.spaceBlack.opacity(0.56), .clear, SolfinDesign.nebulaPurple.opacity(0.10)],
-                               startPoint: .leading,
-                               endPoint: .trailing)
-                Rectangle().fill(.ultraThinMaterial).opacity(isExpanded ? 0.12 : 0.06)
-            }
-        }
+        // The rail is intentionally background-free: its controls float directly
+        // over the hero and library content without creating a panel edge or seam.
+        .background(Color.clear)
         .animation(.spring(response: 0.32, dampingFraction: 0.86), value: isExpanded)
     }
 
