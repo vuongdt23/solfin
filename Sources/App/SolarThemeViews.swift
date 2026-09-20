@@ -164,10 +164,8 @@ struct IntegratedSolarSidebar: View {
             Image(systemName: systemImage)
                 .font(.system(size: 17, weight: .semibold))
                 .frame(width: 30, height: 30)
-                .background(.ultraThinMaterial, in: Circle())
-                .overlay { Circle().fill(Color.black.opacity(0.24)) }
-                .overlay { Circle().strokeBorder(.white.opacity(selected ? 0.28 : 0.14), lineWidth: 1) }
-                .shadow(color: .black.opacity(0.34), radius: 8, y: 3)
+                .shadow(color: .black.opacity(0.72), radius: 3, y: 1)
+                .shadow(color: .white.opacity(0.12), radius: 1)
             if isExpanded {
                 Text(title)
                     .font(.callout.weight(selected ? .bold : .semibold))
