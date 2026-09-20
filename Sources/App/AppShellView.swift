@@ -18,19 +18,20 @@ struct AppShellView: View {
     @State private var sidebarExpanded = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            IntegratedSolarSidebar(selection: detailPath.isEmpty ? selection : nil,
-                                   libraries: libraries,
-                                   isExpanded: $sidebarExpanded,
-                                   navigate: navigate,
-                                   icon: icon(for:))
-
+        ZStack(alignment: .leading) {
             NavigationStack(path: $detailPath) {
                 destinationView
                     .navigationDestination(for: BaseItem.self) { destination(for: $0) }
             }
             .background(SolfinDesign.solarBackground)
             .toolbarBackground(.hidden, for: .windowToolbar)
+
+            IntegratedSolarSidebar(selection: detailPath.isEmpty ? selection : nil,
+                                   libraries: libraries,
+                                   isExpanded: $sidebarExpanded,
+                                   navigate: navigate,
+                                   icon: icon(for:))
+                .zIndex(1)
         }
         .tint(SolfinDesign.solarOrange)
         .background(SolfinDesign.solarBackground)

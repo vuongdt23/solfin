@@ -120,14 +120,16 @@ struct IntegratedSolarSidebar: View {
         .frame(maxHeight: .infinity)
         .background {
             ZStack {
-                SolfinDesign.spaceBlack.opacity(0.96)
-                LinearGradient(colors: [SolfinDesign.solarOrange.opacity(0.07), .clear, SolfinDesign.nebulaPurple.opacity(0.09)],
-                               startPoint: .top,
-                               endPoint: .bottom)
-                Rectangle().fill(.ultraThinMaterial).opacity(0.20)
+                // Keep the hero artwork visible beneath the navigation, while the
+                // dark scrim preserves icon and label contrast.
+                Color.black.opacity(isExpanded ? 0.52 : 0.30)
+                LinearGradient(colors: [SolfinDesign.spaceBlack.opacity(0.56), .clear, SolfinDesign.nebulaPurple.opacity(0.10)],
+                               startPoint: .leading,
+                               endPoint: .trailing)
+                Rectangle().fill(.ultraThinMaterial).opacity(isExpanded ? 0.12 : 0.06)
             }
             .overlay(alignment: .trailing) {
-                LinearGradient(colors: [SolfinDesign.spaceBlack.opacity(0.88), .clear],
+                LinearGradient(colors: [SolfinDesign.spaceBlack.opacity(0.55), .clear],
                                startPoint: .leading,
                                endPoint: .trailing)
                     .frame(width: 28)
