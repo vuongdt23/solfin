@@ -14,8 +14,8 @@ struct HomeView: View {
     @State private var showcase: [BaseItem] = []
     @State private var loadError: String?
     @State private var isLoading = true
-    @AppStorage("solfin.libraryCardSize") private var cardSizeRaw = LibraryCardSize.small.rawValue
-    @AppStorage("solfin.libraryCardType") private var cardTypeRaw = LibraryCardType.poster.rawValue
+    @AppStorage("solfin.homeCardSize") private var cardSizeRaw = LibraryCardSize.small.rawValue
+    @AppStorage("solfin.homeCardType") private var cardTypeRaw = LibraryCardType.poster.rawValue
 
     private var cardSize: LibraryCardSize { LibraryCardSize(rawValue: cardSizeRaw) ?? .small }
     private var cardType: LibraryCardType { LibraryCardType(rawValue: cardTypeRaw) ?? .poster }

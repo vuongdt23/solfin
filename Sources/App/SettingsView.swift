@@ -28,6 +28,16 @@ struct SettingsView: View {
                 Section("Episodes") {
                     Toggle("Automatically play the next episode", isOn: $autoplayNext)
                 }
+                Section("Home cards") {
+                    Picker("Card type", selection: homeCardTypeBinding) {
+                        ForEach(LibraryCardType.allCases) { Text($0.title).tag($0) }
+                    }
+                    Picker("Card size", selection: homeCardSizeBinding) {
+                        ForEach(LibraryCardSize.allCases) { Text($0.title).tag($0) }
+                    }
+                    Text("Continue Watching and Next Up always use their dedicated wide card style.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
             .formStyle(.grouped).padding(12)
             .tabItem { Label("General", systemImage: "switch.2") }
@@ -57,6 +67,18 @@ struct SettingsView: View {
         }
         .frame(minWidth: 820, idealWidth: 960, minHeight: 560, idealHeight: 680)
         .onAppear { configStore.load(bundledConfigDir: appState.mpvConfigDir) }
+    }
+
+    @AppStorage("solfin.homeCardSize") private var homeCardSizeRaw = LibraryCardSize.small.rawValue
+    @AppStorage("solfin.homeCardType") private var homeCardTypeRaw = LibraryCardType.poster.rawValue
+
+    private var homeCardSizeBinding: Binding<LibraryCardSize> {
+        Binding(get: { LibraryCardSize(rawValue: homeCardSizeRaw) ?? .small },
+                set: { homeCardSizeRaw = $0.rawValue })
+    }
+    private var homeCardTypeBinding: Binding<LibraryCardType> {
+        Binding(get: { LibraryCardType(rawValue: homeCardTypeRaw) ?? .poster },
+                set: { homeCardTypeRaw = $0.rawValue })
     }
 
     private var cacheSettings: some View {
