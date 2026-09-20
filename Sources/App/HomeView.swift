@@ -408,13 +408,16 @@ private struct FeaturedMediaBar: View {
                 .frame(width: proxy.size.width, height: proxy.size.height)
 
                 HStack {
+                    // Keep the carousel control clear of the overlaid navigation rail.
                     carouselButton("chevron.left", action: previous)
                     Spacer()
                     carouselButton("chevron.right", action: next)
                 }
-                .padding(.horizontal, 12)
+                .padding(.leading, 82)
+                .padding(.trailing, 12)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
+                .zIndex(2)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }
