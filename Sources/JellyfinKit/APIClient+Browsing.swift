@@ -9,7 +9,7 @@ public extension APIClient {
 
     // Common set of fields we want back on items.
     private static let itemFields =
-        "Overview,MediaSources,MediaStreams,ProductionYear,IndexNumber,ParentIndexNumber,DateCreated,PremiereDate,EndDate,Status,AirDays,CumulativeRunTimeTicks,RecursiveItemCount,ChildCount,PrimaryImageAspectRatio,OfficialRating,CommunityRating,Genres,ParentBackdropItemId,ParentBackdropImageTags,ParentLogoItemId,ParentLogoImageTag,SeriesPrimaryImageTag"
+        "Overview,MediaSources,MediaStreams,ProductionYear,IndexNumber,ParentIndexNumber,DateCreated,PremiereDate,EndDate,Status,AirDays,CumulativeRunTimeTicks,RecursiveItemCount,ChildCount,ImageTags,BackdropImageTags,PrimaryImageAspectRatio,OfficialRating,CommunityRating,Genres,ParentBackdropItemId,ParentBackdropImageTags,ParentLogoItemId,ParentLogoImageTag,SeriesPrimaryImageTag"
 
     /// Top-level libraries ("Views") for the signed-in user.
     func views() async throws -> [BaseItem] {
