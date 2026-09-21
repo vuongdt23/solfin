@@ -14,6 +14,11 @@ struct HomeView: View {
     @State private var showcase: [BaseItem] = []
     @State private var loadError: String?
     @State private var isLoading = true
+    @AppStorage("solfin.homeCardSize") private var cardSizeRaw = LibraryCardSize.small.rawValue
+    @AppStorage("solfin.homeCardType") private var cardTypeRaw = LibraryCardType.poster.rawValue
+
+    private var cardSize: LibraryCardSize { LibraryCardSize(rawValue: cardSizeRaw) ?? .small }
+    private var cardType: LibraryCardType { LibraryCardType(rawValue: cardTypeRaw) ?? .poster }
 
     init(embeddedInShell: Bool = false) { self.embeddedInShell = embeddedInShell }
 
@@ -118,6 +123,8 @@ struct HomeView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 16) {
                     ForEach(items) { item in
+                        // Continue Watching and Next Up keep their dedicated wide card style,
+                        // independent of the library/home card preference.
                         NavigationLink(value: item) { LandscapeCard(item: item) }.buttonStyle(.plain)
                     }
                 }.padding(.vertical, 8).padding(.horizontal, 2)
@@ -131,10 +138,22 @@ struct HomeView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 18) {
                     ForEach(items) { item in
-                        NavigationLink(value: item) { PosterCard(item: item) }.buttonStyle(.plain)
+                        NavigationLink(value: item) { homeCard(item) }.buttonStyle(.plain)
                     }
                 }.padding(.vertical, 8).padding(.horizontal, 2)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func homeCard(_ item: BaseItem) -> some View {
+        switch cardType {
+        case .poster:
+            PosterCard(item: item, size: LibraryDensity(size: cardSize))
+        case .thumbnail:
+            LandscapeCard(item: item, size: cardSize, useThumbnailArtwork: true)
+        case .banner:
+            LandscapeCard(item: item, size: cardSize)
         }
     }
 
@@ -389,13 +408,16 @@ private struct FeaturedMediaBar: View {
                 .frame(width: proxy.size.width, height: proxy.size.height)
 
                 HStack {
+                    // Keep the carousel control clear of the overlaid navigation rail.
                     carouselButton("chevron.left", action: previous)
                     Spacer()
                     carouselButton("chevron.right", action: next)
                 }
-                .padding(.horizontal, 12)
+                .padding(.leading, 82)
+                .padding(.trailing, 12)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
+                .zIndex(2)
             }
             .frame(width: proxy.size.width, height: proxy.size.height)
         }

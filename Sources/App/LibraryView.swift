@@ -16,7 +16,8 @@ struct LibraryView: View {
     @AppStorage("solfin.librarySort") private var sortRaw = LibrarySort.name.rawValue
     @AppStorage("solfin.librarySortAscending") private var sortAscending = true
     @AppStorage("solfin.libraryPlayedFilter") private var playedFilterRaw = PlayedFilter.all.rawValue
-    @AppStorage("solfin.libraryDensity") private var densityRaw = LibraryDensity.standard.rawValue
+    @AppStorage("solfin.libraryCardSize") private var cardSizeRaw = LibraryCardSize.small.rawValue
+    @AppStorage("solfin.libraryCardType") private var cardTypeRaw = LibraryCardType.poster.rawValue
 
     private let pageSize = 60
     private var availableSorts: [LibrarySort] { LibrarySort.options(for: parent.collectionType) }
@@ -41,12 +42,7 @@ struct LibraryView: View {
                                          message: "No loaded titles match \"\(filterText.trimmingCharacters(in: .whitespacesAndNewlines))\".",
                                          systemImage: "magnifyingglass")
                     } else {
-                        LazyVGrid(columns: columns, alignment: .leading, spacing: density.spacing) {
-                            ForEach(filteredItems) { item in
-                                NavigationLink(value: item) { PosterCard(item: item) }.buttonStyle(.plain)
-                                    .onAppear { if item.id == items.last?.id { Task { await loadNextPage() } } }
-                            }
-                        }
+                        itemGrid
                         if isLoading { ProgressView().controlSize(.small).padding(24).tint(SolfinDesign.solarOrange) }
                         if let loadError, !items.isEmpty {
                             VStack(spacing: 8) {
@@ -121,11 +117,18 @@ struct LibraryView: View {
             .buttonStyle(SolarToolbarButtonStyle())
 
             Menu {
-                Picker("Density", selection: densityBinding) {
-                    ForEach(LibraryDensity.allCases) { Text($0.title).tag($0) }
+                Section("Card type") {
+                    Picker("Type", selection: cardTypeBinding) {
+                        ForEach(LibraryCardType.allCases) { Text($0.title).tag($0) }
+                    }
+                }
+                Section("Card size") {
+                    Picker("Size", selection: cardSizeBinding) {
+                        ForEach(LibraryCardSize.allCases) { Text($0.title).tag($0) }
+                    }
                 }
             } label: {
-                Label("View", systemImage: "square.grid.3x3")
+                Label("Cards", systemImage: "square.grid.3x3")
             }
             .menuStyle(.borderlessButton)
             .buttonStyle(SolarToolbarButtonStyle())
@@ -160,18 +163,49 @@ struct LibraryView: View {
                 || (item.seriesName?.localizedCaseInsensitiveContains(query) == true)
         }
     }
-    private var density: LibraryDensity { LibraryDensity(rawValue: densityRaw) ?? .standard }
+    private var cardSize: LibraryCardSize { LibraryCardSize(rawValue: cardSizeRaw) ?? .small }
+    private var cardType: LibraryCardType { LibraryCardType(rawValue: cardTypeRaw) ?? .poster }
+    private var density: LibraryDensity { LibraryDensity(size: cardSize) }
     private var sortBinding: Binding<LibrarySort> {
         Binding(get: { sort }, set: { sortRaw = $0.rawValue })
     }
     private var playedFilterBinding: Binding<PlayedFilter> {
         Binding(get: { playedFilter }, set: { playedFilterRaw = $0.rawValue })
     }
-    private var densityBinding: Binding<LibraryDensity> {
-        Binding(get: { density }, set: { densityRaw = $0.rawValue })
+    private var cardSizeBinding: Binding<LibraryCardSize> {
+        Binding(get: { cardSize }, set: { cardSizeRaw = $0.rawValue })
     }
+    private var cardTypeBinding: Binding<LibraryCardType> {
+        Binding(get: { cardType }, set: { cardTypeRaw = $0.rawValue })
+    }
+    @ViewBuilder
+    private var itemGrid: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: density.spacing) { itemLinks }
+    }
+
+    @ViewBuilder
+    private var itemLinks: some View {
+        ForEach(filteredItems) { item in
+            NavigationLink(value: item) {
+                switch cardType {
+                case .thumbnail: ThumbnailCard(item: item, size: cardSize)
+                case .banner: LandscapeCard(item: item, size: cardSize)
+                case .poster: PosterCard(item: item, size: density)
+                }
+            }
+            .buttonStyle(.plain)
+            .onAppear { if item.id == items.last?.id { Task { await loadNextPage() } } }
+        }
+    }
+
     private var columns: [GridItem] {
-        [GridItem(.adaptive(minimum: density.minimumWidth, maximum: density.maximumWidth), spacing: density.spacing)]
+        let width: CGFloat
+        switch cardType {
+        case .poster: width = cardSize.posterWidth
+        case .thumbnail: width = cardSize.thumbnailRowWidth
+        case .banner: width = cardSize.bannerWidth
+        }
+        return [GridItem(.adaptive(minimum: width, maximum: width), spacing: density.spacing)]
     }
 
     private func reload() { Task { await reloadAndWait() } }
@@ -252,11 +286,34 @@ private enum PlayedFilter: String, CaseIterable, Identifiable {
     var apiValue: String? { switch self { case .all: nil; case .unplayed: "IsUnplayed"; case .played: "IsPlayed" } }
 }
 
-enum LibraryDensity: String, CaseIterable, Identifiable {
-    case comfortable, standard, compact
+enum LibraryCardType: String, CaseIterable, Identifiable {
+    case poster, thumbnail, banner
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
-    var minimumWidth: CGFloat { switch self { case .comfortable: 180; case .standard: 150; case .compact: 125 } }
-    var maximumWidth: CGFloat { switch self { case .comfortable: 220; case .standard: 190; case .compact: 155 } }
-    var spacing: CGFloat { switch self { case .comfortable: 26; case .standard: 20; case .compact: 14 } }
+}
+
+enum LibraryCardSize: String, CaseIterable, Identifiable {
+    case small, medium, large
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+    var posterWidth: CGFloat { switch self { case .small: 160; case .medium: 200; case .large: 240 } }
+    var titleFont: CGFloat { switch self { case .small: 17; case .medium: 18; case .large: 19 } }
+    var subtitleFont: CGFloat { switch self { case .small, .medium: 14; case .large: 15 } }
+    var spacing: CGFloat { switch self { case .small: 20; case .medium: 24; case .large: 28 } }
+    var thumbnailWidth: CGFloat { switch self { case .small: 64; case .medium: 80; case .large: 96 } }
+    var thumbnailHeight: CGFloat { thumbnailWidth * 1.5 }
+    var thumbnailRowWidth: CGFloat { switch self { case .small: 360; case .medium: 460; case .large: 560 } }
+    var bannerWidth: CGFloat { switch self { case .small: 300; case .medium: 420; case .large: 540 } }
+    var bannerHeight: CGFloat { bannerWidth * 0.564 }
+}
+
+struct LibraryDensity {
+    let size: LibraryCardSize
+    var posterWidth: CGFloat { size.posterWidth }
+    var minimumWidth: CGFloat { posterWidth }
+    var maximumWidth: CGFloat { posterWidth }
+    var spacing: CGFloat { size.spacing }
+    var posterHeight: CGFloat { posterWidth * 1.5 }
+    var titleFont: CGFloat { size.titleFont }
+    var subtitleFont: CGFloat { size.subtitleFont }
 }

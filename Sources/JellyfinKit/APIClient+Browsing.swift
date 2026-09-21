@@ -9,7 +9,7 @@ public extension APIClient {
 
     // Common set of fields we want back on items.
     private static let itemFields =
-        "Overview,MediaSources,MediaStreams,ProductionYear,IndexNumber,ParentIndexNumber,DateCreated,PremiereDate,EndDate,Status,AirDays,CumulativeRunTimeTicks,RecursiveItemCount,ChildCount,ImageTags,BackdropImageTags,PrimaryImageAspectRatio,OfficialRating,CommunityRating,Genres,ParentBackdropItemId,ParentBackdropImageTags,ParentLogoItemId,ParentLogoImageTag,SeriesPrimaryImageTag"
+        "Overview,MediaSources,MediaStreams,ImageTags,BackdropImageTags,ProductionYear,IndexNumber,ParentIndexNumber,DateCreated,PremiereDate,EndDate,Status,AirDays,CumulativeRunTimeTicks,RecursiveItemCount,ChildCount,PrimaryImageAspectRatio,OfficialRating,CommunityRating,Genres,ParentBackdropItemId,ParentBackdropImageTags,ParentLogoItemId,ParentLogoImageTag,SeriesPrimaryImageTag"
 
     /// Top-level libraries ("Views") for the signed-in user.
     func views() async throws -> [BaseItem] {
@@ -223,6 +223,16 @@ public extension APIClient {
                      URLQueryItem(name: "quality", value: String(quality))]
         if let maxHeight { query.append(URLQueryItem(name: "maxHeight", value: String(maxHeight))) }
         comps?.queryItems = query
+        return comps?.url
+    }
+
+    /// Jellyfin's alternate thumbnail artwork, commonly used by the web UI's Thumb view.
+    func thumbnailImageURL(for item: BaseItem, maxWidth: Int? = 1280) -> URL? {
+        guard let tag = item.imageTags?["Thumb"] else { return nil }
+        var comps = URLComponents(url: baseURL.appendingPathComponent("Items/\(item.id)/Images/Thumb"), resolvingAgainstBaseURL: false)
+        comps?.queryItems = [URLQueryItem(name: "tag", value: tag),
+                             URLQueryItem(name: "quality", value: "100"),
+                             URLQueryItem(name: "maxWidth", value: String(maxWidth ?? 1280))]
         return comps?.url
     }
 

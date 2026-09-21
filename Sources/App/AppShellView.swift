@@ -18,19 +18,26 @@ struct AppShellView: View {
     @State private var sidebarExpanded = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            IntegratedSolarSidebar(selection: detailPath.isEmpty ? selection : nil,
-                                   libraries: libraries,
-                                   isExpanded: $sidebarExpanded,
-                                   navigate: navigate,
-                                   icon: icon(for:))
-
+        ZStack(alignment: .leading) {
             NavigationStack(path: $detailPath) {
                 destinationView
                     .navigationDestination(for: BaseItem.self) { destination(for: $0) }
             }
             .background(SolfinDesign.solarBackground)
             .toolbarBackground(.hidden, for: .windowToolbar)
+            // The home hero intentionally flows beneath the floating rail. Other
+            // destinations reserve the invisible rail width so their content starts
+            // cleanly after it instead of sitting underneath the controls.
+            .padding(.leading, reservesSidebarSpace ? sidebarWidth : 0)
+            .animation(.spring(response: 0.32, dampingFraction: 0.86), value: reservesSidebarSpace)
+            .animation(.spring(response: 0.32, dampingFraction: 0.86), value: sidebarExpanded)
+
+            IntegratedSolarSidebar(selection: detailPath.isEmpty ? selection : nil,
+                                   libraries: libraries,
+                                   isExpanded: $sidebarExpanded,
+                                   navigate: navigate,
+                                   icon: icon(for:))
+                .zIndex(1)
         }
         .tint(SolfinDesign.solarOrange)
         .background(SolfinDesign.solarBackground)
@@ -50,6 +57,13 @@ struct AppShellView: View {
         .task { await loadLibraries() }
         .onReceive(NotificationCenter.default.publisher(for: .solfinShowHome)) { _ in navigate(to: .home) }
         .onReceive(NotificationCenter.default.publisher(for: .solfinShowSearch)) { _ in navigate(to: .search) }
+    }
+
+    private var sidebarWidth: CGFloat { sidebarExpanded ? 210 : 64 }
+    private var reservesSidebarSpace: Bool {
+        if !detailPath.isEmpty { return true }
+        if case .home = selection ?? .home { return false }
+        return true
     }
 
     private func sidebarButton(_ title: String, systemImage: String,

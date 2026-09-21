@@ -118,23 +118,9 @@ struct IntegratedSolarSidebar: View {
         .padding(.horizontal, 8)
         .frame(width: width)
         .frame(maxHeight: .infinity)
-        .background {
-            ZStack {
-                SolfinDesign.spaceBlack.opacity(0.96)
-                LinearGradient(colors: [SolfinDesign.solarOrange.opacity(0.07), .clear, SolfinDesign.nebulaPurple.opacity(0.09)],
-                               startPoint: .top,
-                               endPoint: .bottom)
-                Rectangle().fill(.ultraThinMaterial).opacity(0.20)
-            }
-            .overlay(alignment: .trailing) {
-                LinearGradient(colors: [SolfinDesign.spaceBlack.opacity(0.88), .clear],
-                               startPoint: .leading,
-                               endPoint: .trailing)
-                    .frame(width: 28)
-                    .offset(x: 28)
-                    .allowsHitTesting(false)
-            }
-        }
+        // The rail is intentionally background-free: its controls float directly
+        // over the hero and library content without creating a panel edge or seam.
+        .background(Color.clear)
         .animation(.spring(response: 0.32, dampingFraction: 0.86), value: isExpanded)
     }
 
@@ -178,6 +164,8 @@ struct IntegratedSolarSidebar: View {
             Image(systemName: systemImage)
                 .font(.system(size: 17, weight: .semibold))
                 .frame(width: 30, height: 30)
+                .shadow(color: .black.opacity(0.72), radius: 3, y: 1)
+                .shadow(color: .white.opacity(0.12), radius: 1)
             if isExpanded {
                 Text(title)
                     .font(.callout.weight(selected ? .bold : .semibold))
