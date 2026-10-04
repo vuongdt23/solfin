@@ -23,7 +23,10 @@ struct AppShellView: View {
                 destinationView
                     .navigationDestination(for: BaseItem.self) { destination(for: $0) }
             }
-            .background(SolfinDesign.solarBackground)
+            // LibraryView uses a quiet, uniform canvas. Matching the shell canvas
+            // here prevents a gradient/star-field seam at the rail boundary.
+            .background(isLibraryScreen ? AnyView(SolfinDesign.spaceBlack)
+                                        : AnyView(SolfinDesign.solarBackground))
             .toolbarBackground(.hidden, for: .windowToolbar)
             // The home hero intentionally flows beneath the floating rail. Other
             // destinations reserve the invisible rail width so their content starts
@@ -40,7 +43,8 @@ struct AppShellView: View {
                 .zIndex(1)
         }
         .tint(SolfinDesign.solarOrange)
-        .background(SolfinDesign.solarBackground)
+        .background(isLibraryScreen ? AnyView(SolfinDesign.spaceBlack)
+                                    : AnyView(SolfinDesign.solarBackground))
         .preferredColorScheme(.dark)
         .toolbarBackground(.hidden, for: .windowToolbar)
         .safeAreaPadding(.bottom, nowPlaying.isActive ? 82 : 0)
@@ -60,10 +64,30 @@ struct AppShellView: View {
     }
 
     private var sidebarWidth: CGFloat { sidebarExpanded ? 210 : 64 }
+    private var isLibraryScreen: Bool {
+        if detailPath.last.map(isLibraryDestination) == true { return true }
+        if case .library = selection ?? .home { return true }
+        return false
+    }
+
     private var reservesSidebarSpace: Bool {
-        if !detailPath.isEmpty { return true }
+        // Libraries are the one exception: their grid must never sit beneath
+        // the floating rail. Both the sidebar route and Home's LibraryBanner
+        // route use this same reserved layout.
+        if detailPath.last.map(isLibraryDestination) == true { return true }
+        if !detailPath.isEmpty { return false }
         if case .home = selection ?? .home { return false }
+        if case .library = selection ?? .home { return true }
         return true
+    }
+
+    private func isLibraryDestination(_ item: BaseItem) -> Bool {
+        // Matching the loaded library IDs also covers servers that omit
+        // collectionType on the navigated object.
+        libraries.contains(where: { $0.id == item.id })
+            || item.collectionType != nil
+            || item.type == "CollectionFolder"
+            || item.type == "Folder"
     }
 
     private func sidebarButton(_ title: String, systemImage: String,
@@ -88,7 +112,8 @@ struct AppShellView: View {
     private var destinationView: some View {
         switch selection ?? .home {
         case .home:
-            HomeView(embeddedInShell: true)
+            HomeView(embeddedInShell: true,
+                     heroControlLeadingInset: sidebarExpanded ? 228 : 108)
         case .search:
             SearchView(searchText: $searchText)
         case .library(let id):

@@ -13,12 +13,19 @@ public final class PlaybackController {
         public var configDir: String?
         public var progressInterval: TimeInterval
         public var additionalConfigPath: String?
+        /// ISO 639-1/639-2 language preferences used when selecting Jellyfin streams.
+        public var preferredAudioLanguage: String?
+        public var preferredSubtitleLanguage: String?
         public init(mpvBinaryPath: String? = nil, configDir: String? = nil,
-                    progressInterval: TimeInterval = 10, additionalConfigPath: String? = nil) {
+                    progressInterval: TimeInterval = 10, additionalConfigPath: String? = nil,
+                    preferredAudioLanguage: String? = nil,
+                    preferredSubtitleLanguage: String? = nil) {
             self.mpvBinaryPath = mpvBinaryPath
             self.configDir = configDir
             self.progressInterval = progressInterval
             self.additionalConfigPath = additionalConfigPath
+            self.preferredAudioLanguage = preferredAudioLanguage
+            self.preferredSubtitleLanguage = preferredSubtitleLanguage
         }
     }
 
@@ -453,17 +460,39 @@ public final class PlaybackController {
 
     // MARK: - Track mapping
 
+    /// Select the first stream whose language matches the user's preference.
+    /// Jellyfin may return either an ISO code or a locale such as en-US.
+    private func preferredStreamIndex(type: String) -> Int? {
+        let preference = type == "Audio" ? config.preferredAudioLanguage : config.preferredSubtitleLanguage
+        guard let preference else { return nil }
+        return plan?.mediaStreams.first(where: {
+            $0.type == type && $0.index != nil && languageMatches($0.language, preference)
+        })?.index
+    }
+
+    private func preferredExternalSubtitleIndex() -> Int? {
+        guard let preference = config.preferredSubtitleLanguage else { return nil }
+        return plan?.externalSubtitles.first(where: { languageMatches($0.language, preference) })?.streamIndex
+    }
+
+    private func languageMatches(_ value: String?, _ preference: String) -> Bool {
+        guard let value else { return false }
+        let lhs = value.lowercased().split(separator: "-").first
+        let rhs = preference.lowercased().split(separator: "-").first
+        return lhs == rhs
+    }
+
     /// Must be called on `queue`.
     private func configureInitialTrackSelectionsLocked() {
         if !didRequestAudioSelection {
-            requestedAudioStreamIndex = plan?.defaultAudioStreamIndex
+            requestedAudioStreamIndex = preferredStreamIndex(type: "Audio") ?? plan?.defaultAudioStreamIndex
             needsApplyAudioSelection = requestedAudioStreamIndex != nil
         }
         if !didRequestVideoSelection {
             needsApplyVideoSelection = requestedVideoStreamIndex != nil
         }
         if !didRequestSubtitleSelection {
-            requestedSubtitleStreamIndex = plan?.defaultSubtitleStreamIndex
+            requestedSubtitleStreamIndex = preferredStreamIndex(type: "Subtitle") ?? preferredExternalSubtitleIndex() ?? plan?.defaultSubtitleStreamIndex
             // Apply once even when the server default is nil so mpv does not
             // auto-select a subtitle behind the app's back.
             needsApplySubtitleSelection = true

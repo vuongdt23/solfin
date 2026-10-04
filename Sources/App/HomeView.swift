@@ -20,7 +20,16 @@ struct HomeView: View {
     private var cardSize: LibraryCardSize { LibraryCardSize(rawValue: cardSizeRaw) ?? .small }
     private var cardType: LibraryCardType { LibraryCardType(rawValue: cardTypeRaw) ?? .poster }
 
-    init(embeddedInShell: Bool = false) { self.embeddedInShell = embeddedInShell }
+    /// The shell keeps the hero artwork edge-to-edge, while the content below it
+    /// aligns to the usable area beside the floating navigation rail.
+    init(embeddedInShell: Bool = false, heroControlLeadingInset: CGFloat? = nil) {
+        self.embeddedInShell = embeddedInShell
+        self.contentHorizontalPadding = embeddedInShell ? 82 : SolfinDesign.pagePadding
+        self.heroControlLeadingInset = heroControlLeadingInset ?? (embeddedInShell ? 108 : 28)
+    }
+
+    private let contentHorizontalPadding: CGFloat
+    private let heroControlLeadingInset: CGFloat
 
     var body: some View {
         Group {
@@ -39,7 +48,11 @@ struct HomeView: View {
     private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if !featured.isEmpty { FeaturedMediaBar(items: featured) }
+                if !featured.isEmpty {
+                    FeaturedMediaBar(items: featured,
+                                     contentInset: contentHorizontalPadding,
+                                     controlLeadingInset: heroControlLeadingInset)
+                }
                 // Give each shelf enough breathing room so the feature artwork and
                 // the library/content areas read as distinct sections.
                 VStack(alignment: .leading, spacing: 44) {
@@ -54,11 +67,12 @@ struct HomeView: View {
                                          systemImage: "wifi.exclamationmark") { Task { await load() } }
                     }
                 }
-                .padding(.horizontal, SolfinDesign.pagePadding)
-                // Let shelves begin inside the lower fade of the feature artwork,
-                // avoiding a hard transition while keeping most of the artwork visible.
-                .padding(.top, featured.isEmpty ? 22 : -76)
-                .padding(.bottom, SolfinDesign.pagePadding)
+                .padding(.horizontal, contentHorizontalPadding)
+                // The lower edge of the hero fades into the page, but the first
+                // shelf still gets a deliberate landing zone instead of colliding
+                // with the artwork.
+                .padding(.top, featured.isEmpty ? 28 : -34)
+                .padding(.bottom, 44)
             }
         }
         .background {
@@ -99,7 +113,7 @@ struct HomeView: View {
 
     private var librariesSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Libraries").font(.title.weight(.semibold))
+            sectionHeading("Libraries", detail: "Browse a destination")
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 14) {
                     ForEach(views) { view in
@@ -119,7 +133,7 @@ struct HomeView: View {
 
     private func landscapeShelf(_ title: String, _ items: [BaseItem]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(title).font(.title.weight(.semibold))
+            sectionHeading(title)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 16) {
                     ForEach(items) { item in
@@ -134,7 +148,7 @@ struct HomeView: View {
 
     private func shelf(_ title: String, _ items: [BaseItem]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(title).font(.title.weight(.semibold))
+            sectionHeading(title)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 18) {
                     ForEach(items) { item in
@@ -143,6 +157,22 @@ struct HomeView: View {
                 }.padding(.vertical, 8).padding(.horizontal, 2)
             }
         }
+    }
+
+    private func sectionHeading(_ title: String, detail: String? = nil) -> some View {
+        HStack(alignment: .lastTextBaseline, spacing: 12) {
+            Text(title)
+                .font(.title2.weight(.bold))
+                .foregroundStyle(.white)
+            if let detail {
+                Text(detail.uppercased())
+                    .font(.caption2.weight(.bold))
+                    .tracking(1.1)
+                    .foregroundStyle(.white.opacity(0.42))
+            }
+            Spacer()
+        }
+        .accessibilityAddTraits(.isHeader)
     }
 
     @ViewBuilder
@@ -327,6 +357,8 @@ private struct FeaturedMediaBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("solfin.featuredAutoAdvance") private var autoAdvance = true
     let items: [BaseItem]
+    let contentInset: CGFloat
+    let controlLeadingInset: CGFloat
     @State private var selection = 0
     @State private var hovering = false
 
@@ -403,7 +435,10 @@ private struct FeaturedMediaBar: View {
                             }
                         }
                         .padding(.bottom, 8)
-                    }.padding(.horizontal, 72).padding(.bottom, 118).padding(.top, 40)
+                    }
+                    .padding(.horizontal, 72)
+                    .padding(.bottom, 118)
+                    .padding(.top, 40)
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
 
@@ -413,8 +448,10 @@ private struct FeaturedMediaBar: View {
                     Spacer()
                     carouselButton("chevron.right", action: next)
                 }
-                .padding(.leading, 82)
-                .padding(.trailing, 12)
+                // Keep the previous rail visually clear of the sidebar. The
+                // shell increases this inset while the sidebar is expanded.
+                .padding(.leading, controlLeadingInset)
+                .padding(.trailing, 24)
                 .opacity(hovering ? 1 : 0)
                 .allowsHitTesting(hovering)
                 .zIndex(2)
@@ -424,7 +461,11 @@ private struct FeaturedMediaBar: View {
         .frame(maxWidth: .infinity)
         // Keep the feature artwork prominent without reserving an oversized block
         // above the homepage shelves.
-        .containerRelativeFrame(.vertical, alignment: .top) { available, _ in max(700, available * 0.78) }
+        .containerRelativeFrame(.vertical, alignment: .top) { available, _ in
+            // Keep the feature prominent without pushing the first destinations
+            // below the fold on shorter windows.
+            max(620, min(760, available * 0.72))
+        }
         .ignoresSafeArea(edges: .top)
         .onHover { hovering = $0 }
         .task(id: items.map(\.id).joined(separator: ",")) {
@@ -446,7 +487,19 @@ private struct FeaturedMediaBar: View {
 
     @ViewBuilder private var heroArtwork: some View {
         if let url = appState.api.backdropImageURL(for: item, maxWidth: nil) {
-            CachedImage(url: url)
+            // Keep the complete metadata artwork visible in the foreground. A
+            // softened, enlarged copy fills the wide hero behind it so fitting
+            // the artwork never creates dead black side panels.
+            ZStack {
+                CachedImage(url: url, contentMode: .fill)
+                    .scaleEffect(1.12)
+                    .blur(radius: 28)
+                    .opacity(0.72)
+                    .overlay(Color.black.opacity(0.28))
+                CachedImage(url: url, contentMode: .fit)
+            }
+            .clipped()
+            .background(Color.black)
         } else {
             LinearGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.45), SolfinDesign.spaceBlack],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
