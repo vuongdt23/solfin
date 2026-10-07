@@ -5,6 +5,9 @@ struct SeriesDetailView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var nowPlaying: NowPlaying
     let series: BaseItem
+    /// Space reserved for the shell rail. Artwork remains edge-to-edge, while
+    /// readable series copy starts beside the rail instead of beneath it.
+    var sidebarLeadingInset: CGFloat = 0
 
     @State private var seasons: [BaseItem] = []
     @State private var selectedSeasonId: String?
@@ -26,27 +29,33 @@ struct SeriesDetailView: View {
     }
 
     private var seriesHero: some View {
-        ZStack(alignment: .top) {
-            seriesBackdrop
-
-            // All of the series content shares the artwork canvas. The stack is
-            // intentionally allowed to outgrow the 16:9 backdrop on smaller
-            // windows, so the episode shelf can continue naturally into a short
-            // scroll instead of being clipped inside the hero.
-            VStack(alignment: .leading, spacing: 28) {
-                heroCopy(availableWidth: heroAvailableWidth)
-                if !seasons.isEmpty { seasonsShelf }
-                episodeHeader
-                episodeContent
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 38)
-            .padding(.top, 64)
-            .padding(.bottom, 70)
-            .background {
-                GeometryReader { proxy in
-                    Color.clear.preference(key: SeriesHeroWidthKey.self, value: proxy.size.width)
+        // The content owns the scrollable height. Artwork is a background layer,
+        // so its oversized 16:9 canvas can remain visible without reserving a
+        // giant block above the seasons and episodes on ultrawide displays.
+        VStack(alignment: .leading, spacing: 28) {
+            heroCopy(availableWidth: heroAvailableWidth)
+            if !seasons.isEmpty { seasonsShelf }
+            episodeHeader
+            episodeContent
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.leading, 38 + sidebarLeadingInset)
+        .padding(.trailing, 38)
+        // Keep the series logo close to the top edge; the artwork supplies the
+        // visual breathing room instead of a large empty content offset.
+        .padding(.top, 14)
+        .padding(.bottom, 70)
+        .background {
+            GeometryReader { proxy in
+                ZStack(alignment: .top) {
+                    seriesBackdrop
+                        .frame(width: proxy.size.width,
+                               height: max(proxy.size.width * 9 / 16, 1100),
+                               alignment: .top)
+                    Color.clear
+                        .preference(key: SeriesHeroWidthKey.self, value: proxy.size.width)
                 }
+                .allowsHitTesting(false)
             }
         }
         .background(SolfinDesign.solarBackground)
@@ -89,6 +98,8 @@ struct SeriesDetailView: View {
             LinearGradient(colors: [.black.opacity(0.42), .clear, .black.opacity(0.08)],
                            startPoint: .leading, endPoint: .trailing)
         }
+        // Preserve the oversized, overflowing artwork treatment on wide displays.
+        // The readable content is inset separately, so the rail never obscures it.
         .aspectRatio(16 / 9, contentMode: .fit)
         .frame(maxWidth: .infinity)
         .allowsHitTesting(false)

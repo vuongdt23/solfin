@@ -75,6 +75,8 @@ struct AppShellView: View {
         // the floating rail. Both the sidebar route and Home's LibraryBanner
         // route use this same reserved layout.
         if detailPath.last.map(isLibraryDestination) == true { return true }
+        // Series detail keeps the artwork edge-to-edge, but its copy reserves the
+        // floating rail so the title/logo is never hidden underneath it.
         if !detailPath.isEmpty { return false }
         if case .home = selection ?? .home { return false }
         if case .library = selection ?? .home { return true }
@@ -128,7 +130,9 @@ struct AppShellView: View {
 
     @ViewBuilder
     private func destination(for item: BaseItem) -> some View {
-        if item.type == "Series" { SeriesDetailView(series: item) }
+        if item.type == "Series" {
+            SeriesDetailView(series: item, sidebarLeadingInset: sidebarExpanded ? 172 : 38)
+        }
         else if item.collectionType != nil || item.type == "CollectionFolder" { LibraryView(parent: item) }
         else { ItemDetailView(itemId: item.id) }
     }
