@@ -146,6 +146,41 @@ public final class APIClient: Sendable {
         baseURL.appendingPathComponent("Branding/Splashscreen")
     }
 
+    public struct UserLanguagePreferences: Sendable {
+        public let audio: String?
+        public let subtitle: String?
+        public init(audio: String?, subtitle: String?) {
+            self.audio = audio
+            self.subtitle = subtitle
+        }
+    }
+
+    /// Reads the current server-side playback language preferences.
+    public func userLanguagePreferences() async throws -> UserLanguagePreferences {
+        guard let userId else { throw JellyfinError.notAuthenticated }
+        let req = try makeRequest(path: "Users/\(userId)")
+        let data = try await send(req)
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let configuration = object?["Configuration"] as? [String: Any]
+        return UserLanguagePreferences(
+            audio: configuration?["AudioLanguagePreference"] as? String,
+            subtitle: configuration?["SubtitleLanguagePreference"] as? String
+        )
+    }
+
+    /// Updates the Jellyfin user playback language preferences. Jellyfin stores
+    /// these preferences server-side and applies them to future playback plans.
+    public func updateUserLanguagePreferences(audio: String?, subtitle: String?) async throws {
+        guard let userId else { throw JellyfinError.notAuthenticated }
+        let payload: [String: Any] = [
+            "AudioLanguagePreference": audio as Any,
+            "SubtitleLanguagePreference": subtitle as Any
+        ]
+        let body = try JSONSerialization.data(withJSONObject: payload)
+        let req = try makeRequest(path: "Users/\(userId)/Configuration", method: "POST", body: body)
+        _ = try await send(req)
+    }
+
     /// Authenticate by username/password. Returns a session; caller persists it.
     public func login(username: String, password: String) async throws -> ServerSession {
         let payload = ["Username": username, "Pw": password]

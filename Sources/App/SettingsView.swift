@@ -4,6 +4,40 @@ import PlaybackEngine
 
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
+
+    private struct LanguageOption {
+        let code: String
+        let name: String
+    }
+
+    // Jellyfin stores these as ISO 639-3 codes (for example, "eng" and
+    // "vie"). Keeping the catalog here makes the picker native and avoids
+    // depending on Jellyfin Web's bundled JavaScript.
+    private static let languageOptions: [LanguageOption] = [
+        ("ara", "Arabic"), ("ben", "Bengali"), ("bul", "Bulgarian"),
+        ("cat", "Catalan"), ("ces", "Czech"), ("dan", "Danish"),
+        ("deu", "German"), ("ell", "Greek"), ("eng", "English"),
+        ("est", "Estonian"), ("fas", "Persian"), ("fin", "Finnish"),
+        ("fra", "French"), ("heb", "Hebrew"), ("hin", "Hindi"),
+        ("hrv", "Croatian"), ("hun", "Hungarian"), ("ind", "Indonesian"),
+        ("isl", "Icelandic"), ("ita", "Italian"), ("jpn", "Japanese"),
+        ("kan", "Kannada"), ("kat", "Georgian"), ("khm", "Khmer"),
+        ("kor", "Korean"), ("lao", "Lao"), ("lav", "Latvian"),
+        ("lit", "Lithuanian"), ("msa", "Malay"), ("nld", "Dutch"),
+        ("nor", "Norwegian"), ("pol", "Polish"), ("por", "Portuguese"),
+        ("ron", "Romanian"), ("rus", "Russian"), ("slk", "Slovak"),
+        ("slv", "Slovenian"), ("spa", "Spanish"), ("srp", "Serbian"),
+        ("swe", "Swedish"), ("tam", "Tamil"), ("tel", "Telugu"),
+        ("tha", "Thai"), ("tur", "Turkish"), ("ukr", "Ukrainian"),
+        ("urd", "Urdu"), ("vie", "Vietnamese"), ("zho", "Chinese"),
+        ("yue", "Chinese (Cantonese)"), ("fil", "Filipino"),
+        ("swa", "Swahili"), ("amh", "Amharic"), ("aze", "Azerbaijani"),
+        ("bel", "Belarusian"), ("bos", "Bosnian"), ("glg", "Galician"),
+        ("guj", "Gujarati"), ("hat", "Haitian Creole"), ("kaz", "Kazakh"),
+        ("mac", "Macedonian"), ("mar", "Marathi"), ("mon", "Mongolian"),
+        ("nep", "Nepali"), ("pus", "Pashto"), ("sin", "Sinhala"),
+        ("uzb", "Uzbek"), ("yid", "Yiddish")
+    ].map { LanguageOption(code: $0.0, name: $0.1) }
     @Environment(\.dismiss) private var dismiss
     @AppStorage("solfin.autoplayNext") private var autoplayNext = true
     @AppStorage("solfin.featuredAutoAdvance") private var featuredAutoAdvance = true
@@ -66,7 +100,10 @@ struct SettingsView: View {
             .tabItem { Label("Account", systemImage: "person.crop.circle") }
         }
         .frame(minWidth: 820, idealWidth: 960, minHeight: 560, idealHeight: 680)
-        .onAppear { configStore.load(bundledConfigDir: appState.mpvConfigDir) }
+        .onAppear {
+            configStore.load(bundledConfigDir: appState.mpvConfigDir)
+
+        }
     }
 
     @AppStorage("solfin.homeCardSize") private var homeCardSizeRaw = LibraryCardSize.small.rawValue
@@ -170,6 +207,27 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(validationMessage.hasPrefix("Ready") ? .green : .red)
                 }
+            }
+            Section("Preferred languages") {
+                Picker("Audio language", selection: $appState.preferredAudioLanguage) {
+                    Text("Server default").tag("")
+                    ForEach(Self.languageOptions, id: \.code) { language in
+                        Text(language.name).tag(language.code)
+                    }
+                }
+                .onChange(of: appState.preferredAudioLanguage) { _, _ in }
+
+                Picker("Subtitle language", selection: $appState.preferredSubtitleLanguage) {
+                    Text("Server default").tag("")
+                    ForEach(Self.languageOptions, id: \.code) { language in
+                        Text(language.name).tag(language.code)
+                    }
+                }
+                .onChange(of: appState.preferredSubtitleLanguage) { _, _ in }
+
+                Text("These preferences are stored only on this Mac and apply to new playback sessions.")
+                    .font(.caption).foregroundStyle(.secondary)
+
             }
             Section("Playback Model") {
                 LabeledContent("Streaming", value: "Original file · Direct play")

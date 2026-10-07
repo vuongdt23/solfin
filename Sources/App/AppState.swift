@@ -14,6 +14,8 @@ final class AppState: ObservableObject {
     // Settings (persisted lightly in UserDefaults).
     @AppStorage("solfin.mpvPath") var mpvPathOverride: String = ""
     @AppStorage("solfin.serverURL") var lastServerURL: String = "http://localhost:8096"
+    @AppStorage("solfin.preferredAudioLanguage") var preferredAudioLanguage: String = ""
+    @AppStorage("solfin.preferredSubtitleLanguage") var preferredSubtitleLanguage: String = ""
 
     private let store = CredentialStore()
     private(set) var api: APIClient
@@ -85,7 +87,16 @@ final class AppState: ObservableObject {
         PlaybackController.Config(
             mpvBinaryPath: mpvPathOverride.isEmpty ? nil : mpvPathOverride,
             configDir: mpvConfigDir,
-            additionalConfigPath: MPVConfigurationStore.activeOverridePath
+            additionalConfigPath: MPVConfigurationStore.activeOverridePath,
+            preferredAudioLanguage: preferredAudioLanguage.nilIfEmpty,
+            preferredSubtitleLanguage: preferredSubtitleLanguage.nilIfEmpty
         )
+    }
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        let value = trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
     }
 }

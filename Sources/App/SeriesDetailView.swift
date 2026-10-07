@@ -60,7 +60,15 @@ struct SeriesDetailView: View {
         ZStack {
             Color.black
             if let url = appState.api.backdropImageURL(for: series, maxWidth: nil) {
-                CachedImage(url: url, contentMode: .fit)
+                ZStack {
+                    CachedImage(url: url, contentMode: .fill)
+                        .scaleEffect(1.12)
+                        .blur(radius: 28)
+                        .opacity(0.72)
+                        .overlay(Color.black.opacity(0.28))
+                    CachedImage(url: url, contentMode: .fit)
+                }
+                .clipped()
             } else {
                 LinearGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.38), SolfinDesign.spaceBlack],
                                startPoint: .topLeading, endPoint: .bottomTrailing)

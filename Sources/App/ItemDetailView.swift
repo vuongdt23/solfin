@@ -169,8 +169,16 @@ struct ItemDetailView: View {
 
     @ViewBuilder private func backdrop(_ item: BaseItem, size: CGSize) -> some View {
         if let url = backdropURL(item) {
-            CachedImage(url: url)
-                .frame(width: size.width, height: size.height).clipped()
+            ZStack {
+                CachedImage(url: url, contentMode: .fill)
+                    .scaleEffect(1.12)
+                    .blur(radius: 28)
+                    .opacity(0.72)
+                    .overlay(Color.black.opacity(0.28))
+                CachedImage(url: url, contentMode: .fit)
+            }
+            .frame(width: size.width, height: size.height)
+            .clipped()
         } else if let poster = appState.api.playablePosterURL(for: item, maxHeight: nil) {
             ZStack {
                 CachedImage(url: poster)
@@ -186,15 +194,27 @@ struct ItemDetailView: View {
     private func episodeBackdrop(_ item: BaseItem, size: CGSize) -> some View {
         ZStack {
             if let hero = appState.api.seriesHeroBackdropURL(for: item, maxWidth: nil) {
-                CachedImage(url: hero, contentMode: .fit)
-                    .frame(width: size.width, height: size.height)
-                    .blur(radius: 28)
-                    .opacity(0.86)
+                ZStack {
+                    CachedImage(url: hero, contentMode: .fill)
+                        .scaleEffect(1.12)
+                        .blur(radius: 28)
+                        .opacity(0.72)
+                        .overlay(Color.black.opacity(0.28))
+                    CachedImage(url: hero, contentMode: .fit)
+                }
+                .frame(width: size.width, height: size.height)
+                .clipped()
             } else if let poster = appState.api.playablePosterURL(for: item, maxHeight: nil) {
-                CachedImage(url: poster, contentMode: .fit)
-                    .frame(width: size.width, height: size.height)
-                    .blur(radius: 28)
-                    .opacity(0.86)
+                ZStack {
+                    CachedImage(url: poster, contentMode: .fill)
+                        .scaleEffect(1.12)
+                        .blur(radius: 28)
+                        .opacity(0.72)
+                        .overlay(Color.black.opacity(0.28))
+                    CachedImage(url: poster, contentMode: .fit)
+                }
+                .frame(width: size.width, height: size.height)
+                .clipped()
             } else {
                 Color.black
             }
@@ -543,12 +563,29 @@ struct ItemDetailView: View {
     private func configureTrackDefaults(for item: BaseItem) {
         let audio = tracks(item, type: "Audio"), video = tracks(item, type: "Video"), subtitles = tracks(item, type: "Subtitle")
         let source = item.mediaSources?.first
-        selectedAudioTrack = source?.defaultAudioStreamIndex
+        selectedAudioTrack = preferredTrackID(
+            language: appState.preferredAudioLanguage,
+            tracks: audio
+        )
+            ?? source?.defaultAudioStreamIndex
             ?? audio.first(where: { $0.stream.isDefault == true })?.id
             ?? audio.first?.id
         selectedVideoTrack = video.first(where: { $0.stream.isDefault == true })?.id ?? video.first?.id
-        selectedSubtitleTrack = source?.defaultSubtitleStreamIndex
+        selectedSubtitleTrack = preferredTrackID(
+            language: appState.preferredSubtitleLanguage,
+            tracks: subtitles
+        )
+            ?? source?.defaultSubtitleStreamIndex
             ?? subtitles.first(where: { $0.stream.isDefault == true })?.id
             ?? -1
+    }
+
+    private func preferredTrackID(language: String, tracks: [(id: Int, stream: MediaStream)]) -> Int? {
+        guard !language.isEmpty else { return nil }
+        return tracks.first { stream in
+            guard let value = stream.stream.language else { return false }
+            return value.lowercased().split(separator: "-").first
+                == language.lowercased().split(separator: "-").first
+        }?.id
     }
 }
