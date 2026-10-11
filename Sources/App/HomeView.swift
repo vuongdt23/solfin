@@ -462,9 +462,9 @@ private struct FeaturedMediaBar: View {
         // Keep the feature artwork prominent without reserving an oversized block
         // above the homepage shelves.
         .containerRelativeFrame(.vertical, alignment: .top) { available, _ in
-            // Keep the feature prominent without pushing the first destinations
-            // below the fold on shorter windows.
-            max(620, min(760, available * 0.72))
+            // Give the homepage hero more visual presence while still letting
+            // the shelves begin within a reasonable scroll distance.
+            max(700, min(900, available * 0.82))
         }
         .ignoresSafeArea(edges: .top)
         .onHover { hovering = $0 }

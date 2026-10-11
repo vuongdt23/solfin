@@ -173,7 +173,8 @@ struct IntegratedSolarSidebar: View {
                     .transition(.opacity)
             }
         }
-        .foregroundStyle(selected ? .white : .white.opacity(0.74))
+        // Keep rail icons readable over bright artwork; selected items remain fully opaque.
+        .foregroundStyle(selected ? .white : .white.opacity(0.92))
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 9)
         .frame(height: 42)
