@@ -61,6 +61,7 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Sources/App/solfin.entitlements
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_LSMinimumSystemVersion: "14.0"
+        INFOPLIST_FILE: Sources/App/Info.plist
 
   # Headless CLI to exercise JellyfinKit/PlaybackEngine against a real server
   solfin-probe:
