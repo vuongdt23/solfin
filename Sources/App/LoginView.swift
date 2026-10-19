@@ -29,7 +29,13 @@ struct LoginView: View {
             focusedField = .username
         }
         .onChange(of: appState.isAddingServer) { _, adding in
-            if adding { focusedField = .server }
+            if adding {
+                if let retry = appState.serverToReauthenticate {
+                    server = retry.serverURL.absoluteString
+                    username = retry.userName
+                }
+                focusedField = appState.serverToReauthenticate == nil ? .server : .password
+            }
         }
         .onChange(of: server) { _, value in loadServerSplash(from: value) }
     }
@@ -73,6 +79,12 @@ struct LoginView: View {
             }
 
             if appState.savedSessions.isEmpty || appState.isAddingServer {
+                if let retry = appState.serverToReauthenticate {
+                    Label("The saved credentials for \(retry.serverURL.host ?? retry.serverURL.absoluteString) were rejected. Sign in again to update them.",
+                          systemImage: "key.horizontal")
+                        .font(.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 VStack(alignment: .leading, spacing: 17) {
                     input("Server address", prompt: "http://localhost:8096", text: $server, field: .server,
                           contentType: .URL)
@@ -164,7 +176,7 @@ struct LoginView: View {
                 }
             }
             if appState.isAddingServer {
-                Button { appState.isAddingServer = false; appState.loginError = nil } label: {
+                Button { appState.cancelAddingServer() } label: {
                     Label("Back to saved servers", systemImage: "chevron.left").font(.caption.weight(.medium))
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)

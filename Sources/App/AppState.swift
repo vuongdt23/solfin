@@ -10,6 +10,7 @@ final class AppState: ObservableObject {
     @Published var isAddingServer = false
     @Published var loginError: String?
     @Published var serverSwitchError: String?
+    @Published private(set) var serverToReauthenticate: ServerSession?
     @Published var isAuthenticating = false
     @Published var playbackError: String?
     @Published var isValidatingStoredSession = false
@@ -75,6 +76,8 @@ final class AppState: ObservableObject {
             try store.save(session)
             savedSessions = store.loadSessions()
             activate(session)
+            serverToReauthenticate = nil
+            serverSwitchError = nil
             isAddingServer = false
             self.lastServerURL = serverURL
         } catch {
@@ -101,12 +104,27 @@ final class AppState: ObservableObject {
             let message = "Could not switch to \(session.serverURL.absoluteString): \(error.localizedDescription)"
             loginError = message
             serverSwitchError = message
+            serverToReauthenticate = session
         }
     }
 
     func beginAddingServer() {
+        serverToReauthenticate = nil
         loginError = nil
         isAddingServer = true
+    }
+
+    func beginReauthenticating(_ session: ServerSession) {
+        serverToReauthenticate = session
+        serverSwitchError = nil
+        loginError = nil
+        isAddingServer = true
+    }
+
+    func cancelAddingServer() {
+        serverToReauthenticate = nil
+        isAddingServer = false
+        loginError = nil
     }
 
     func removeServer(_ session: ServerSession) {

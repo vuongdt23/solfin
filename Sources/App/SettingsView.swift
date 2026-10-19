@@ -102,7 +102,15 @@ struct SettingsView: View {
                         .disabled(appState.isAuthenticating)
                     }
                     if let error = appState.serverSwitchError {
-                        Text(error).foregroundStyle(.red).font(.caption).textSelection(.enabled)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(error).foregroundStyle(.red).font(.caption).textSelection(.enabled)
+                            if let retry = appState.serverToReauthenticate {
+                                Button("Sign In Again…") {
+                                    appState.beginReauthenticating(retry)
+                                    dismiss()
+                                }
+                            }
+                        }
                     }
                 }
                 Section("Saved Servers") {
