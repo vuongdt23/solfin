@@ -8,9 +8,17 @@ struct LoginView: View {
     @State private var username = ""
     @State private var password = ""
     @State private var serverSplashURL: URL?
+    @State private var connectionStatus: ConnectionStatus = .idle
+    @State private var validatedServerURL: String?
+    @State private var validationTask: Task<Void, Never>?
+    @State private var stage: Stage = .server
     @FocusState private var focusedField: Field?
 
+    private enum Stage: Equatable { case server, credentials }
     private enum Field { case server, username, password }
+    private enum ConnectionStatus: Equatable {
+        case idle, checking, connected, failed(String)
+    }
 
     var body: some View {
         ZStack {
@@ -25,19 +33,40 @@ struct LoginView: View {
         }
         .frame(minWidth: 760, minHeight: 560)
         .onAppear {
-            if server.isEmpty { server = appState.lastServerURL }
-            focusedField = .username
+            if server.isEmpty { server = appState.serverToReauthenticate?.serverURL.absoluteString ?? appState.lastServerURL }
+            if let retry = appState.serverToReauthenticate {
+                username = retry.userName
+                stage = .credentials
+            }
+            focusedField = stage == .server ? .server : .username
+            if stage == .credentials { validateServer() }
         }
         .onChange(of: appState.isAddingServer) { _, adding in
             if adding {
                 if let retry = appState.serverToReauthenticate {
                     server = retry.serverURL.absoluteString
                     username = retry.userName
+                    stage = .credentials
+                    validateServer()
+                } else {
+                    stage = .server
+                    focusedField = .server
                 }
-                focusedField = appState.serverToReauthenticate == nil ? .server : .password
             }
         }
-        .onChange(of: server) { _, value in loadServerSplash(from: value) }
+        .onChange(of: server) { _, _ in
+            validationTask?.cancel()
+            connectionStatus = .idle
+            validatedServerURL = nil
+            serverSplashURL = nil
+            if stage == .credentials, appState.serverToReauthenticate != nil {
+                Task {
+                    await Task.yield()
+                    validateServer()
+                }
+            }
+        }
+        .onDisappear { validationTask?.cancel() }
     }
 
     private var atmosphericBackground: some View {
@@ -64,44 +93,44 @@ struct LoginView: View {
     }
 
     private var signInPanel: some View {
-        VStack(alignment: .leading, spacing: 26) {
-            if !appState.savedSessions.isEmpty { savedServers }
+        VStack(alignment: .leading, spacing: 24) {
+            if stage == .server, !appState.savedSessions.isEmpty, !appState.isAddingServer {
+                savedServers
+            }
+
             VStack(alignment: .leading, spacing: 12) {
                 Image(nsImage: NSImage(named: NSImage.applicationIconName) ?? NSImage())
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 58, height: 58)
+                    .resizable().scaledToFit().frame(width: 58, height: 58)
                     .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
                     .shadow(color: SolfinDesign.solarOrange.opacity(0.24), radius: 16, y: 6)
-                Text("Welcome to Solfin").font(.system(size: 30, weight: .semibold)).tracking(-0.6)
-                Text("Sign in to your Jellyfin server to browse and play your library.")
+                Text(stage == .server ? "Connect to your server" : "Sign in")
+                    .font(.system(size: 30, weight: .semibold)).tracking(-0.6)
+                Text(stage == .server
+                     ? "Enter your Jellyfin server address. Solfin will check the connection before continuing."
+                     : "Sign in to \(URL(string: server)?.host ?? server) to browse and play your library.")
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
 
-            if appState.savedSessions.isEmpty || appState.isAddingServer {
-                if let retry = appState.serverToReauthenticate {
-                    Label("The saved credentials for \(retry.serverURL.host ?? retry.serverURL.absoluteString) were rejected. Sign in again to update them.",
-                          systemImage: "key.horizontal")
-                        .font(.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                VStack(alignment: .leading, spacing: 17) {
-                    input("Server address", prompt: "http://localhost:8096", text: $server, field: .server,
-                          contentType: .URL)
-                    input("Username", prompt: "Your username", text: $username, field: .username,
-                          contentType: .username)
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text("Password").font(.callout.weight(.medium))
-                        SecureField("Your password", text: $password)
-                            .focused($focusedField, equals: .password)
-                            .solarField()
-                            .overlay { RoundedRectangle(cornerRadius: SolfinDesign.controlRadius).strokeBorder(focusedField == .password ? SolfinDesign.Control.borderFocused : SolfinDesign.Control.border, lineWidth: focusedField == .password ? 2 : 1) }
-                            .textContentType(.password)
-                    }
-                }
+            if let retry = appState.serverToReauthenticate, stage == .credentials {
+                Label("The saved credentials for \(retry.serverURL.host ?? retry.serverURL.absoluteString) were rejected. Sign in again to update them.",
+                      systemImage: "key.horizontal")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            if let error = appState.loginError {
+            if stage == .server {
+                if appState.isAddingServer, appState.serverToReauthenticate == nil, !appState.savedSessions.isEmpty {
+                    Button { appState.cancelAddingServer() } label: {
+                        Label("Back to saved servers", systemImage: "chevron.left").font(.caption.weight(.medium))
+                    }
+                    .buttonStyle(.plain).foregroundStyle(.secondary)
+                }
+                serverAddressForm
+            } else {
+                credentialsForm
+            }
+
+            if let error = appState.loginError, stage == .credentials {
                 HStack(alignment: .top, spacing: 9) {
                     Image(systemName: "exclamationmark.circle.fill")
                     Text(error).textSelection(.enabled)
@@ -116,32 +145,105 @@ struct LoginView: View {
                     ProgressView().controlSize(.small)
                     Text("Connecting to your server…")
                 }
-                .font(.callout)
-                .foregroundStyle(SolfinDesign.Control.textMuted)
+                .font(.callout).foregroundStyle(SolfinDesign.Control.textMuted)
             }
 
-            if appState.savedSessions.isEmpty || appState.isAddingServer {
+            if stage == .server {
+                Button(action: validateServer) {
+                    HStack(spacing: 8) {
+                        if connectionStatus == .checking { ProgressView().controlSize(.small) }
+                        Text(connectionButtonTitle)
+                        if connectionStatus != .checking { Image(systemName: "arrow.right") }
+                    }.frame(maxWidth: .infinity).frame(height: 28)
+                }
+                .buttonStyle(SolarPrimaryButtonStyle()).controlSize(.large)
+                .disabled(connectionStatus == .checking || !isValidServerAddress)
+                .keyboardShortcut(.defaultAction)
+            } else {
                 Button(action: signIn) {
                     HStack(spacing: 8) {
                         if appState.isAuthenticating { ProgressView().controlSize(.small) }
-                        Text(appState.isAuthenticating ? "Connecting…" : "Continue")
+                        Text(appState.isAuthenticating ? "Signing in…" : "Sign In")
                         if !appState.isAuthenticating { Image(systemName: "arrow.right") }
                     }.frame(maxWidth: .infinity).frame(height: 28)
                 }
                 .buttonStyle(SolarPrimaryButtonStyle()).controlSize(.large)
-                .disabled(appState.isAuthenticating || server.trimmingCharacters(in: .whitespaces).isEmpty || username.isEmpty)
+                .disabled(appState.isAuthenticating || username.isEmpty || password.isEmpty
+                          || validatedServerURL != normalizedInput(server))
                 .keyboardShortcut(.defaultAction)
-            } else {
-                Button { appState.beginAddingServer() } label: {
-                    Label("Add Another Server", systemImage: "plus")
-                        .frame(maxWidth: .infinity).frame(height: 28)
-                }
-                .buttonStyle(SolarPrimaryButtonStyle())
             }
         }
         .padding(34).frame(width: 430)
         .glassSurface(cornerRadius: 26)
         .padding(.horizontal, 28)
+    }
+
+    private var serverAddressForm: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            input("Server address", prompt: "http://localhost:8096", text: $server,
+                  field: .server, contentType: .URL)
+            switch connectionStatus {
+            case .idle: EmptyView()
+            case .checking:
+                Label("Checking for Jellyfin…", systemImage: "network")
+                    .foregroundStyle(.secondary)
+            case .connected:
+                Label("Jellyfin server found", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            case .failed(let message):
+                Label(message, systemImage: "exclamationmark.circle.fill")
+                    .foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .font(.callout)
+    }
+
+    private var credentialsForm: some View {
+        VStack(alignment: .leading, spacing: 17) {
+            HStack {
+                Label(URL(string: server)?.host ?? server, systemImage: "server.rack")
+                    .font(.callout.weight(.medium)).lineLimit(1)
+                Spacer()
+                Button("Change") {
+                    stage = .server
+                    password = ""
+                    appState.loginError = nil
+                    focusedField = .server
+                }
+                .buttonStyle(.plain).font(.caption)
+            }
+            input("Username", prompt: "Your username", text: $username,
+                  field: .username, contentType: .username)
+            VStack(alignment: .leading, spacing: 7) {
+                Text("Password").font(.callout.weight(.medium))
+                SecureField("Your password", text: $password)
+                    .focused($focusedField, equals: .password)
+                    .solarField()
+                    .overlay { RoundedRectangle(cornerRadius: SolfinDesign.controlRadius).strokeBorder(focusedField == .password ? SolfinDesign.Control.borderFocused : SolfinDesign.Control.border, lineWidth: focusedField == .password ? 2 : 1) }
+                    .textContentType(.password)
+            }
+        }
+        .onAppear { focusedField = .username }
+    }
+
+    private var isValidServerAddress: Bool {
+        guard let url = URL(string: normalizedInput(server)),
+              let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              url.host != nil else { return false }
+        return true
+    }
+
+    private var connectionButtonTitle: String {
+        switch connectionStatus {
+        case .checking: "Checking…"
+        case .connected: "Continue"
+        case .failed: "Try Again"
+        case .idle: "Find Server"
+        }
+    }
+
+    private func normalizedInput(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
     }
 
     private var savedServers: some View {
@@ -196,20 +298,37 @@ struct LoginView: View {
         }
     }
 
-    private func loadServerSplash(from value: String) {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let url = URL(string: trimmed), url.host != nil else {
-            serverSplashURL = nil
+    private func validateServer() {
+        validationTask?.cancel()
+        let address = normalizedInput(server)
+        guard isValidServerAddress, let url = URL(string: address) else {
+            connectionStatus = .failed("Enter a valid HTTP or HTTPS server address.")
+            validatedServerURL = nil
             return
         }
+
+        connectionStatus = .checking
+        validatedServerURL = nil
+        serverSplashURL = nil
+        appState.loginError = nil
         let client = APIClient(baseURL: url, clientInfo: ClientInfo(deviceId: UUID().uuidString))
-        Task {
+        validationTask = Task {
             do {
                 _ = try await client.publicSystemInfo()
                 guard !Task.isCancelled else { return }
-                await MainActor.run { serverSplashURL = client.brandingSplashscreenURL() }
+                await MainActor.run {
+                    validatedServerURL = address
+                    connectionStatus = .connected
+                    serverSplashURL = client.brandingSplashscreenURL()
+                    stage = .credentials
+                    focusedField = .username
+                }
             } catch {
-                await MainActor.run { serverSplashURL = nil }
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    validatedServerURL = nil
+                    connectionStatus = .failed("Could not find a Jellyfin server at this address: \(error.localizedDescription)")
+                }
             }
         }
     }
