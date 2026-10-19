@@ -52,6 +52,7 @@ public struct BaseItem: Codable, Sendable, Identifiable, Hashable {
     public let id: String
     public let name: String
     public let type: String?               // "Movie", "Series", "Episode", "CollectionFolder", ...
+    public let locationType: String?       // "FileSystem", "Remote", "Virtual", "Offline"
     public let collectionType: String?     // for views: "movies", "tvshows", ...
     public let overview: String?
     public let productionYear: Int?
@@ -83,10 +84,19 @@ public struct BaseItem: Codable, Sendable, Identifiable, Hashable {
     public let userData: UserItemData?
     public let mediaSources: [MediaSource]?
 
+    /// Jellyfin keeps missing filesystem items in its library index as Offline.
+    public var isOffline: Bool { locationType?.caseInsensitiveCompare("Offline") == .orderedSame }
+
+    /// Only actual media should appear as playable cards in a library grid.
+    public var isBrowsableMedia: Bool {
+        !isOffline && type != "Folder" && type != "CollectionFolder"
+    }
+
     enum CodingKeys: String, CodingKey {
         case id = "Id"
         case name = "Name"
         case type = "Type"
+        case locationType = "LocationType"
         case collectionType = "CollectionType"
         case overview = "Overview"
         case productionYear = "ProductionYear"

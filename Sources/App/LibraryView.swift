@@ -7,6 +7,7 @@ struct LibraryView: View {
 
     @State private var items: [BaseItem] = []
     @State private var totalCount: Int?
+    @State private var serverStartIndex = 0
     @State private var loadError: String?
     @State private var isLoading = false
     @State private var hasMore = true
@@ -211,7 +212,7 @@ struct LibraryView: View {
     private func reload() { Task { await reloadAndWait() } }
     private func reloadAndWait() async {
         let token = UUID(); generation = token
-        items = []; totalCount = nil; hasMore = true; recentSeriesLoaded = false; loadError = nil
+        items = []; totalCount = nil; serverStartIndex = 0; hasMore = true; recentSeriesLoaded = false; loadError = nil
         await loadNextPage(token: token)
     }
 
@@ -232,14 +233,23 @@ struct LibraryView: View {
                 recentSeriesLoaded = true
                 hasMore = false
             } else {
+                let itemTypes: String?
+                switch parent.collectionType?.lowercased() {
+                case "movies": itemTypes = "Movie"
+                case "tvshows": itemTypes = "Series"
+                default: itemTypes = nil
+                }
                 let response = try await appState.api.items(
-                    parentId: parent.id, startIndex: items.count, limit: pageSize,
+                    parentId: parent.id, startIndex: serverStartIndex, limit: pageSize,
                     sortBy: sort.apiValue, sortOrder: sortAscending ? "Ascending" : "Descending",
-                    filters: playedFilter.apiValue)
+                    includeItemTypes: itemTypes, filters: playedFilter.apiValue)
                 guard expected == generation else { return }
-                items.append(contentsOf: response.items.filter { candidate in !items.contains(where: { $0.id == candidate.id }) })
+                let availableItems = response.items.filter(\.isBrowsableMedia)
+                items.append(contentsOf: availableItems.filter { candidate in !items.contains(where: { $0.id == candidate.id }) })
+                serverStartIndex += response.items.count
                 totalCount = response.totalRecordCount
-                hasMore = !response.items.isEmpty && items.count < (response.totalRecordCount ?? Int.max)
+                hasMore = !response.items.isEmpty
+                    && serverStartIndex < (response.totalRecordCount ?? Int.max)
             }
         } catch {
             guard expected == generation else { return }

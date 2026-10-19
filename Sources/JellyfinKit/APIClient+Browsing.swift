@@ -9,7 +9,7 @@ public extension APIClient {
 
     // Common set of fields we want back on items.
     private static let itemFields =
-        "Overview,MediaSources,MediaStreams,ImageTags,BackdropImageTags,ProductionYear,IndexNumber,ParentIndexNumber,DateCreated,PremiereDate,EndDate,Status,AirDays,CumulativeRunTimeTicks,RecursiveItemCount,ChildCount,PrimaryImageAspectRatio,OfficialRating,CommunityRating,Genres,ParentBackdropItemId,ParentBackdropImageTags,ParentLogoItemId,ParentLogoImageTag,SeriesPrimaryImageTag"
+        "Overview,MediaSources,MediaStreams,ImageTags,BackdropImageTags,ProductionYear,IndexNumber,ParentIndexNumber,DateCreated,PremiereDate,EndDate,Status,AirDays,CumulativeRunTimeTicks,RecursiveItemCount,ChildCount,PrimaryImageAspectRatio,OfficialRating,CommunityRating,Genres,ParentBackdropItemId,ParentBackdropImageTags,ParentLogoItemId,ParentLogoImageTag,SeriesPrimaryImageTag,LocationType"
 
     /// Top-level libraries ("Views") for the signed-in user.
     func views() async throws -> [BaseItem] {
@@ -59,7 +59,9 @@ public extension APIClient {
             q.append(URLQueryItem(name: "IncludeItemTypes", value: includeItemTypes))
         }
         let req = try makeRequest(path: "Users/\(uid)/Items", query: q)
-        return try decode(ItemsResponse.self, from: try await send(req))
+        let response = try decode(ItemsResponse.self, from: try await send(req))
+        return ItemsResponse(items: response.items.filter { !$0.isOffline },
+                             totalRecordCount: response.totalRecordCount)
     }
 
     /// Artwork-rich, unplayed titles for the home feature carousel.
@@ -78,7 +80,7 @@ public extension APIClient {
             URLQueryItem(name: "Fields", value: Self.itemFields),
         ]
         let req = try makeRequest(path: "Users/\(uid)/Items", query: q)
-        return try decode(ItemsResponse.self, from: try await send(req)).items
+        return try decode(ItemsResponse.self, from: try await send(req)).items.filter { !$0.isOffline }
     }
 
     /// Recently added videos across all visible libraries.
@@ -96,7 +98,7 @@ public extension APIClient {
         if let parentId { q.append(URLQueryItem(name: "ParentId", value: parentId)) }
         if let filters { q.append(URLQueryItem(name: "Filters", value: filters)) }
         let req = try makeRequest(path: "Users/\(uid)/Items/Latest", query: q)
-        return try decode([BaseItem].self, from: try await send(req))
+        return try decode([BaseItem].self, from: try await send(req)).filter { !$0.isOffline }
     }
 
     /// Search the user's video libraries by title.
@@ -116,7 +118,9 @@ public extension APIClient {
             q.append(URLQueryItem(name: "IncludeItemTypes", value: includeItemTypes))
         }
         let req = try makeRequest(path: "Users/\(uid)/Items", query: q)
-        return try decode(ItemsResponse.self, from: try await send(req))
+        let response = try decode(ItemsResponse.self, from: try await send(req))
+        return ItemsResponse(items: response.items.filter { !$0.isOffline },
+                             totalRecordCount: response.totalRecordCount)
     }
 
     /// Recently added episodes, useful for following currently-updating series.
@@ -153,7 +157,7 @@ public extension APIClient {
             if latestEpisodeDateBySeriesId[seriesId] == nil { latestEpisodeDateBySeriesId[seriesId] = dateCreated }
         }
 
-        let ordered = try await seriesResponse.items.sorted { lhs, rhs in
+        let ordered = try await seriesResponse.items.filter { !$0.isOffline }.sorted { lhs, rhs in
             let lhsDate = latestEpisodeDateBySeriesId[lhs.id]
             let rhsDate = latestEpisodeDateBySeriesId[rhs.id]
             switch (lhsDate, rhsDate) {
@@ -180,7 +184,7 @@ public extension APIClient {
             URLQueryItem(name: "MediaTypes", value: "Video"),
         ]
         let req = try makeRequest(path: "Users/\(uid)/Items/Resume", query: q)
-        return try decode(ItemsResponse.self, from: try await send(req)).items
+        return try decode(ItemsResponse.self, from: try await send(req)).items.filter { !$0.isOffline }
     }
 
     /// Next Up (episodes).
@@ -192,7 +196,7 @@ public extension APIClient {
             URLQueryItem(name: "Fields", value: Self.itemFields),
         ]
         let req = try makeRequest(path: "Shows/NextUp", query: q)
-        return try decode(ItemsResponse.self, from: try await send(req)).items
+        return try decode(ItemsResponse.self, from: try await send(req)).items.filter { !$0.isOffline }
     }
 
     /// Full detail for a single item (includes UserData with resume position).
@@ -319,6 +323,17 @@ public extension APIClient {
                                       resolvingAgainstBaseURL: false)
             var query = [URLQueryItem(name: "tag", value: tag),
                          URLQueryItem(name: "quality", value: "100")]
+            if let maxWidth { query.append(URLQueryItem(name: "maxWidth", value: String(maxWidth))) }
+            comps?.queryItems = query
+            return comps?.url
+        }
+        // Some episodes have no still and omit SeriesPrimaryImageTag even though
+        // the series itself has a poster. Resolve that parent image directly so
+        // sparse series don't render as empty black episode cards.
+        if let seriesId = item.seriesId {
+            var comps = URLComponents(url: baseURL.appendingPathComponent("Items/\(seriesId)/Images/Primary"),
+                                      resolvingAgainstBaseURL: false)
+            var query = [URLQueryItem(name: "quality", value: "100")]
             if let maxWidth { query.append(URLQueryItem(name: "maxWidth", value: String(maxWidth))) }
             comps?.queryItems = query
             return comps?.url
