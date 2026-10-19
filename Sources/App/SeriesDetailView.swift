@@ -13,7 +13,7 @@ struct SeriesDetailView: View {
     @State private var selectedSeasonId: String?
     @State private var episodes: [BaseItem] = []
     @State private var loadError: String?
-    @State private var loadingEpisodes = false
+    @State private var loadingEpisodes = true
     @State private var episodeLoadID = UUID()
     @State private var overviewExpanded = false
     @State private var heroAvailableWidth: CGFloat = 1600
@@ -130,12 +130,15 @@ struct SeriesDetailView: View {
                 Button { play(episode, startOver: false, queue: allQueuedEpisodes,
                               queueIndex: allQueuedEpisodes.firstIndex(where: { $0.id == episode.id })) } label: {
                     Label(playLabel(for: episode), systemImage: "play.fill")
-                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .font(.headline)
+                        .padding(.horizontal, 22).padding(.vertical, 12)
                 }
                 .buttonStyle(SolarPillButtonStyle(hovering: heroPlayHovering))
                 .onHover { heroPlayHovering = $0 }
                 .animation(.easeOut(duration: 0.16), value: heroPlayHovering)
                 .controlSize(.large)
+                .disabled(loadingEpisodes)
+                .help(episode.name)
             }
         }
         .frame(maxWidth: copyWidth, alignment: .leading)
@@ -146,7 +149,7 @@ struct SeriesDetailView: View {
         VStack(alignment: .leading, spacing: 13) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Seasons").font(.title3.weight(.semibold))
+                    Text("Seasons").font(.title2.weight(.bold))
                     if let season = selectedSeason, let summary = seasonSummary(season) {
                         Text(summary)
                             .font(.callout)
@@ -163,6 +166,8 @@ struct SeriesDetailView: View {
                                    onSelect: {
                                        guard selectedSeasonId != season.id else { return }
                                        selectedSeasonId = season.id
+                                       episodes = []
+                                       loadingEpisodes = true
                                        Task { await loadEpisodes(seasonId: season.id) }
                                    },
                                    onPlay: { Task { await playSeason(season) } })
@@ -178,7 +183,8 @@ struct SeriesDetailView: View {
     private var episodeHeader: some View {
         HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(selectedSeason?.name ?? "Episodes").font(.title3.weight(.semibold))
+                Text(selectedSeason.map { "\($0.name) · Episodes" } ?? "Episodes")
+                    .font(.title2.weight(.bold))
                 if !episodes.isEmpty {
                     Text(episodeHeaderSummary).font(.callout).foregroundStyle(.secondary)
                 }
@@ -194,7 +200,10 @@ struct SeriesDetailView: View {
         if loadingEpisodes && episodes.isEmpty { episodeSkeleton }
         else if let loadError, episodes.isEmpty {
             EmptyContentView(title: "Episodes unavailable", message: loadError, systemImage: "wifi.exclamationmark") {
-                if let selectedSeasonId { Task { await loadEpisodes(seasonId: selectedSeasonId) } }
+                Task {
+                    if let selectedSeasonId { await loadEpisodes(seasonId: selectedSeasonId) }
+                    else { await loadSeasons() }
+                }
             }
         } else if episodes.isEmpty {
             EmptyContentView(title: "No episodes", message: "This season does not contain any episodes.")
@@ -264,7 +273,12 @@ struct SeriesDetailView: View {
     }
 
     private func resumeSeconds(_ episode: BaseItem) -> Double { Ticks.toSeconds(episode.userData?.playbackPositionTicks) }
-    private func playLabel(for episode: BaseItem) -> String { resumeSeconds(episode) > 0 ? "Resume" : "Play" }
+    private func playLabel(for episode: BaseItem) -> String {
+        let action = resumeSeconds(episode) > 0 ? "Resume" : "Play"
+        let code = [episode.parentIndexNumber.map { "S\($0)" },
+                    episode.indexNumber.map { "E\($0)" }].compactMap { $0 }.joined()
+        return code.isEmpty ? action : "\(action) · \(code)"
+    }
     private func playEpisodeFromGrid(_ episode: BaseItem, startOver: Bool) {
         let q = allQueuedEpisodes
         play(episode, startOver: startOver, queue: q, queueIndex: q.firstIndex(where: { $0.id == episode.id }))
@@ -308,6 +322,7 @@ struct SeriesDetailView: View {
                 await loadEpisodes(seasonId: first.id)
             }
         } catch { loadError = error.localizedDescription }
+        loadingEpisodes = false
     }
     private func loadEpisodes(seasonId: String) async {
         let requestID = UUID(); episodeLoadID = requestID; loadingEpisodes = true; loadError = nil
