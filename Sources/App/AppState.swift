@@ -92,20 +92,52 @@ final class AppState: ObservableObject {
         serverSwitchError = nil
         defer { isAuthenticating = false }
         let info = ClientInfo(deviceId: store.deviceId)
-        let client = APIClient(baseURL: session.serverURL, clientInfo: info).authenticated(with: session)
-        do {
-            _ = try await client.views()
-            store.setActiveSession(session)
-            self.session = session
-            api = client
-            lastServerURL = session.serverURL.absoluteString
-            isAddingServer = false
-        } catch {
-            let message = "Could not switch to \(session.serverURL.absoluteString): \(error.localizedDescription)"
-            loginError = message
-            serverSwitchError = message
-            serverToReauthenticate = session
+        var candidates = [session]
+
+        // Jellyfin tokens belong to a server instance, not to the hostname used
+        // to reach it. If two saved URLs advertise the same ServerId, try the
+        // currently working token at the destination before treating its saved
+        // per-URL token as invalid. This covers LAN/WAN aliases of one instance.
+        if let active = self.session, active.userId == session.userId,
+           active.serverURL != session.serverURL {
+            let currentClient = APIClient(baseURL: active.serverURL, clientInfo: info)
+            let targetClient = APIClient(baseURL: session.serverURL, clientInfo: info)
+            if let currentInfo = try? await currentClient.publicSystemInfo(),
+               let targetInfo = try? await targetClient.publicSystemInfo(),
+               !currentInfo.id.isEmpty, currentInfo.id == targetInfo.id {
+                let sharedInstanceSession = ServerSession(serverURL: session.serverURL,
+                                                          userId: session.userId,
+                                                          userName: session.userName,
+                                                          accessToken: active.accessToken)
+                candidates.insert(sharedInstanceSession, at: 0)
+            }
         }
+
+        var lastError: Error?
+        for candidate in candidates {
+            let client = APIClient(baseURL: session.serverURL, clientInfo: info).authenticated(with: candidate)
+            do {
+                _ = try await client.views()
+                try store.save(candidate)
+                savedSessions = store.loadSessions()
+                store.setActiveSession(candidate)
+                self.session = candidate
+                api = client
+                lastServerURL = session.serverURL.absoluteString
+                serverToReauthenticate = nil
+                serverSwitchError = nil
+                isAddingServer = false
+                return
+            } catch {
+                lastError = error
+            }
+        }
+
+        let detail = lastError?.localizedDescription ?? "The saved credentials could not be validated."
+        let message = "Could not switch to \(session.serverURL.absoluteString): \(detail)"
+        loginError = message
+        serverSwitchError = message
+        serverToReauthenticate = session
     }
 
     func beginAddingServer() {
