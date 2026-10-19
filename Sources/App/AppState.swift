@@ -9,6 +9,7 @@ final class AppState: ObservableObject {
     @Published private(set) var savedSessions: [ServerSession] = []
     @Published var isAddingServer = false
     @Published var loginError: String?
+    @Published var serverSwitchError: String?
     @Published var isAuthenticating = false
     @Published var playbackError: String?
     @Published var isValidatingStoredSession = false
@@ -85,6 +86,7 @@ final class AppState: ObservableObject {
         guard self.session?.id != session.id else { isAddingServer = false; return }
         isAuthenticating = true
         loginError = nil
+        serverSwitchError = nil
         defer { isAuthenticating = false }
         let info = ClientInfo(deviceId: store.deviceId)
         let client = APIClient(baseURL: session.serverURL, clientInfo: info).authenticated(with: session)
@@ -96,7 +98,9 @@ final class AppState: ObservableObject {
             lastServerURL = session.serverURL.absoluteString
             isAddingServer = false
         } catch {
-            loginError = "Could not connect to \(session.serverURL.absoluteString): \(error.localizedDescription)"
+            let message = "Could not switch to \(session.serverURL.absoluteString): \(error.localizedDescription)"
+            loginError = message
+            serverSwitchError = message
         }
     }
 

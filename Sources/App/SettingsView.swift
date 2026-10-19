@@ -99,6 +99,10 @@ struct SettingsView: View {
                                     .tag(session.id)
                             }
                         }
+                        .disabled(appState.isAuthenticating)
+                    }
+                    if let error = appState.serverSwitchError {
+                        Text(error).foregroundStyle(.red).font(.caption).textSelection(.enabled)
                     }
                 }
                 Section("Saved Servers") {
@@ -111,6 +115,12 @@ struct SettingsView: View {
                             }
                             Spacer()
                             if session.id == appState.session?.id { Text("Active").font(.caption).foregroundStyle(.secondary) }
+                            else {
+                                Button("Switch") {
+                                    Task { await appState.switchServer(to: session) }
+                                }
+                                .disabled(appState.isAuthenticating)
+                            }
                             Button("Forget", role: .destructive) { appState.removeServer(session) }
                         }
                     }
@@ -138,8 +148,8 @@ struct SettingsView: View {
 
     private var activeServerBinding: Binding<String> {
         Binding(get: { appState.session?.id ?? "" }, set: { id in
-            guard let session = appState.savedSessions.first(where: { $0.id == id }) else { return }
-            Task { await appState.switchServer(to: session) }
+            guard let server = appState.savedSessions.first(where: { $0.id == id }) else { return }
+            Task { await appState.switchServer(to: server) }
         })
     }
 
