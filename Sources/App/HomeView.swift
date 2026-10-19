@@ -53,9 +53,7 @@ struct HomeView: View {
                                      contentInset: contentHorizontalPadding,
                                      controlLeadingInset: heroControlLeadingInset)
                 }
-                // Give each shelf enough breathing room so the feature artwork and
-                // the library/content areas read as distinct sections.
-                VStack(alignment: .leading, spacing: 44) {
+                VStack(alignment: .leading, spacing: 36) {
                     if isLoading && resume.isEmpty && nextUp.isEmpty { loadingShelves }
                     if !views.isEmpty { librariesSection }
                     if !resume.isEmpty { landscapeShelf("Continue Watching", resume) }
@@ -68,10 +66,7 @@ struct HomeView: View {
                     }
                 }
                 .padding(.horizontal, contentHorizontalPadding)
-                // The lower edge of the hero fades into the page, but the first
-                // shelf still gets a deliberate landing zone instead of colliding
-                // with the artwork.
-                .padding(.top, featured.isEmpty ? 28 : -34)
+                .padding(.top, featured.isEmpty ? 28 : 12)
                 .padding(.bottom, 44)
             }
         }
@@ -113,7 +108,7 @@ struct HomeView: View {
 
     private var librariesSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            sectionHeading("Libraries", detail: "Browse a destination")
+            sectionHeading("Your Libraries")
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 14) {
                     ForEach(views) { view in
@@ -334,7 +329,8 @@ private struct FeaturedPagerDot: View {
         Button(action: action) {
             Capsule()
                 .fill(.white.opacity(selected ? 1 : hovering ? 0.82 : 0.5))
-                .frame(width: selected ? 22 : hovering ? 13 : 7, height: 7)
+                .frame(width: selected ? 24 : 6, height: 6)
+                .frame(width: selected ? 28 : 18, height: 32)
                 .contentShape(Rectangle())
         }
         .buttonStyle(FeaturedPagerButtonStyle())
@@ -362,109 +358,94 @@ private struct FeaturedMediaBar: View {
     @State private var selection = 0
     @State private var hovering = false
 
+    private var leadingInset: CGFloat { max(contentInset, controlLeadingInset - 26) }
+
     private var item: BaseItem { items[min(selection, items.count - 1)] }
 
     var body: some View {
         GeometryReader { proxy in
-            ZStack {
-                NavigationLink(value: item) {
-                    heroArtwork
-                        .frame(width: proxy.size.width, height: proxy.size.height)
-                        // Cached images can retain their aspect-fit layout beyond the
-                        // hero's bounds; clip it so an image edge never renders as a
-                        // one-pixel rule at the bottom of the feature.
-                        .clipped()
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .id(item.id)
-                .transition(.opacity)
-                .accessibilityLabel("Open \(item.name)")
-                .accessibilityHint("Shows media details")
+            let compact = proxy.size.height < 600
+            let textWidth = min(560, proxy.size.width - leadingInset - 40)
 
-                RadialGradient(colors: [SolfinDesign.solarGold.opacity(0.38), SolfinDesign.solarOrange.opacity(0.22), .clear],
-                               center: .topTrailing, startRadius: 0, endRadius: 740)
-                    .blendMode(.screen)
-                    .allowsHitTesting(false)
-                RadialGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.24), .clear],
-                               center: .bottomLeading, startRadius: 20, endRadius: 820)
-                    .blendMode(.screen)
-                    .allowsHitTesting(false)
-                LinearGradient(colors: [.black.opacity(0.28), .black.opacity(0.08), .clear],
-                               startPoint: .leading, endPoint: .trailing)
-                    .allowsHitTesting(false)
-                LinearGradient(stops: [
-                    .init(color: .clear, location: 0.46),
-                    .init(color: SolfinDesign.spaceBlack.opacity(0.20), location: 0.66),
-                    .init(color: SolfinDesign.spaceBlack.opacity(0.76), location: 0.86),
-                    .init(color: SolfinDesign.spaceBlack, location: 1.0)
-                ], startPoint: .top, endPoint: .bottom)
-                    .allowsHitTesting(false)
-                RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.14), SolfinDesign.solarRed.opacity(0.06), .clear],
-                               center: UnitPoint(x: 0.76, y: 0.86), startRadius: 60, endRadius: 560)
-                    .blendMode(.screen)
-                    .allowsHitTesting(false)
-                RadialGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.12), .clear],
-                               center: UnitPoint(x: 0.26, y: 0.90), startRadius: 80, endRadius: 620)
-                    .blendMode(.screen)
-                    .allowsHitTesting(false)
-
-                VStack {
-                    Spacer()
-                    HStack(alignment: .bottom, spacing: 28) {
-                        // Separate the title treatment from its metadata and actions;
-                        // the logo should have room to read before the info block begins.
-                        VStack(alignment: .leading, spacing: 25) {
-                            SolarHeroIdentity(
-                                item: item,
-                                runtime: runtime(item),
-                                overview: item.overview
-                            ) {
-                                SolarHeroActions {
-                                    FeaturedPlayButton(title: playLabel(item)) { playFeatured(item) }
-                                    FeaturedInfoButton(item: item)
-                                }
-                            }
-                        }
-                        Spacer(minLength: 20)
-                        HStack(spacing: 7) {
-                            ForEach(items.indices, id: \.self) { index in
-                                FeaturedPagerDot(index: index, selected: index == selection) {
-                                    withAnimation(.easeInOut(duration: 0.45)) { selection = index }
-                                }
-                            }
-                        }
-                        .padding(.bottom, 8)
+            // The fixed canvas owns layout; oversized fill images live only in
+            // overlays, so their intrinsic dimensions cannot enlarge the hero.
+            SolfinDesign.spaceBlack
+                .overlay {
+                    NavigationLink(value: item) {
+                        heroArtwork(size: proxy.size)
+                            .contentShape(Rectangle())
                     }
-                    .padding(.horizontal, 72)
-                    .padding(.bottom, 118)
-                    .padding(.top, 40)
+                    .buttonStyle(.plain)
+                    .id(item.id)
+                    .transition(.opacity)
+                    .accessibilityLabel("Open \(item.name)")
+                    .accessibilityHint("Shows media details")
                 }
-                .frame(width: proxy.size.width, height: proxy.size.height)
-
-                HStack {
-                    // Keep the carousel control clear of the overlaid navigation rail.
-                    carouselButton("chevron.left", action: previous)
-                    Spacer()
-                    carouselButton("chevron.right", action: next)
+                .overlay {
+                    LinearGradient(stops: [
+                        .init(color: SolfinDesign.spaceBlack.opacity(0.64), location: 0),
+                        .init(color: SolfinDesign.spaceBlack.opacity(0.38), location: 0.25),
+                        .init(color: SolfinDesign.spaceBlack.opacity(0.10), location: 0.48),
+                        .init(color: .clear, location: 0.65)
+                    ], startPoint: .leading, endPoint: .trailing)
+                    .allowsHitTesting(false)
                 }
-                // Keep the previous rail visually clear of the sidebar. The
-                // shell increases this inset while the sidebar is expanded.
-                .padding(.leading, controlLeadingInset)
-                .padding(.trailing, 24)
-                .opacity(hovering ? 1 : 0)
-                .allowsHitTesting(hovering)
-                .zIndex(2)
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height)
+                .overlay {
+                    LinearGradient(stops: [
+                        .init(color: .clear, location: 0.48),
+                        .init(color: SolfinDesign.spaceBlack.opacity(0.5), location: 0.76),
+                        .init(color: SolfinDesign.spaceBlack, location: 1)
+                    ], startPoint: .top, endPoint: .bottom)
+                    .allowsHitTesting(false)
+                }
+                .overlay(alignment: .bottomLeading) {
+                    VStack(alignment: .leading, spacing: compact ? 12 : 20) {
+                        SolarContextLabel(text: "Featured in your library")
+                        SolarMediaLogo(item: item, maxWidth: min(500, textWidth),
+                                       height: compact ? 100 : 170,
+                                       fallbackSize: compact ? 42 : 64)
+                        SolarMediaMetadata(item: item, runtime: runtime(item))
+                        if !compact, let genres = item.genres { SolarGenreRow(genres: genres) }
+                        if let overview = item.overview, !overview.isEmpty {
+                            SolarHeroOverview(text: overview, maxWidth: textWidth, lineLimit: compact ? 2 : 3)
+                        }
+                        SolarHeroActions {
+                            FeaturedPlayButton(title: playLabel(item)) { playFeatured(item) }
+                            FeaturedInfoButton(item: item)
+                        }
+                        .padding(.top, 4)
+                    }
+                    .frame(width: textWidth, alignment: .leading)
+                    .shadow(color: .black.opacity(0.4), radius: 12, y: 3)
+                    .padding(.leading, leadingInset)
+                    .padding(.bottom, 80)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    if items.count > 1 {
+                        HStack(spacing: 14) {
+                            HStack(spacing: 0) {
+                                ForEach(items.indices, id: \.self) { index in
+                                    FeaturedPagerDot(index: index, selected: index == selection) {
+                                        select(index)
+                                    }
+                                }
+                            }
+                            Text(String(format: "%02d / %02d", selection + 1, items.count))
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.white.opacity(0.6))
+                            carouselButton("chevron.left", action: previous)
+                            carouselButton("chevron.right", action: next)
+                        }
+                        .padding(.trailing, 32)
+                        .padding(.bottom, 20)
+                    }
+                }
+                .clipped()
         }
         .frame(maxWidth: .infinity)
-        // Keep the feature artwork prominent without reserving an oversized block
-        // above the homepage shelves.
         .containerRelativeFrame(.vertical, alignment: .top) { available, _ in
-            // Give the homepage hero more visual presence while still letting
-            // the shelves begin within a reasonable scroll distance.
-            max(700, min(900, available * 0.82))
+            // Keep the tall, full-bleed artwork treatment responsive to the viewport.
+            2 * max(400, min(660, available * 0.64))
         }
         .ignoresSafeArea(edges: .top)
         .onHover { hovering = $0 }
@@ -479,31 +460,23 @@ private struct FeaturedMediaBar: View {
             guard autoAdvance, !reduceMotion, !hovering, items.count > 1 else { return }
             try? await Task.sleep(for: .seconds(10))
             guard !Task.isCancelled, !hovering else { return }
-            withAnimation(.easeInOut(duration: 0.5)) { next() }
+            next()
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Featured media")
     }
 
-    @ViewBuilder private var heroArtwork: some View {
-        if let url = appState.api.backdropImageURL(for: item, maxWidth: nil) {
-            // Keep the complete metadata artwork visible in the foreground. A
-            // softened, enlarged copy fills the wide hero behind it so fitting
-            // the artwork never creates dead black side panels.
-            ZStack {
+    private func heroArtwork(size: CGSize) -> some View {
+        let url = appState.api.backdropImageURL(for: item, maxWidth: nil)
+        // Preserve the top of the artwork; vertical overflow crops at the bottom.
+        return SolfinDesign.spaceBlack
+            .overlay {
                 CachedImage(url: url, contentMode: .fill)
-                    .scaleEffect(1.12)
-                    .blur(radius: 28)
-                    .opacity(0.72)
-                    .overlay(Color.black.opacity(0.28))
-                CachedImage(url: url, contentMode: .fit)
+                    .frame(width: size.width, height: size.height, alignment: .top)
+                    .clipped()
             }
+            .frame(width: size.width, height: size.height)
             .clipped()
-            .background(Color.black)
-        } else {
-            LinearGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.45), SolfinDesign.spaceBlack],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-        }
     }
 
     private func carouselButton(_ icon: String, action: @escaping () -> Void) -> some View {
@@ -545,6 +518,9 @@ private struct FeaturedMediaBar: View {
             appState.playbackError = $0
         }
     }
-    private func next() { selection = (selection + 1) % items.count }
-    private func previous() { selection = (selection - 1 + items.count) % items.count }
+    private func select(_ index: Int) {
+        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.4)) { selection = index }
+    }
+    private func next() { select((selection + 1) % items.count) }
+    private func previous() { select((selection - 1 + items.count) % items.count) }
 }
