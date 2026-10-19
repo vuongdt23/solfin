@@ -29,6 +29,32 @@ final class AuthHeaderTests: XCTestCase {
         XCTAssertNotEqual(first.id, anotherServer.id)
     }
 
+    func testCredentialStoreKeepsTokensPerServerForSameUser() throws {
+        let suite = "CredentialStoreTests-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = CredentialStore(defaults: defaults)
+        let userId = "credential-test-\(UUID().uuidString)"
+        let first = ServerSession(serverURL: URL(string: "http://192.0.2.1:8096")!,
+                                  userId: userId, userName: "user", accessToken: "token-first")
+        let second = ServerSession(serverURL: URL(string: "http://192.0.2.2:8096")!,
+                                   userId: userId, userName: "user", accessToken: "token-second")
+        defer {
+            store.remove(first)
+            store.remove(second)
+        }
+
+        try store.save(first)
+        try store.save(second)
+
+        let reloaded = CredentialStore(defaults: defaults)
+        let sessions = reloaded.loadSessions()
+        XCTAssertEqual(sessions.count, 2)
+        XCTAssertEqual(sessions.first(where: { $0.id == first.id })?.accessToken, "token-first")
+        XCTAssertEqual(sessions.first(where: { $0.id == second.id })?.accessToken, "token-second")
+        XCTAssertEqual(reloaded.loadSession()?.id, second.id)
+    }
+
     func testHeaderWithToken() {
         let session = ServerSession(serverURL: base, userId: "u1", userName: "admin",
                                     accessToken: "Tok42")
