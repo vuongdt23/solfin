@@ -89,11 +89,41 @@ struct SettingsView: View {
                 .tabItem { Label("Logging", systemImage: "doc.badge.gearshape") }
 
             Form {
-                LabeledContent("Server", value: appState.session?.serverURL.absoluteString ?? "Not connected")
-                LabeledContent("User", value: appState.session?.userName ?? "—")
-                Button("Sign Out", role: .destructive) {
-                    appState.signOut()
-                    dismiss()
+                Section("Active Server") {
+                    LabeledContent("Server", value: appState.session?.serverURL.absoluteString ?? "Not connected")
+                    LabeledContent("User", value: appState.session?.userName ?? "—")
+                    if appState.savedSessions.count > 1 {
+                        Picker("Switch server", selection: activeServerBinding) {
+                            ForEach(appState.savedSessions) { session in
+                                Text("\(session.serverURL.host ?? session.serverURL.absoluteString) · \(session.userName)")
+                                    .tag(session.id)
+                            }
+                        }
+                    }
+                }
+                Section("Saved Servers") {
+                    ForEach(appState.savedSessions) { session in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(session.serverURL.host ?? session.serverURL.absoluteString)
+                                Text("\(session.userName) · \(session.serverURL.absoluteString)")
+                                    .font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                            }
+                            Spacer()
+                            if session.id == appState.session?.id { Text("Active").font(.caption).foregroundStyle(.secondary) }
+                            Button("Forget", role: .destructive) { appState.removeServer(session) }
+                        }
+                    }
+                    Button("Add Server…") {
+                        dismiss()
+                        DispatchQueue.main.async { appState.beginAddingServer() }
+                    }
+                    if appState.session != nil {
+                        Button("Sign Out of This Server", role: .destructive) {
+                            appState.signOut()
+                            dismiss()
+                        }
+                    }
                 }
             }
             .formStyle(.grouped).padding(12)
@@ -104,6 +134,13 @@ struct SettingsView: View {
             configStore.load(bundledConfigDir: appState.mpvConfigDir)
 
         }
+    }
+
+    private var activeServerBinding: Binding<String> {
+        Binding(get: { appState.session?.id ?? "" }, set: { id in
+            guard let session = appState.savedSessions.first(where: { $0.id == id }) else { return }
+            Task { await appState.switchServer(to: session) }
+        })
     }
 
     @AppStorage("solfin.homeCardSize") private var homeCardSizeRaw = LibraryCardSize.small.rawValue

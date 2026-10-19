@@ -17,6 +17,18 @@ final class AuthHeaderTests: XCTestCase {
         XCTAssertFalse(h.contains("Token="))
     }
 
+    func testSessionIdentitySeparatesServersAndNormalizesURLs() {
+        let first = ServerSession(serverURL: URL(string: "HTTP://Media.Example:80/library/")!,
+                                  userId: "u1", userName: "user", accessToken: "one")
+        let equivalent = ServerSession(serverURL: URL(string: "http://media.example/library")!,
+                                       userId: "u1", userName: "user", accessToken: "two")
+        let anotherServer = ServerSession(serverURL: URL(string: "http://other.example/library")!,
+                                          userId: "u1", userName: "user", accessToken: "three")
+
+        XCTAssertEqual(first.id, equivalent.id)
+        XCTAssertNotEqual(first.id, anotherServer.id)
+    }
+
     func testHeaderWithToken() {
         let session = ServerSession(serverURL: base, userId: "u1", userName: "admin",
                                     accessToken: "Tok42")

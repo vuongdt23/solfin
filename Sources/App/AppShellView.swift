@@ -58,7 +58,12 @@ struct AppShellView: View {
                 .padding(.bottom, 12)
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.86), value: nowPlaying.isActive)
-        .task { await loadLibraries() }
+        .task(id: appState.session?.id) { await loadLibraries() }
+        .onChange(of: appState.session?.id) { _, _ in
+            detailPath.removeAll()
+            selection = .home
+            libraries = []
+        }
         .onReceive(NotificationCenter.default.publisher(for: .solfinShowHome)) { _ in navigate(to: .home) }
         .onReceive(NotificationCenter.default.publisher(for: .solfinShowSearch)) { _ in navigate(to: .search) }
     }
