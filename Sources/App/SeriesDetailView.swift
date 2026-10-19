@@ -446,9 +446,11 @@ struct EpisodeCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            ZStack(alignment: .center) {
-                EpisodeArtwork(episode: episode)
-                    .aspectRatio(16/9, contentMode: .fill)
+            GeometryReader { proxy in
+                ZStack(alignment: .center) {
+                    EpisodeArtwork(episode: episode)
+                        .frame(width: proxy.size.width, height: proxy.size.height)
+                        .clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                 LinearGradient(colors: [.clear, .black.opacity(0.40)], startPoint: .center, endPoint: .bottom)
                     .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
@@ -473,13 +475,16 @@ struct EpisodeCard: View {
                     .animation(.easeOut(duration: 0.16), value: playButtonHovering)
                     .accessibilityLabel("Play \(episode.name)")
                 }
-                if let pct = episode.userData?.playedPercentage, pct > 0 {
-                    GeometryReader { geo in
-                        VStack { Spacer(); Rectangle().fill(LinearGradient(colors: [SolfinDesign.solarOrange, SolfinDesign.nebulaPurple], startPoint: .leading, endPoint: .trailing)).frame(width: geo.size.width * min(pct, 100) / 100, height: 4) }
+                    if let pct = episode.userData?.playedPercentage, pct > 0 {
+                        GeometryReader { geo in
+                            VStack { Spacer(); Rectangle().fill(LinearGradient(colors: [SolfinDesign.solarOrange, SolfinDesign.nebulaPurple], startPoint: .leading, endPoint: .trailing)).frame(width: geo.size.width * min(pct, 100) / 100, height: 4) }
+                        }
                     }
                 }
+                .frame(width: proxy.size.width, height: proxy.size.height)
             }
             .aspectRatio(16/9, contentMode: .fit)
+            .clipped()
             .overlay { RoundedRectangle(cornerRadius: 13).strokeBorder(hovering ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: hovering ? 2 : 1) }
             .shadow(color: .black.opacity(hovering ? 0.22 : 0.1), radius: hovering ? 14 : 5, y: 6)
 

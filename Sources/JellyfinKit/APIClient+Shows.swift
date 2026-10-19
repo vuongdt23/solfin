@@ -3,17 +3,17 @@ import Foundation
 public extension APIClient {
 
     private static let episodeFields =
-        "Overview,MediaSources,MediaStreams,RunTimeTicks,IndexNumber,ParentIndexNumber,SeriesId,SeasonId,ImageTags,BackdropImageTags,PrimaryImageAspectRatio,ParentBackdropItemId,ParentBackdropImageTags,ParentLogoItemId,ParentLogoImageTag,SeriesPrimaryImageTag,ProductionYear,PremiereDate,EndDate,OfficialRating,CommunityRating,Genres"
+        "Overview,MediaSources,MediaStreams,RunTimeTicks,IndexNumber,ParentIndexNumber,SeriesId,SeasonId,ImageTags,BackdropImageTags,PrimaryImageAspectRatio,ParentBackdropItemId,ParentBackdropImageTags,ParentLogoItemId,ParentLogoImageTag,SeriesPrimaryImageTag,ProductionYear,PremiereDate,EndDate,OfficialRating,CommunityRating,Genres,LocationType"
 
     /// Seasons of a series, ordered.
     func seasons(seriesId: String) async throws -> [BaseItem] {
         guard let uid = session?.userId else { throw JellyfinError.notAuthenticated }
         let q = [
             URLQueryItem(name: "userId", value: uid),
-            URLQueryItem(name: "Fields", value: "Overview,ChildCount,ImageTags,BackdropImageTags,PrimaryImageAspectRatio,ProductionYear,PremiereDate,EndDate,Status,CommunityRating,OfficialRating,Genres,ParentBackdropItemId,ParentBackdropImageTags,ParentLogoItemId,ParentLogoImageTag,SeriesPrimaryImageTag"),
+            URLQueryItem(name: "Fields", value: "Overview,ChildCount,ImageTags,BackdropImageTags,PrimaryImageAspectRatio,ProductionYear,PremiereDate,EndDate,Status,CommunityRating,OfficialRating,Genres,ParentBackdropItemId,ParentBackdropImageTags,ParentLogoItemId,ParentLogoImageTag,SeriesPrimaryImageTag,LocationType"),
         ]
         let req = try makeRequest(path: "Shows/\(seriesId)/Seasons", query: q)
-        return try decode(ItemsResponse.self, from: try await send(req)).items
+        return try decode(ItemsResponse.self, from: try await send(req)).items.filter { !$0.isOffline }
     }
 
     /// Episodes of a series. If `seasonId` is nil, returns all episodes across seasons in order.
@@ -25,7 +25,7 @@ public extension APIClient {
         ]
         if let seasonId { q.append(URLQueryItem(name: "seasonId", value: seasonId)) }
         let req = try makeRequest(path: "Shows/\(seriesId)/Episodes", query: q)
-        return try decode(ItemsResponse.self, from: try await send(req)).items
+        return try decode(ItemsResponse.self, from: try await send(req)).items.filter { !$0.isOffline }
     }
 
     /// Episodes immediately before and after `episode` in series running order.

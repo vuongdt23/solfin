@@ -112,6 +112,30 @@ final class StreamURLTests: XCTestCase {
         XCTAssertEqual(query["quality"], "100")
     }
 
+    func testEpisodeArtworkFallsBackToSeriesPrimaryImageWhenEpisodeHasNoStill() throws {
+        let client = makeClient()
+        let item = try decodeItem(#"{"Id":"episode1","Name":"Episode","Type":"Episode","SeriesId":"series1"}"#)
+        let url = try XCTUnwrap(client.episodeArtworkURL(for: item, maxWidth: 1280))
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        let query = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).map { ($0.name, $0.value) })
+
+        XCTAssertEqual(components.path, "/Items/series1/Images/Primary")
+        XCTAssertEqual(query["maxWidth"], "1280")
+        XCTAssertEqual(query["quality"], "100")
+    }
+
+    func testOfflineLocationTypeIsRecognized() throws {
+        let offline = try decodeItem(#"{"Id":"movie1","Name":"Missing Movie","Type":"Movie","LocationType":"Offline"}"#)
+        let available = try decodeItem(#"{"Id":"movie2","Name":"Available Movie","Type":"Movie","LocationType":"FileSystem"}"#)
+
+        XCTAssertTrue(offline.isOffline)
+        XCTAssertFalse(available.isOffline)
+        XCTAssertFalse(try decodeItem(#"{"Id":"movie3","Name":"Unknown Location"}"#).isOffline)
+        XCTAssertFalse(offline.isBrowsableMedia)
+        XCTAssertTrue(available.isBrowsableMedia)
+        XCTAssertFalse(try decodeItem(#"{"Id":"folder","Name":"Empty folder","Type":"Folder"}"#).isBrowsableMedia)
+    }
+
     func testSetPlayedUsesPlayedItemsEndpointAndMethod() async throws {
         MockURLProtocol.handler = { _ in (204, Data()) }
         let client = makeClient(urlSession: MockURLProtocol.makeSession())

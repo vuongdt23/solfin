@@ -6,7 +6,11 @@ import PlaybackEngine
 @MainActor
 final class AppState: ObservableObject {
     @Published var session: ServerSession?
+    @Published private(set) var savedSessions: [ServerSession] = []
+    @Published var isAddingServer = false
     @Published var loginError: String?
+    @Published var serverSwitchError: String?
+    @Published private(set) var serverToReauthenticate: ServerSession?
     @Published var isAuthenticating = false
     @Published var playbackError: String?
     @Published var isValidatingStoredSession = false
@@ -27,7 +31,9 @@ final class AppState: ObservableObject {
 
     init() {
         let info = ClientInfo(deviceId: store.deviceId)
+        let saved = store.loadSessions()
         let existing = store.loadSession()
+        self.savedSessions = saved
         let base = existing?.serverURL ?? URL(string: "http://localhost:8096")!
         self.api = APIClient(baseURL: base, clientInfo: info)
         if let existing {
@@ -37,7 +43,7 @@ final class AppState: ObservableObject {
         }
     }
 
-    var isSignedIn: Bool { session != nil }
+    var isSignedIn: Bool { session != nil && !isAddingServer }
 
     /// Verifies a restored session before showing the library. If the server has
     /// moved or is no longer reachable, return the user to login with an explicit
@@ -50,10 +56,9 @@ final class AppState: ObservableObject {
             _ = try await api.views()
         } catch {
             let failedServer = session?.serverURL.absoluteString ?? lastServerURL
-            let info = ClientInfo(deviceId: store.deviceId)
             session = nil
-            api = APIClient(baseURL: URL(string: lastServerURL) ?? URL(string: "http://localhost:8096")!, clientInfo: info)
-            loginError = "Could not connect to \(failedServer). Your server may have changed. Enter a different server address below to reconnect."
+            isAddingServer = true
+            loginError = "Could not connect to \(failedServer). Choose another saved server or sign in to a different server."
         }
     }
 
@@ -61,26 +66,96 @@ final class AppState: ObservableObject {
         isAuthenticating = true
         loginError = nil
         defer { isAuthenticating = false }
-        guard let url = URL(string: serverURL) else { loginError = "Invalid server URL."; return }
+        guard let url = URL(string: serverURL),
+              let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme),
+              url.host != nil else { loginError = "Enter a valid HTTP or HTTPS server address."; return }
         let info = ClientInfo(deviceId: store.deviceId)
         let client = APIClient(baseURL: url, clientInfo: info)
         do {
             let session = try await client.login(username: username, password: password)
             try store.save(session)
-            self.session = session
-            self.api = client.authenticated(with: session)
+            savedSessions = store.loadSessions()
+            activate(session)
+            serverToReauthenticate = nil
+            serverSwitchError = nil
+            isAddingServer = false
             self.lastServerURL = serverURL
         } catch {
             loginError = error.localizedDescription
         }
     }
 
-    func signOut() {
-        store.clear()
-        session = nil
+    func switchServer(to session: ServerSession) async {
+        guard self.session?.id != session.id else { isAddingServer = false; return }
+        isAuthenticating = true
+        loginError = nil
+        serverSwitchError = nil
+        defer { isAuthenticating = false }
         let info = ClientInfo(deviceId: store.deviceId)
-        api = APIClient(baseURL: URL(string: lastServerURL) ?? URL(string: "http://localhost:8096")!,
-                        clientInfo: info)
+        let client = APIClient(baseURL: session.serverURL, clientInfo: info).authenticated(with: session)
+        do {
+            _ = try await client.views()
+            store.setActiveSession(session)
+            self.session = session
+            api = client
+            lastServerURL = session.serverURL.absoluteString
+            serverToReauthenticate = nil
+            serverSwitchError = nil
+            isAddingServer = false
+        } catch {
+            let message = "Could not switch to \(session.serverURL.absoluteString): \(error.localizedDescription)"
+            loginError = message
+            serverSwitchError = message
+            serverToReauthenticate = session
+        }
+    }
+
+    func beginAddingServer() {
+        serverToReauthenticate = nil
+        loginError = nil
+        isAddingServer = true
+    }
+
+    func beginReauthenticating(_ session: ServerSession) {
+        serverToReauthenticate = session
+        serverSwitchError = nil
+        loginError = nil
+        isAddingServer = true
+    }
+
+    func cancelAddingServer() {
+        serverToReauthenticate = nil
+        isAddingServer = false
+        loginError = nil
+    }
+
+    func removeServer(_ session: ServerSession) {
+        let wasActive = self.session?.id == session.id
+        store.remove(session)
+        savedSessions = store.loadSessions()
+        if wasActive {
+            self.session = nil
+            isAddingServer = false
+            let info = ClientInfo(deviceId: store.deviceId)
+            api = APIClient(baseURL: URL(string: lastServerURL) ?? URL(string: "http://localhost:8096")!,
+                            clientInfo: info)
+            if let replacement = savedSessions.first {
+                Task { await switchServer(to: replacement) }
+            }
+        }
+    }
+
+    func signOut() {
+        guard let session else { return }
+        removeServer(session)
+    }
+
+    private func activate(_ session: ServerSession) {
+        store.setActiveSession(session)
+        self.session = session
+        api = APIClient(baseURL: session.serverURL, clientInfo: ClientInfo(deviceId: store.deviceId))
+            .authenticated(with: session)
+        lastServerURL = session.serverURL.absoluteString
     }
 
     func makePlaybackConfig() -> PlaybackController.Config {

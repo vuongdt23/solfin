@@ -30,6 +30,21 @@ final class APIClientMockTests: XCTestCase {
         XCTAssertEqual(session.serverURL, base)
     }
 
+    func testItemsDropsOfflineEntriesAndFoldersFromLibraryResults() async throws {
+        MockURLProtocol.handler = { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            XCTAssertTrue(query.first(where: { $0.name == "Fields" })?.value?.contains("LocationType") == true)
+            let json = #"{"Items":[{"Id":"available","Name":"Available","Type":"Movie","LocationType":"FileSystem"},{"Id":"missing","Name":"Missing","Type":"Movie","LocationType":"Offline"},{"Id":"folder","Name":"Empty folder","Type":"Folder","LocationType":"FileSystem"}],"TotalRecordCount":3}"#
+            return (200, Data(json.utf8))
+        }
+
+        let response = try await makeClient(authed: true).items(parentId: "movies", limit: 60,
+                                                                 includeItemTypes: "Movie")
+        XCTAssertEqual(response.items.map(\.id), ["available", "missing", "folder"])
+        XCTAssertEqual(response.totalRecordCount, 3)
+        XCTAssertEqual(response.items.filter(\.isBrowsableMedia).map(\.id), ["available"])
+    }
+
     func testDirectPlayPlanPicksDirectPlaySource() async throws {
         // Two sources: first is NOT direct-play, second IS — selection must pick the second.
         MockURLProtocol.handler = { _ in
@@ -145,28 +160,29 @@ final class APIClientMockTests: XCTestCase {
 
     func testRecentlyActiveSeriesReturnsSeriesInLatestEpisodeOrder() async throws {
         MockURLProtocol.handler = { request in
-            guard request.url?.path == "/Users/u1/Items" else {
-                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+            let path = request.url?.path
+            guard path == "/Users/u1/Items" || path == "/Users/u1/Items/Latest" else {
+                XCTFail("Unexpected path: \(path ?? "nil")")
                 return (404, Data())
             }
             let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let includeTypes = query.first { $0.name == "IncludeItemTypes" }?.value
 
             if includeTypes == "Episode" {
+                XCTAssertEqual(path, "/Users/u1/Items/Latest")
                 XCTAssertEqual(query.first { $0.name == "ParentId" }?.value, "tv")
-                XCTAssertEqual(query.first { $0.name == "SortBy" }?.value, "DateCreated")
-                XCTAssertEqual(query.first { $0.name == "SortOrder" }?.value, "Descending")
-                XCTAssertEqual(query.first { $0.name == "Recursive" }?.value, "true")
+                XCTAssertEqual(query.first { $0.name == "Limit" }?.value, "1000")
                 let json = """
-                {"Items":[
+                [
                   {"Id":"ep4","Name":"Newest B","Type":"Episode","SeriesId":"seriesB","DateCreated":"2026-09-12T00:00:00.0000000Z"},
                   {"Id":"ep3","Name":"Newest A","Type":"Episode","SeriesId":"seriesA","DateCreated":"2026-09-11T00:00:00.0000000Z"},
                   {"Id":"ep2","Name":"Older B","Type":"Episode","SeriesId":"seriesB","DateCreated":"2026-09-10T00:00:00.0000000Z"}
-                ],"TotalRecordCount":3}
+                ]
                 """
                 return (200, Data(json.utf8))
             }
 
+            XCTAssertEqual(path, "/Users/u1/Items")
             XCTAssertEqual(includeTypes, "Series")
             XCTAssertEqual(query.first { $0.name == "ParentId" }?.value, "tv")
             XCTAssertEqual(query.first { $0.name == "SortBy" }?.value, "SortName")
@@ -186,8 +202,8 @@ final class APIClientMockTests: XCTestCase {
 
         XCTAssertEqual(series.map(\.id), ["seriesB", "seriesA", "seriesC", "seriesD"])
         XCTAssertEqual(MockURLProtocol.requests.count, 2)
-        XCTAssertEqual(MockURLProtocol.requests.first?.url?.path, "/Users/u1/Items")
-        XCTAssertEqual(MockURLProtocol.requests.last?.url?.path, "/Users/u1/Items")
+        XCTAssertEqual(Set(MockURLProtocol.requests.compactMap { $0.url?.path }),
+                       Set(["/Users/u1/Items", "/Users/u1/Items/Latest"]))
     }
 
     func testNextEpisodeReturnsFollowing() async throws {
