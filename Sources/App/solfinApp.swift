@@ -16,6 +16,7 @@ struct SolfinApp: App {
             RootView().environmentObject(appState).environmentObject(nowPlaying)
                 .preferredColorScheme(.dark)
                 .background(SolfinDesign.solarBackground)
+                .background(WindowZoomFramePolicy())
                 .frame(minWidth: 900, minHeight: 600)
         }
         .windowStyle(.titleBar)
