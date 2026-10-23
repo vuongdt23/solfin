@@ -80,8 +80,13 @@ struct HomeView: View {
                     .padding(.trailing, 32)
                     .padding(.top, featured.isEmpty ? 32 : 24)
                     .padding(.bottom, 48)
+                    // Horizontal shelves scroll internally; constrain the page
+                    // content to the window instead of its combined shelf width.
+                    .frame(width: viewport.size.width, alignment: .leading)
                 }
+                .frame(width: viewport.size.width, alignment: .topLeading)
             }
+            .frame(width: viewport.size.width, height: viewport.size.height, alignment: .topLeading)
             .scrollContentBackground(.hidden)
         }
         .background {
