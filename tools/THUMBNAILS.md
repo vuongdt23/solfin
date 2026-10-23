@@ -51,7 +51,9 @@ python3 tools/test-mpv-thumbnails.py # macOS + mpv + ffmpeg; loopback HTTP video
 xcodebuild -scheme solfin -configuration Debug -destination 'platform=macOS' test
 ```
 
-The Lua regression test verifies maximize/restore and OSC-to-thumbfast messaging.
+The Lua regression test verifies maximize/restore, disjoint click targets, menu
+capture and keyboard navigation, responsive layouts, fade reversal, subtitle
+restoration, volume boost, escaped metadata, feedback and OSC-to-thumbfast messaging.
 The integration test verifies startup prewarming before hover, loopback HTTP
 preview rendering, crash/stall recovery, file changes, inactivity and cleanup.
 

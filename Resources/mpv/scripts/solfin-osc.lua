@@ -6,9 +6,9 @@
 --
 -- Coordinate system
 -- -----------------
--- We draw on a fixed *virtual* canvas 720 units tall (playresx scales with the video
--- aspect) so control sizes stay constant regardless of the real output resolution /
--- HiDPI backing scale. Real pixel <-> virtual conversions go through `scale()`.
+-- We use a 720-unit reference canvas so controls scale proportionally with the
+-- output height, including 4K and Retina backing resolutions. Compact spacing is
+-- independent of that scale. Real pixel <-> virtual conversions go through scale.
 --
 -- Licensed under LGPLv2.1 (consistent with mpv's osc.lua lineage).
 
@@ -43,13 +43,14 @@ local user_opts = {
 
 local DS = {
     playresy      = 720,        -- virtual canvas height
-    bar_height    = 46,         -- bottom control bar height
+    bar_height    = 70,         -- bottom control bar height
     bar_pad_x     = 20,         -- horizontal padding inside the bar
     seek_height   = 3,          -- seekbar track thickness
     seek_handle_r = 4,          -- seek handle radius
     row_gap       = 7,          -- gap between seekbar row and button row
-    btn_size      = 20,         -- clickable button box (square)
-    btn_gap       = 11,         -- gap between buttons
+    btn_size      = 32,         -- clickable button box (square)
+    icon_size     = 20,         -- visual size independent of generous hit targets
+    btn_gap       = 6,         -- gap between buttons
     time_size     = 13,         -- timecode font size
     control_size  = 13,         -- compact text-control font size
     now_title_size = 12,        -- small media title above the progress bar
@@ -115,6 +116,7 @@ local state = {
     queue_count  = 1,
     menu         = { open = false, kind = nil, items = {}, scroll = 0 },  -- popup track/settings menu
     thumbfast    = nil,            -- worker dimensions/availability
+    thumb_request = nil,
     thumb_shown  = false,          -- whether we currently have a thumbnail requested
     logo_shown   = false,          -- whether the top-bar logo overlay is currently visible
     logo_draw    = nil,            -- last rendered logo geometry/path to avoid overlay spam
@@ -134,6 +136,13 @@ local state = {
     tick_timer   = nil,
     tick_last    = 0,
     initialized  = false,
+    feedback = nil,
+    feedback_until = 0,
+    subtitle_base = nil,
+    subtitle_applied = nil,
+    menu_focus = nil,
+    press_target = nil,
+    press_active = false,
 }
 
 local overlay = mp.create_osd_overlay("ass-events")
@@ -149,7 +158,8 @@ local hitboxes = {}
 
 local function update_scale()
     if state.osd_h and state.osd_h > 0 then
-        state.scale = DS.playresy / state.osd_h
+        state.scale = math.max(DS.playresy / state.osd_h,
+                               480 / math.max(state.osd_w, 1))
         state.playresx = state.osd_w * state.scale
     end
 end
@@ -197,16 +207,23 @@ end
 
 local function register_activity()
     state.show_time = mp.get_time()
-    if not state.visible then
+    if not state.visible or state.anim == "out" then
         state.visible = true
         if user_opts.fadeduration > 0 then
             state.anim = "in"
-            state.anim_start = mp.get_time()
+            state.anim_start = mp.get_time() - state.opacity * user_opts.fadeduration / 1000
         else
+            state.anim = nil
             state.opacity = 1
         end
     end
     request_tick()
+end
+
+local function feedback(text)
+    state.feedback = text
+    state.feedback_until = mp.get_time() + 1.2
+    register_activity()
 end
 
 local function begin_hide()
@@ -265,8 +282,48 @@ local function chapter_at(t)
 end
 
 -- Rough text width in virtual units (no font metrics available in ASS).
+local function text_chars(text)
+    local chars = {}
+    for char in tostring(text):gmatch("[%z\1-\127\194-\244][\128-\191]*") do chars[#chars + 1] = char end
+    return chars
+end
+
 local function estimate_text_width(text, size)
-    return #tostring(text) * size * 0.52
+    return #text_chars(text) * size * 0.62
+end
+
+local function fit_text(text, size, width)
+    local chars = text_chars(tostring(text):gsub("[\r\n]", " "))
+    local count = math.max(1, math.floor(width / (size * 0.62)))
+    if #chars > count then return table.concat(chars, "", 1, count - 1) .. "…" end
+    return table.concat(chars)
+end
+
+-- Use mpv's own ASS escaping for untrusted media metadata.
+local function ass_text(text)
+    local single_line = tostring(text):gsub("[\r\n]", " ")
+    return mp.command_native({"escape-ass", single_line}) or ""
+end
+
+local function can_seek()
+    return state.seekable and state.duration and state.duration > 0
+end
+
+local function update_subtitle_position()
+    if not state.subtitle_base then return end
+    local plain = false
+    for _, tr in ipairs(state.sub_tracks) do
+        if tr.selected then
+            plain = tr.codec == "subrip" or tr.codec == "srt" or tr.codec == "webvtt"
+                or tr.codec == "text" or tr.codec == "mov_text"
+        end
+    end
+    local desired = state.subtitle_base
+    if state.visible and plain then desired = math.min(desired, 86) end
+    if state.subtitle_applied ~= desired then
+        state.subtitle_applied = desired
+        mp.set_property_number("sub-pos", desired)
+    end
 end
 
 local function logo_available()
@@ -411,21 +468,23 @@ end
 
 local function icon_fullscreen(ass, cx, cy, color, ab, is_fs)
     ass:new_event()
-    ass:append(stroked_icon_style(color, ab, 1.5))
+    ass:append(shape_style(color, ab))
     ass:pos(cx, cy)
     ass:draw_start()
-    if is_fs then
-        -- Leave fullscreen: inward corners.
-        ass:move_to(-7, -2); ass:line_to(-2, -2); ass:line_to(-2, -7)
-        ass:move_to(7, -2);  ass:line_to(2, -2);  ass:line_to(2, -7)
-        ass:move_to(-7, 2);  ass:line_to(-2, 2);  ass:line_to(-2, 7)
-        ass:move_to(7, 2);   ass:line_to(2, 2);   ass:line_to(2, 7)
-    else
-        -- Enter fullscreen: simple outward corners.
-        ass:move_to(-7, -2); ass:line_to(-7, -7); ass:line_to(-2, -7)
-        ass:move_to(7, -2);  ass:line_to(7, -7);  ass:line_to(2, -7)
-        ass:move_to(-7, 2);  ass:line_to(-7, 7);  ass:line_to(-2, 7)
-        ass:move_to(7, 2);   ass:line_to(7, 7);   ass:line_to(2, 7)
+    -- Filled L brackets: ASS closes stroked subpaths, which turned the previous
+    -- open corners into triangles. Explicit bars cannot acquire diagonal edges.
+    local outer, inner, weight = 8, 3, 1.6
+    for _, sx in ipairs({-1, 1}) do
+        for _, sy in ipairs({-1, 1}) do
+            local edge = is_fs and inner or outer
+            local offset = is_fs and weight or -weight
+            local function bar(x1, y1, x2, y2)
+                x1, x2, y1, y2 = x1 * sx, x2 * sx, y1 * sy, y2 * sy
+                ass:rect_cw(math.min(x1, x2), math.min(y1, y2), math.max(x1, x2), math.max(y1, y2))
+            end
+            bar(inner, edge, outer, edge + offset)
+            bar(edge, inner, edge + offset, outer)
+        end
     end
     ass:draw_stop()
 end
@@ -547,9 +606,28 @@ local function speed_text(v)
     return s .. "×"
 end
 
+local open_menu
 local function build_menu_items(kind)
     local items = {}
-    if kind == "speed" then
+    if kind == "more" then
+        local function add(label, apply, enabled)
+            items[#items + 1] = {label = label, apply = apply, enabled = enabled ~= false}
+        end
+        add("Audio", function() open_menu("audio") end)
+        add("Subtitles", function() open_menu("subtitle") end)
+        add("Playback speed", function() open_menu("speed") end)
+        add("Playback information", function() mp.commandv("script-binding", "stats/display-stats-toggle") end)
+        add((state.time_pos or 0) > 5 and "Restart" or "Previous episode",
+            function() mp.commandv("script-message", "solfin-prev"); feedback("Restart / Previous episode") end,
+            state.queue_index > 0 or (state.time_pos or 0) > 5)
+        add("Next episode", function() mp.commandv("script-message", "solfin-next"); feedback("Next episode") end,
+            state.queue_index + 1 < state.queue_count)
+        add("Volume −5%", function() mp.commandv("add", "volume", -5) end)
+        add("Volume +5%", function()
+            mp.commandv("add", "volume", 5)
+            mp.set_property_native("mute", false)
+        end)
+    elseif kind == "speed" then
         for _, v in ipairs(SPEEDS) do
             items[#items + 1] = {
                 label = speed_text(v) .. (v == 1.0 and "   Normal" or ""),
@@ -575,16 +653,36 @@ local function build_menu_items(kind)
     return items
 end
 
-local MENU_TITLES = { audio = "Audio", subtitle = "Subtitles", speed = "Playback speed" }
+local MENU_TITLES = { audio = "Audio", subtitle = "Subtitles", speed = "Playback speed", more = "More controls" }
+
+local function enable_menu_keys()
+    if state.menu.open then mp.enable_key_bindings("solfin-osc-menu")
+    else mp.disable_key_bindings("solfin-osc-menu") end
+end
+
+local function apply_menu_item(item)
+    if not item then return end
+    if item.enabled == false then feedback("Unavailable"); return end
+    local kind = state.menu.kind
+    state.menu.open = false
+    state.menu_focus = nil
+    enable_menu_keys()
+    item.apply()
+    if kind == "audio" or kind == "subtitle" then
+        feedback((kind == "audio" and "Audio: " or "Subtitles: ") .. item.label)
+    end
+    request_tick()
+end
 
 local function render_menu(ass, a, W, bar_top)
     if not state.menu.open then hitboxes.menu_area = nil; return end
     local items = build_menu_items(state.menu.kind)
     state.menu.items = items
-    if #items == 0 then return end
+    if #items == 0 then items = {{label = "No tracks available", enabled = false}} end
+    state.menu.items = items
 
-    local mw = MENU.width
-    local max_content_h = math.max(MENU.row_h, bar_top - MENU.top_margin - MENU.title_h - MENU.pad)
+    local mw = math.min(MENU.width, W - DS.bar_pad_x * 2)
+    local max_content_h = math.max(MENU.row_h, bar_top - MENU.top_margin - MENU.title_h - MENU.pad - MENU.scroll_h - 12)
     local visible_count = math.max(1, math.min(#items, math.floor(max_content_h / MENU.row_h)))
     local can_scroll = #items > visible_count
     state.menu.scroll = clamp(state.menu.scroll or 0, 0, math.max(0, #items - visible_count))
@@ -629,7 +727,7 @@ local function render_menu(ass, a, W, bar_top)
         local ry1 = my1 + MENU.title_h + (visual - 1) * MENU.row_h
         local ry2 = ry1 + MENU.row_h
         hitboxes["menu_row_" .. visual] = { x1 = mx1, y1 = ry1, x2 = mx1 + mw, y2 = ry2, item_index = i }
-        local hovered = (state.hovered == "menu_row_" .. visual)
+        local hovered = (state.hovered == "menu_row_" .. visual) or state.menu_focus == i
 
         if hovered then
             ass:new_event()
@@ -651,10 +749,11 @@ local function render_menu(ass, a, W, bar_top)
         -- Label
         local lcol = item.selected and COL.accent or COL.white
         ass:new_event()
-        ass:append(string.format("{\\an4\\fs18\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
-                                 DS.font, lcol, a(0)))
+        ass:append(string.format("{\\an4\\fs18\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&\\clip(%d,%d,%d,%d)}",
+                                 DS.font, lcol, a(item.enabled == false and 0x86 or 0),
+                                 math.floor(mx1 + 40), math.floor(ry1), math.floor(mx1 + mw - 12), math.floor(ry2)))
         ass:pos(mx1 + 40, (ry1 + ry2) / 2)
-        ass:append(item.label)
+        ass:append(ass_text(fit_text(item.label, 18, mw - 58)))
     end
 
     if can_scroll then
@@ -689,19 +788,26 @@ local function render_menu(ass, a, W, bar_top)
     end
 end
 
-local function open_menu(kind)
+open_menu = function(kind)
     if state.menu.open and state.menu.kind == kind then
         state.menu.open = false
     else
         state.menu.open, state.menu.kind = true, kind
         state.menu.scroll = 0
     end
+    state.menu_focus = nil
+    enable_menu_keys()
     register_activity()
     request_tick()
 end
 
 local function close_menu()
-    if state.menu.open then state.menu.open = false; request_tick() end
+    if state.menu.open then
+        state.menu.open = false
+        state.menu_focus = nil
+        enable_menu_keys()
+        request_tick()
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -722,11 +828,15 @@ end
 clear_thumb = function()
     if state.thumb_shown then mp.commandv("script-message-to", "thumbfast", "clear") end
     state.thumb_shown = false
+    state.thumb_request = nil
 end
 
 local function request_thumb(time, x_v, top_v)
     local rx = math.floor(to_real(x_v) + 0.5)
     local ry = math.floor(to_real(top_v) + 0.5)
+    local signature = tostring(time) .. ":" .. rx .. ":" .. ry
+    if state.thumb_request == signature then return end
+    state.thumb_request = signature
     -- Explicit coordinates: thumbfast uses mpv's raw overlay API directly.
     mp.commandv("script-message-to", "thumbfast", "thumb",
                 tostring(time), tostring(rx), tostring(ry))
@@ -737,13 +847,16 @@ local function render()
     hitboxes = {}
     local ass = assdraw.ass_new()
 
-    local W, H = state.playresx, DS.playresy
+    local W, H = state.playresx, state.osd_h * state.scale
+    local compact = W < 850
+    local minimal = W < 600
+    state.compact = compact
+    update_subtitle_position()
     local alpha_mul = state.opacity            -- 0..1
     if alpha_mul <= 0 then
         clear_thumb()
         clear_logo()
-        overlay.data = ""
-        overlay:update()
+        if overlay.data ~= "" then overlay.data = ""; overlay:update() end
         return
     end
     -- Convert opacity to an ASS alpha byte (00 opaque .. FF transparent).
@@ -777,17 +890,18 @@ local function render()
         elseif state.title and #state.title > 0 then
             clear_logo()
             ass:new_event()
-            ass:append(string.format("{\\an4\\fs%d\\b1\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
-                                     DS.title_size, DS.font, COL.white, a(0)))
+            ass:append(string.format("{\\an4\\fs%d\\b1\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&\\clip(%d,0,%d,%d)}",
+                                     DS.title_size, DS.font, COL.white, a(0),
+                                     DS.bar_pad_x, math.floor(W - 150), DS.top_height))
             ass:pos(DS.bar_pad_x, top_y - 2)
-            ass:append(state.title)
+            ass:append(ass_text(fit_text(state.title, DS.title_size, W - 170)))
         else
             clear_logo()
         end
         local clx = W - DS.bar_pad_x - DS.btn_size / 2
-        local maxx = clx - 28
-        local minx = maxx - 28
-        local top_hit = DS.btn_size / 2 + 3
+        local maxx = clx - 40
+        local minx = maxx - 40
+        local top_hit = DS.btn_size / 2
         hitboxes.close = { x1 = clx - top_hit, y1 = top_y - top_hit, x2 = clx + top_hit, y2 = top_y + top_hit }
         hitboxes.maximize = { x1 = maxx - top_hit, y1 = top_y - top_hit, x2 = maxx + top_hit, y2 = top_y + top_hit }
         hitboxes.minimize = { x1 = minx - top_hit, y1 = top_y - top_hit, x2 = minx + top_hit, y2 = top_y + top_hit }
@@ -806,9 +920,10 @@ local function render()
     local sb_x1 = DS.bar_pad_x
     local sb_x2 = W - DS.bar_pad_x
     local sb_w  = sb_x2 - sb_x1
-    local sb_y  = H - 30
+    local sb_y  = H - 42
     local sb_hh = DS.seek_height / 2
-    hitboxes.seekbar = { x1 = sb_x1, y1 = sb_y - 12, x2 = sb_x2, y2 = sb_y + 12 }
+    -- Compact 20-unit center spacing, with separate seek/button hit regions.
+    hitboxes.seekbar = { x1 = sb_x1, y1 = sb_y - 10, x2 = sb_x2, y2 = sb_y + 8 }
 
     local dur = (state.duration and state.duration > 0) and state.duration or nil
 
@@ -821,7 +936,7 @@ local function render()
                                  DS.now_title_size, DS.font, COL.white, a(0x24),
                                  math.floor(sb_x1), math.floor(sb_y - 28), math.floor(sb_x2), math.floor(sb_y - 8)))
         ass:pos(sb_x1, sb_y - 14)
-        ass:append(state.title)
+        ass:append(ass_text(fit_text(state.title, DS.now_title_size, sb_w)))
     end
 
     local function time_to_x(t)
@@ -903,7 +1018,7 @@ local function render()
     end
 
     -- Hover tooltip: thumbnail + time (+ chapter name) at the cursor position
-    if dur and (state.hovered == "seekbar" or state.drag == "seek") and state.mouse_x >= 0 then
+    if can_seek() and (state.hovered == "seekbar" or state.drag == "seek") and state.mouse_x >= 0 then
         local hx = clamp(state.mouse_x, sb_x1, sb_x2)
         local ht = clamp((hx - sb_x1) / sb_w, 0, 1) * dur
         local label = format_time(ht)
@@ -912,13 +1027,15 @@ local function render()
 
         local pad = 10
         local fs = 18
-        local tw = estimate_text_width(label, fs) + pad * 2
+        label = fit_text(label, fs, sb_w - pad * 2)
+        local tw = math.min(sb_w, estimate_text_width(label, fs) + pad * 2)
         local th = fs + pad
         local tx = clamp(hx, sb_x1 + tw / 2, sb_x2 - tw / 2)
         local ty = sb_y - 22 - th
 
         -- Thumbnail frame above the pill, only once the requested sheet is ready.
-        if thumb_usable() then
+        local preview_w, preview_h = thumb_virtual_size()
+        if thumb_usable() and preview_w + 6 <= sb_w and preview_h + 6 < ty - DS.top_height then
             local border = 3
             local tw_v, th_v = thumb_virtual_size()
             local cx_v = clamp(hx, sb_x1 + tw_v / 2 + border, sb_x2 - tw_v / 2 - border)
@@ -949,7 +1066,7 @@ local function render()
         ass:append(string.format("{\\an5\\fs%d\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
                                  fs, DS.font, COL.white, a(0)))
         ass:pos(tx, ty + th / 2)
-        ass:append(label)
+        ass:append(ass_text(label))
     else
         clear_thumb()
     end
@@ -957,35 +1074,37 @@ local function render()
     ----------------------------------------------------------------------------
     -- Button row (play/pause + jump) and timecodes
     ----------------------------------------------------------------------------
-    local row_y = H - 13
+    local row_y = H - 22
     local cx = DS.bar_pad_x + DS.btn_size / 2
 
     -- Skip-back
     local function place_button(name)
-        local box = { x1 = cx - DS.btn_size / 2, y1 = row_y - DS.btn_size / 2,
+        local box = { x1 = cx - DS.btn_size / 2, y1 = row_y - 10,
                       x2 = cx + DS.btn_size / 2, y2 = row_y + DS.btn_size / 2 }
         hitboxes[name] = box
         return box
     end
 
     local col_for = function(name)
+        if (name == "skip_back" or name == "skip_fwd") and not can_seek() then return COL.track end
         return (state.hovered == name) and COL.accent or COL.white
     end
 
     -- Previous queued item. Disabled when there is no previous episode.
-    place_button("prev")
-    local prev_enabled = state.queue_index > 0 or ((state.time_pos or 0) > 5)
-    icon_queue_prev_next(ass, cx, row_y,
-                         prev_enabled and col_for("prev") or COL.track,
-                         a(prev_enabled and 0 or 0x86), false)
-
-    cx = cx + DS.btn_size + DS.btn_gap
+    if not compact then
+        place_button("prev")
+        local prev_enabled = state.queue_index > 0 or ((state.time_pos or 0) > 5)
+        icon_queue_prev_next(ass, cx, row_y,
+                             prev_enabled and col_for("prev") or COL.track,
+                             a(prev_enabled and 0 or 0x86), false)
+        cx = cx + DS.btn_size + DS.btn_gap
+    end
 
     -- Skip back: text is cleaner and more legible than tiny custom vector arrows.
     place_button("skip_back")
     ass:new_event()
     ass:append(string.format("{\\an5\\fs%d\\b1\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
-                             DS.control_size, DS.font, col_for("skip_back"), a(0)))
+                             DS.control_size, DS.font, col_for("skip_back"), a(can_seek() and 0 or 0x86)))
     ass:pos(cx, row_y)
     ass:append("−" .. tostring(user_opts.jump_amount))
 
@@ -998,10 +1117,10 @@ local function render()
     ass:pos(cx, row_y)
     ass:draw_start()
     if state.pause then
-        local s = DS.btn_size * 0.34
+        local s = DS.icon_size * 0.34
         ass:move_to(-s * 0.62, -s); ass:line_to(s * 0.85, 0); ass:line_to(-s * 0.62, s)
     else
-        local s = DS.btn_size * 0.34
+        local s = DS.icon_size * 0.34
         local bw = s * 0.45
         ass:rect_cw(-s * 0.75, -s, -s * 0.75 + bw, s)
         ass:rect_cw(s * 0.75 - bw, -s, s * 0.75, s)
@@ -1014,18 +1133,20 @@ local function render()
     place_button("skip_fwd")
     ass:new_event()
     ass:append(string.format("{\\an5\\fs%d\\b1\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
-                             DS.control_size, DS.font, col_for("skip_fwd"), a(0)))
+                             DS.control_size, DS.font, col_for("skip_fwd"), a(can_seek() and 0 or 0x86)))
     ass:pos(cx, row_y)
     ass:append("+" .. tostring(user_opts.jump_amount))
 
     cx = cx + DS.btn_size + DS.btn_gap
 
     -- Next queued item. Disabled when this is the end of the queue.
-    place_button("next")
-    local has_next = state.queue_index + 1 < state.queue_count
-    icon_queue_prev_next(ass, cx, row_y,
-                         has_next and col_for("next") or COL.track,
-                         a(has_next and 0 or 0x86), true)
+    if not compact then
+        place_button("next")
+        local has_next = state.queue_index + 1 < state.queue_count
+        icon_queue_prev_next(ass, cx, row_y,
+                             has_next and col_for("next") or COL.track,
+                             a(has_next and 0 or 0x86), true)
+    end
 
     -- Timecodes (position / duration), left cluster
     local pos_txt = format_time(state.time_pos)
@@ -1038,7 +1159,7 @@ local function render()
 
     -- Right cluster (right → left): fullscreen, media info, volume(+slider), subtitle, tracks, speed
     local function place_at(name, bx)
-        hitboxes[name] = { x1 = bx - DS.btn_size / 2, y1 = row_y - DS.btn_size / 2,
+        hitboxes[name] = { x1 = bx - DS.btn_size / 2, y1 = row_y - 10,
                            x2 = bx + DS.btn_size / 2, y2 = row_y + DS.btn_size / 2 }
     end
     local function menu_col(name)
@@ -1053,15 +1174,17 @@ local function render()
                     (state.hovered == "fullscreen") and COL.accent or COL.white, a(0), state.fullscreen)
     rx = rx - (DS.btn_size + DS.btn_gap)
 
-    -- Media info toggle
-    place_at("media_info", rx)
-    ass:new_event()
-    ass:append(string.format("{\\an5\\fs%d\\b1\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
-                             DS.control_size, DS.font,
-                             (state.hovered == "media_info") and COL.accent or COL.white, a(0)))
-    ass:pos(rx, row_y)
-    ass:append("i")
-    rx = rx - (DS.btn_size + DS.btn_gap)
+    if not compact then
+        -- Media info toggle
+        place_at("media_info", rx)
+        ass:new_event()
+        ass:append(string.format("{\\an5\\fs%d\\b1\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
+                                 DS.control_size, DS.font,
+                                 (state.hovered == "media_info") and COL.accent or COL.white, a(0)))
+        ass:pos(rx, row_y)
+        ass:append("i")
+        rx = rx - (DS.btn_size + DS.btn_gap)
+    end
 
     -- Volume speaker
     place_at("volume", rx)
@@ -1073,8 +1196,9 @@ local function render()
     local vs_y  = row_y
     local vs_x2 = rx - DS.btn_size / 2 - 8
     local vs_x1 = vs_x2 - DS.vol_slider_w
-    hitboxes.volslider = { x1 = vs_x1, y1 = vs_y - 10, x2 = vs_x2, y2 = vs_y + 10 }
-    local vfrac = state.mute and 0 or clamp(state.volume / 100, 0, 1)
+    if not compact then
+    hitboxes.volslider = { x1 = vs_x1, y1 = vs_y - 10, x2 = vs_x2, y2 = vs_y + 12 }
+    local vfrac = state.mute and 0 or clamp(state.volume / state.volume_max, 0, 1)
     local vfx = vs_x1 + (vs_x2 - vs_x1) * vfrac
     ass:new_event()
     ass:append(shape_style(COL.white, a(DS.track_alpha)))
@@ -1088,6 +1212,10 @@ local function render()
         ass:pos(0, 0); ass:draw_start(); ass:round_rect_cw(vfx - 5, vs_y - 5, vfx + 5, vs_y + 5, 5); ass:draw_stop()
     end
     rx = vs_x1 - DS.btn_gap - DS.btn_size / 2
+
+    local normal_x = vs_x1 + DS.vol_slider_w * math.min(100 / state.volume_max, 1)
+    ass:new_event(); ass:append(shape_style(COL.white, a(0x40))); ass:pos(0, 0)
+    ass:draw_start(); ass:rect_cw(normal_x - 0.5, vs_y - 4, normal_x + 0.5, vs_y + 4); ass:draw_stop()
 
     -- Subtitles: compact CC label avoids ambiguous glyphs.
     place_at("subtitle", rx)
@@ -1107,25 +1235,72 @@ local function render()
     ass:append("A")
     rx = rx - (DS.btn_size + DS.btn_gap)
 
-    -- Speed (text pill; accent when not 1× or hovered/open)
-    local sp_w = 54
-    hitboxes.speed = { x1 = rx - sp_w / 2, y1 = row_y - DS.btn_size / 2,
-                       x2 = rx + sp_w / 2, y2 = row_y + DS.btn_size / 2 }
-    local spcol = (state.hovered == "speed" or (state.menu.open and state.menu.kind == "speed")
-                   or math.abs(state.speed - 1.0) > 0.01) and COL.accent or COL.white
-    ass:new_event()
-    ass:append(string.format("{\\an5\\fs%d\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
-                             DS.control_size, DS.font, spcol, a(0)))
-    ass:pos(rx, row_y)
-    ass:append(speed_text(state.speed))
+    else
+        rx = rx - (DS.btn_size + DS.btn_gap)
+        place_at("more", rx)
+        ass:new_event()
+        ass:append(string.format("{\\an5\\fs20\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}", DS.font, menu_col("more"), a(0)))
+        ass:pos(rx, row_y); ass:append("⋯")
+        rx = rx - 48
+    end
+
+    -- Keep speed directly available except in the narrowest layout.
+    if not minimal then
+        local sp_w = 44
+        hitboxes.speed = { x1 = rx - sp_w / 2, y1 = row_y - 10,
+                           x2 = rx + sp_w / 2, y2 = row_y + DS.btn_size / 2 }
+        local spcol = (state.hovered == "speed" or (state.menu.open and state.menu.kind == "speed")
+                       or math.abs(state.speed - 1.0) > 0.01) and COL.accent or COL.white
+        ass:new_event()
+        ass:append(string.format("{\\an5\\fs%d\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}",
+                                 DS.control_size, DS.font, spcol, a(0)))
+        ass:pos(rx, row_y)
+        ass:append(speed_text(state.speed))
+    end
 
     -- Popup menu (drawn last so it sits above the bar)
     render_menu(ass, a, W, bar_top)
 
-    overlay.res_x = math.floor(W)
-    overlay.res_y = H
-    overlay.data = ass.text
-    overlay:update()
+    local function pill(text, x, y, max_w)
+        text = fit_text(text, 15, max_w - 24)
+        local width = math.min(max_w, estimate_text_width(text, 15) + 24)
+        x = clamp(x, width / 2 + 8, W - width / 2 - 8)
+        ass:new_event(); ass:append(shape_style(COL.black, a(0x18))); ass:pos(0, 0)
+        ass:draw_start(); ass:round_rect_cw(x - width / 2, y - 16, x + width / 2, y + 16, 6); ass:draw_stop()
+        ass:new_event()
+        ass:append(string.format("{\\an5\\fs15\\bord0\\shad0\\fn%s\\1c&H%s&\\1a&H%02X&}", DS.font, COL.white, a(0)))
+        ass:pos(x, y); ass:append(ass_text(text))
+    end
+    if state.feedback and mp.get_time() < state.feedback_until then
+        pill(state.feedback, W / 2, DS.top_height + 28, W - 40)
+    end
+    if not state.menu.open and state.hovered then
+        local labels = {
+            playpause = state.pause and "Play" or "Pause",
+            prev = (state.time_pos or 0) > 5 and "Restart" or (state.queue_index > 0 and "Previous episode" or "No previous episode"),
+            next = state.queue_index + 1 < state.queue_count and "Next episode" or "No next episode",
+            skip_back = can_seek() and ("Back " .. user_opts.jump_amount .. " seconds") or "Seeking unavailable",
+            skip_fwd = can_seek() and ("Forward " .. user_opts.jump_amount .. " seconds") or "Seeking unavailable",
+            audio = "Audio", subtitle = "Subtitles", speed = "Playback speed", more = "More controls",
+            media_info = "Playback information", fullscreen = state.fullscreen and "Exit fullscreen" or "Enter fullscreen",
+            minimize = "Minimize", maximize = (state.fullscreen or state.window_maximized) and "Restore window" or "Maximize window",
+            close = "Close playback", volume = state.mute and "Unmute" or "Mute",
+            volslider = "Volume " .. math.floor(state.volume + 0.5) .. "%" .. (state.volume > 100 and " · Boost" or ""),
+            seekbar = not can_seek() and "Seeking unavailable" or nil,
+        }
+        local text = labels[state.hovered]
+        local box = hitboxes[state.hovered]
+        if text and box then
+            pill(text, (box.x1 + box.x2) / 2, box.y1 < DS.top_height and DS.top_height + 24 or bar_top - 24, W - 40)
+        end
+    end
+
+    local res_x, res_y = math.floor(W), math.floor(H)
+    if overlay.data ~= ass.text or overlay.res_x ~= res_x or overlay.res_y ~= res_y then
+        overlay.res_x, overlay.res_y = res_x, res_y
+        overlay.data = ass.text
+        overlay:update()
+    end
 end
 
 --------------------------------------------------------------------------------
@@ -1145,7 +1320,7 @@ local function resolve_hover()
         for i = 1, visible_count do names[#names + 1] = "menu_row_" .. i end
     end
     for _, n in ipairs({ "close", "maximize", "minimize", "playpause", "prev", "skip_back", "skip_fwd", "next", "speed", "audio",
-                         "subtitle", "media_info", "fullscreen", "volume", "volslider", "seekbar" }) do
+                         "subtitle", "media_info", "fullscreen", "volume", "volslider", "more", "seekbar" }) do
         names[#names + 1] = n
     end
     for _, name in ipairs(names) do
@@ -1153,6 +1328,10 @@ local function resolve_hover()
             state.hovered = name
             break
         end
+    end
+    if state.menu.open and point_in(hitboxes.menu_area, x, y)
+       and not (state.hovered or ""):match("^menu_") then
+        state.hovered = "menu_area"
     end
     if state.hovered ~= prev then
         if prev == "seekbar" and state.hovered ~= "seekbar" and state.drag ~= "seek" then
@@ -1188,12 +1367,12 @@ local function tick()
     render()
 
     -- Keep ticking while animating or visible (for the auto-hide countdown).
-    if animating or (state.visible and not state.pause) then
+    if animating or state.drag then
         state.tick_timer.timeout = 1 / 60
         state.tick_timer:resume()
     elseif state.visible then
-        -- Paused & idle: slow tick to keep the countdown alive cheaply.
-        state.tick_timer.timeout = 0.25
+        -- Property changes refresh playback; idle UI only checks deadlines.
+        state.tick_timer.timeout = 0.1
         state.tick_timer:resume()
     end
 end
@@ -1217,16 +1396,17 @@ local function update_mouse()
 end
 
 local function do_seek(frac)
-    if not state.duration then return end
+    if not can_seek() then return end
     local flags = user_opts.seek_precise and "absolute+exact" or "absolute+keyframes"
     mp.commandv("seek", state.duration * frac, flags)
+    feedback("Seek to " .. format_time(state.duration * frac))
 end
 
 local function set_volume_from_x(x)
     local box = hitboxes.volslider
     if not box then return end
     local frac = clamp((x - box.x1) / (box.x2 - box.x1), 0, 1)
-    local vol = math.floor(frac * 100 + 0.5)
+    local vol = math.floor(frac * state.volume_max + 0.5)
     mp.set_property_number("volume", vol)
     if state.mute and vol > 0 then mp.set_property_native("mute", false) end
 end
@@ -1236,7 +1416,7 @@ local function on_mouse_move()
     if state.drag == "volume" then
         set_volume_from_x(state.mouse_x)
     end
-    register_activity()
+    if state.mouse_in_window ~= false then register_activity() end
     if state.drag then request_tick() end
 end
 
@@ -1244,7 +1424,13 @@ local function on_mbtn_down()
     update_mouse()
     register_activity()
     local mx, my = state.mouse_x, state.mouse_y
-    if point_in(hitboxes.seekbar, mx, my) then
+    -- Refresh geometry before testing a press, including after auto-hide/resize.
+    if state.opacity <= 0 then state.opacity = 0.001 end
+    render()
+    resolve_hover()
+    state.press_active, state.press_target = true, state.hovered
+    if state.menu.open and point_in(hitboxes.menu_area, mx, my) then return end
+    if point_in(hitboxes.seekbar, mx, my) and can_seek() then
         close_menu()
         state.drag = "seek"
         request_tick()
@@ -1258,6 +1444,9 @@ end
 local function on_mbtn_up()
     update_mouse()
     local mx, my = state.mouse_x, state.mouse_y
+    local pressed, target = state.press_active, state.press_target
+    state.press_active, state.press_target = false, nil
+    resolve_hover()
     if state.drag == "seek" then
         local frac = seekbar_fraction_at(mx)
         if frac then do_seek(frac) end
@@ -1269,6 +1458,7 @@ local function on_mbtn_up()
         request_tick()
         return
     end
+    if pressed and target ~= state.hovered then return end
     -- Click actions. Controls remain clickable while visible, and a click on
     -- the video itself toggles playback. Keep this active when the OSC has
     -- auto-hidden so the video can still be used as a pause/resume surface.
@@ -1291,26 +1481,43 @@ local function on_mbtn_up()
             local box = hitboxes["menu_row_" .. visual]
             local item = box and state.menu.items[box.item_index or visual]
             if item and point_in(box, mx, my) then
-                item.apply()
-                close_menu()
+                apply_menu_item(item)
                 request_tick()
                 return
             end
         end
+        if point_in(hitboxes.menu_area, mx, my) then return end
     end
 
-    if point_in(hitboxes.playpause, mx, my) then
+    if point_in(hitboxes.seekbar, mx, my) then
+        if not can_seek() then feedback("Seeking unavailable") end
+    elseif point_in(hitboxes.playpause, mx, my) then
         mp.commandv("cycle", "pause"); close_menu()
     elseif point_in(hitboxes.prev, mx, my) then
-        if state.queue_index > 0 or ((state.time_pos or 0) > 5) then mp.commandv("script-message", "solfin-prev") end
+        if state.queue_index > 0 or ((state.time_pos or 0) > 5) then
+            mp.commandv("script-message", "solfin-prev")
+            feedback((state.time_pos or 0) > 5 and "Restart" or "Previous episode")
+        else feedback("No previous episode") end
         close_menu()
     elseif point_in(hitboxes.skip_back, mx, my) then
-        mp.commandv("seek", -user_opts.jump_amount, "relative+exact"); close_menu()
-    elseif point_in(hitboxes.skip_fwd, mx, my) then
-        mp.commandv("seek", user_opts.jump_amount, "relative+exact"); close_menu()
-    elseif point_in(hitboxes.next, mx, my) then
-        if state.queue_index + 1 < state.queue_count then mp.commandv("script-message", "solfin-next") end
+        if can_seek() then
+            mp.commandv("seek", -user_opts.jump_amount, "relative+exact")
+            feedback("−" .. user_opts.jump_amount .. " seconds")
+        else feedback("Seeking unavailable") end
         close_menu()
+    elseif point_in(hitboxes.skip_fwd, mx, my) then
+        if can_seek() then
+            mp.commandv("seek", user_opts.jump_amount, "relative+exact")
+            feedback("+" .. user_opts.jump_amount .. " seconds")
+        else feedback("Seeking unavailable") end
+        close_menu()
+    elseif point_in(hitboxes.next, mx, my) then
+        if state.queue_index + 1 < state.queue_count then
+            mp.commandv("script-message", "solfin-next"); feedback("Next episode")
+        else feedback("No next episode") end
+        close_menu()
+    elseif point_in(hitboxes.more, mx, my) then
+        open_menu("more")
     elseif point_in(hitboxes.audio, mx, my) then
         open_menu("audio")
     elseif point_in(hitboxes.subtitle, mx, my) then
@@ -1339,6 +1546,9 @@ local function on_mbtn_up()
     elseif state.menu.open and not point_in(hitboxes.menu_area, mx, my) then
         -- Click outside the open panel dismisses it without also toggling
         -- playback.
+        close_menu()
+    elseif my >= state.osd_h * state.scale - DS.bar_height or my <= DS.top_height then
+        -- Empty chrome is not a playback surface.
         close_menu()
     else
         -- Any unclaimed left click is on the video frame. This deliberately
@@ -1373,6 +1583,23 @@ mp.set_key_bindings({
 }, "solfin-osc-mouse", "force")
 mp.enable_key_bindings("solfin-osc-mouse", "allow-vo-dragging+allow-hide-cursor")
 
+local function menu_step(delta)
+    if not state.menu.open or #state.menu.items == 0 then return end
+    local count = #state.menu.items
+    state.menu_focus = clamp((state.menu_focus or (delta > 0 and 0 or count + 1)) + delta, 1, count)
+    local visible = state.menu.visible_count or count
+    if state.menu_focus <= state.menu.scroll then state.menu.scroll = state.menu_focus - 1 end
+    if state.menu_focus > state.menu.scroll + visible then state.menu.scroll = state.menu_focus - visible end
+    register_activity()
+end
+mp.set_key_bindings({
+    {"ESC", close_menu},
+    {"UP", function() menu_step(-1) end},
+    {"DOWN", function() menu_step(1) end},
+    {"ENTER", function() apply_menu_item(state.menu.items[state.menu_focus or 1]) end},
+}, "solfin-osc-menu", "force")
+mp.disable_key_bindings("solfin-osc-menu")
+
 -- Pointer movement (fires the OSC show + hover).
 mp.observe_property("mouse-pos", "native", function(_, val)
     if type(val) == "table" then
@@ -1396,6 +1623,7 @@ mp.observe_property("osd-dimensions", "native", function(_, dim)
 end)
 
 mp.observe_property("pause", "bool", function(_, v)
+    if state.pause ~= (v == true) then feedback(v and "Paused" or "Playing") end
     state.pause = (v == true)
     if state.pause then register_activity() end   -- reveal controls when paused
     request_tick()
@@ -1413,22 +1641,31 @@ end)
 
 mp.observe_property("seekable", "bool", function(_, v)
     state.seekable = (v == true)
+    if not state.seekable then state.drag = nil; clear_thumb() end
+    request_tick()
 end)
 
 mp.observe_property("speed", "number", function(_, v)
+    local changed = v and state.speed ~= v
     state.speed = v or 1.0
+    if changed then feedback("Speed " .. speed_text(state.speed)) end
     if state.visible then request_tick() end
 end)
 
 mp.observe_property("volume", "number", function(_, v)
-    if v then state.volume = v; if state.visible then request_tick() end end
+    if v then
+        if state.volume ~= v then feedback("Volume " .. math.floor(v + 0.5) .. "%" .. (v > 100 and " · Boost" or "")) end
+        state.volume = v
+        if state.visible then request_tick() end
+    end
 end)
 
 mp.observe_property("volume-max", "number", function(_, v)
-    if v and v > 0 then state.volume_max = v end
+    if v and v > 0 then state.volume_max = v; request_tick() end
 end)
 
 mp.observe_property("mute", "bool", function(_, v)
+    if state.mute ~= (v == true) then feedback(v and "Muted" or "Unmuted") end
     state.mute = (v == true); request_tick()
 end)
 
@@ -1444,7 +1681,15 @@ mp.observe_property("media-title", "string", function(_, v)
     state.title = v or ""; request_tick()
 end)
 
+mp.observe_property("sub-pos", "number", function(_, v)
+    if v and v ~= state.subtitle_applied then
+        state.subtitle_base, state.subtitle_applied = v, v
+        request_tick()
+    end
+end)
+
 mp.register_event("shutdown", function()
+    if state.subtitle_base then mp.set_property_number("sub-pos", state.subtitle_base) end
     clear_thumb()
     clear_logo()
 end)
@@ -1462,8 +1707,7 @@ mp.register_script_message("solfin-queue", function(index, count)
     request_tick()
 end)
 
--- thumbfast's managed gate becomes eligible after file-loaded; actual worker
--- startup still waits until the first seekbar hover.
+-- The managed thumbfast worker prewarms after file-loaded; OSC only requests frames.
 mp.register_event("end-file", clear_thumb)
 mp.register_script_message("thumbfast-info", function(json)
     local data = utils.parse_json(json)
