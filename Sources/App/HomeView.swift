@@ -695,8 +695,9 @@ private final class CarouselScrollWheelView: NSView {
                 return event
             }
 
-            let delta = abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY)
-                ? event.scrollingDeltaX : event.scrollingDeltaY
+            // The hero owns horizontal gestures only; vertical gestures continue
+            // scrolling the home page beneath it.
+            let delta = event.scrollingDeltaX
             guard abs(delta) > 0.1 else { return event }
 
             let now = Date()
@@ -704,7 +705,7 @@ private final class CarouselScrollWheelView: NSView {
                 self.lastAdvance = now
                 self.onScroll?(delta)
             }
-            // Only while hovering the hero does its wheel gesture control the carousel.
+            // Only consume horizontal gestures while hovering the hero.
             return nil
         }
     }
