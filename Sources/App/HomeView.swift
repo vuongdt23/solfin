@@ -50,10 +50,9 @@ struct HomeView: View {
 
     private var content: some View {
         GeometryReader { viewport in
-            // Keep the home canvas pannable on both axes. Featured artwork and
-            // wide shelves can exceed the viewport on compact windows; the
-            // horizontal axis lets users reach that content instead of clipping it.
-            ScrollView([.horizontal, .vertical], showsIndicators: true) {
+            // The page scrolls vertically; each media shelf owns its own
+            // horizontal scroll area so shelf width never changes the hero width.
+            ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 0) {
                     if !featured.isEmpty {
                         FeaturedMediaBar(items: featured,
