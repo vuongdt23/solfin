@@ -211,13 +211,9 @@ struct ItemDetailView: View {
     @ViewBuilder private func backdrop(_ item: BaseItem, size: CGSize) -> some View {
         if let url = backdropURL(item) {
             ZStack {
-                // Constrain both image layers explicitly. The sharp layer contains the
-                // entire backdrop; only the soft edge extension is allowed to crop.
-                CachedImage(url: url, contentMode: .fill)
-                    .frame(width: size.width, height: size.height)
-                    .clipped()
-                    .blur(radius: 28)
-                    .opacity(0.6)
+                // Keep the original composition intact. A blurred aspect-fill duplicate
+                // makes edge characters look like a second, aggressively cropped image.
+                Color.black
                 CachedImage(url: url, contentMode: .fit)
                     .frame(width: size.width, height: size.height)
             }
@@ -225,8 +221,7 @@ struct ItemDetailView: View {
             .clipped()
         } else if let poster = appState.api.playablePosterURL(for: item, maxHeight: nil) {
             ZStack {
-                CachedImage(url: poster)
-                    .frame(width: size.width, height: size.height).clipped().blur(radius: 24).scaleEffect(1.08)
+                Color.black
                 CachedImage(url: poster, contentMode: .fit)
                     .frame(width: size.width, height: max(1, size.height - 80))
             }

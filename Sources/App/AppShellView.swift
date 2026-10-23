@@ -47,20 +47,15 @@ struct AppShellView: View {
                                     : AnyView(SolfinDesign.solarBackground))
         .preferredColorScheme(.dark)
         .toolbarBackground(.hidden, for: .windowToolbar)
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        .overlay(alignment: .bottom) {
             if nowPlaying.isActive {
                 NowPlayingBar()
                     .frame(maxWidth: 1180)
                     .padding(.horizontal, 24)
-                    .padding(.vertical, 12)
+                    .padding(.bottom, 18)
                     .frame(maxWidth: .infinity)
-                    .background {
-                        SolfinDesign.spaceBlack.opacity(0.96)
-                            .overlay(alignment: .top) {
-                                Rectangle().fill(.white.opacity(0.1)).frame(height: 1)
-                            }
-                            .ignoresSafeArea(edges: .bottom)
-                    }
+                    .zIndex(2)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .overlay(alignment: .center) {

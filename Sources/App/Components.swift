@@ -480,8 +480,17 @@ struct NowPlayingBar: View {
             .popover(isPresented: $showMediaInfo) { MediaInfoView() }
             .padding(12)
             .foregroundStyle(.white.opacity(0.88))
-            .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 16))
-            .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.12)) }
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(SolfinDesign.spaceBlack.opacity(0.22))
+                    .allowsHitTesting(false)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(.white.opacity(0.16))
+                    .allowsHitTesting(false)
+            }
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
