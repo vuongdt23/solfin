@@ -2,8 +2,7 @@
 --
 -- Pointer-first, web/VLC-like OSC written from scratch for mpv. This replaces the
 -- vendored ModernZ script. mpv.conf sets `osc=no` so this script owns all on-screen
--- drawing. It is intentionally self-contained: no external dependencies in Phase 1
--- (thumbnails via thumbfast arrive in a later phase).
+-- drawing. Seek previews use Solfin's patched thumbfast worker.
 --
 -- Coordinate system
 -- -----------------
@@ -115,7 +114,7 @@ local state = {
     queue_index  = 0,              -- zero-based index supplied by Solfin
     queue_count  = 1,
     menu         = { open = false, kind = nil, items = {}, scroll = 0 },  -- popup track/settings menu
-    thumbfast    = nil,            -- {width,height,disabled,available} from thumbfast-info
+    thumbfast    = nil,            -- worker dimensions/availability
     thumb_shown  = false,          -- whether we currently have a thumbnail requested
     logo_shown   = false,          -- whether the top-bar logo overlay is currently visible
     logo_draw    = nil,            -- last rendered logo geometry/path to avoid overlay spam
@@ -706,37 +705,32 @@ local function close_menu()
 end
 
 --------------------------------------------------------------------------------
--- thumbfast integration (companion script draws the actual thumbnail overlay)
+-- Thumbfast integration (patched worker draws its own companion overlay)
 --------------------------------------------------------------------------------
 
 local function thumb_usable()
     local tf = state.thumbfast
-    return tf and tf.available and not tf.disabled and tf.width and tf.width > 0
+    return tf and tf.available and not tf.disabled and (tf.width or 0) > 0 and (tf.height or 0) > 0
 end
 
 local function thumb_virtual_size()
     local tf = state.thumbfast
     if not tf then return 0, 0 end
-    -- thumbfast-info dimensions are already display dimensions (scale_factor applied).
-    return (tf.width or 0) * state.scale, (tf.height or 0) * state.scale
+    return tf.width * state.scale, tf.height * state.scale
+end
+
+clear_thumb = function()
+    if state.thumb_shown then mp.commandv("script-message-to", "thumbfast", "clear") end
+    state.thumb_shown = false
 end
 
 local function request_thumb(time, x_v, top_v)
     local rx = math.floor(to_real(x_v) + 0.5)
     local ry = math.floor(to_real(top_v) + 0.5)
-    -- Do not pass our script name here. With explicit x/y coordinates thumbfast draws
-    -- using mpv's overlay API itself; if a script name is also supplied, thumbfast's
-    -- clear() path assumes an external renderer owns the image and skips overlay-remove.
+    -- Explicit coordinates: thumbfast uses mpv's raw overlay API directly.
     mp.commandv("script-message-to", "thumbfast", "thumb",
                 tostring(time), tostring(rx), tostring(ry))
     state.thumb_shown = true
-end
-
-clear_thumb = function()
-    if state.thumb_shown then
-        mp.commandv("script-message-to", "thumbfast", "clear")
-        state.thumb_shown = false
-    end
 end
 
 local function render()
@@ -801,7 +795,7 @@ local function render()
                       (state.hovered == "minimize") and COL.accent or COL.white, a(0))
         icon_window(ass, maxx, top_y,
                     (state.hovered == "maximize") and COL.accent or COL.white, a(0),
-                    state.window_maximized)
+                    state.fullscreen or state.window_maximized)
         icon_close(ass, clx, top_y,
                    (state.hovered == "close") and COL.accent or COL.white, a(0))
     end
@@ -923,9 +917,8 @@ local function render()
         local tx = clamp(hx, sb_x1 + tw / 2, sb_x2 - tw / 2)
         local ty = sb_y - 22 - th
 
-        -- Thumbnail frame above the pill (thumbfast overlays the image on top).
+        -- Thumbnail frame above the pill, only once the requested sheet is ready.
         if thumb_usable() then
-            local tf = state.thumbfast
             local border = 3
             local tw_v, th_v = thumb_virtual_size()
             local cx_v = clamp(hx, sb_x1 + tw_v / 2 + border, sb_x2 - tw_v / 2 - border)
@@ -940,7 +933,6 @@ local function render()
             ass:draw_start()
             ass:round_rect_cw(fx1, ft, fx1 + tw_v + border * 2, fb, 8)
             ass:draw_stop()
-
             request_thumb(ht, cx_v - tw_v / 2, ft + border)
         else
             clear_thumb()
@@ -1334,7 +1326,14 @@ local function on_mbtn_up()
     elseif point_in(hitboxes.minimize, mx, my) then
         mp.set_property_native("window-minimized", true); close_menu()
     elseif point_in(hitboxes.maximize, mx, my) then
-        mp.commandv("cycle", "window-maximized"); close_menu()
+        -- macOS ignores window zoom while in native fullscreen. Restore out of
+        -- fullscreen first; only toggle zoom when already in a normal window.
+        if state.fullscreen then
+            mp.set_property_native("fullscreen", false)
+        else
+            mp.commandv("cycle", "window-maximized")
+        end
+        close_menu()
     elseif point_in(hitboxes.close, mx, my) then
         mp.commandv("quit")
     elseif state.menu.open and not point_in(hitboxes.menu_area, mx, my) then
@@ -1463,13 +1462,12 @@ mp.register_script_message("solfin-queue", function(index, count)
     request_tick()
 end)
 
--- thumbfast announces its thumbnail dimensions / availability here.
+-- thumbfast's managed gate becomes eligible after file-loaded; actual worker
+-- startup still waits until the first seekbar hover.
+mp.register_event("end-file", clear_thumb)
 mp.register_script_message("thumbfast-info", function(json)
     local data = utils.parse_json(json)
-    if type(data) == "table" then
-        state.thumbfast = data
-        request_tick()
-    end
+    if type(data) == "table" then state.thumbfast = data; request_tick() end
 end)
 
 mp.observe_property("demuxer-cache-state", "native", function(_, val)

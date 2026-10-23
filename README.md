@@ -35,7 +35,7 @@ state (resume points, watched status) in sync.
   path.
 - **Bespoke pointer-first OSC** (`scripts/solfin-osc.lua`) — a web/VLC-style controller
   built for solfin: gradient scrims, chapter markers, buffered range, hover **thumbnail
-  previews** (via bundled [thumbfast](https://github.com/po5/thumbfast)), audio/subtitle
+  previews** (patched thumbfast worker), audio/subtitle
   track menus, a prominent **playback-speed** control (1.5× a tap away), volume slider, and
   a top title bar — tuned to Solfin's solar orange accent and tiny sun seek-handle motif in the **Inter** UI font. Real media titles
   shown via `--force-media-title`.
@@ -117,9 +117,14 @@ SOLFIN_USER=you SOLFIN_PASS=secret "$PROBE" play <itemId>
 
 - **mpv config** lives in `Resources/mpv/` (bundled into the app and passed via
   `--config-dir`): `mpv.conf`, `input.conf`, the bespoke OSC (`scripts/solfin-osc.lua` +
-  `script-opts/solfin-osc.conf`), the thumbnail engine (`scripts/thumbfast.lua` +
-  `script-opts/thumbfast.conf`), and the `fonts/Inter.ttf` UI font. Edit these to change
+  `script-opts/solfin-osc.conf`), the Solfin thumbfast fork (`scripts/thumbfast.lua`,
+  `script-modules/thumbfast-worker.lua`, `script-opts/thumbfast.conf`), and the
+  `fonts/Inter.ttf` UI font. Edit these to change
   OSD look, scalers, cache, subtitle styling, or key bindings; rebuild to re-bundle.
+- **Seek previews** use the patched thumbfast worker for all media. The worker
+  prewarms after the media file loads so hover doesn't wait for process startup;
+  this uses a second stream/decoder during playback. Jellyfin trickplay is not
+  required. See [preview and fork notes](tools/THUMBNAILS.md).
 - **mpv binary path** can be overridden (`solfin.mpvPath` in `UserDefaults`); no Settings
   UI yet.
 
@@ -130,7 +135,7 @@ solfin/
 ├─ project.yml                 XcodeGen spec
 ├─ Sources/{JellyfinKit,PlaybackEngine,App,Probe}/
 ├─ Tests/                      XCTest suites
-├─ Resources/mpv/              mpv.conf, input.conf, solfin-osc + thumbfast + Inter
+├─ Resources/mpv/              mpv.conf, input.conf, solfin-osc + thumbfast fork + Inter
 └─ Resources/Assets.xcassets/  AppIcon
 ```
 
@@ -152,15 +157,17 @@ solfin stands on excellent open-source work:
 - **[mpv](https://mpv.io)** — the media player that does the actual playback (run as an
   external process). GPLv2+/LGPL.
 - **[Jellyfin](https://jellyfin.org)** — the free software media server and its REST API.
-- **[thumbfast](https://github.com/po5/thumbfast)** by po5 — the on-the-fly thumbnail
-  engine the OSC uses for seek previews (MPL-2.0). The `solfin-osc.lua` controller itself is
-  original to solfin, in the lineage of mpv's `osc.lua` (LGPLv2.1).
+- The `solfin-osc.lua` controller is original to solfin, in the lineage of mpv's
+  `osc.lua` (LGPLv2.1).
+- **[thumbfast](https://github.com/po5/thumbfast)** by po5 — Solfin bundles a locally
+  maintained MPL-2.0 fork as the fallback thumbnail engine, not an unmodified
+  upstream script. Local patches are documented in its header and `tools/THUMBNAILS.md`.
 - **[Inter](https://rsms.me/inter/)** by Rasmus Andersson — the bundled UI font (SIL OFL-1.1;
   full text in `Resources/mpv/fonts/Inter-OFL.txt`).
 - **[XcodeGen](https://github.com/yonaskolb/XcodeGen)** by Yonas Kolb — project generation.
 
 Please consult each project's license for terms. solfin ships mpv config scripts
-(`solfin-osc.lua`, `thumbfast.lua`) and the Inter font inside its app bundle; it does not
+(`solfin-osc.lua`, the thumbfast fork and its worker helper) and the Inter font inside its app bundle; it does not
 link mpv (it spawns the binary).
 
 ## License

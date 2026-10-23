@@ -3,6 +3,14 @@
 -- High-performance on-the-fly thumbnailer
 --
 -- Built for easy integration in third-party UIs.
+--
+-- SOLFIN FORK of https://github.com/po5/thumbfast (MPL-2.0, retained below).
+-- Not an unmodified upstream copy: do not overwrite when updating thumbfast.
+-- Local changes: macOS Lua mailbox instead of shell/chmod/tail, generation-scoped
+-- worker handles/files, bounded crash/stall recovery, coalesced HTTP keyframe
+-- seeks, and managed worker prewarming after the primary media file has opened.
+-- The companion script-modules/thumbfast-worker.lua is part of this fork.
+-- See tools/THUMBNAILS.md for maintenance notes and regression commands.
 
 --[[
 This Source Code Form is subject to the terms of the Mozilla Public
@@ -51,7 +59,10 @@ local options = {
     direct_io = false,
 
     -- Custom path to the mpv executable
-    mpv_path = "mpv"
+    mpv_path = "mpv",
+
+    -- Solfin OSC enables this after the playback file has loaded.
+    solfin_managed = false
 }
 
 mp.utils = require "mp.utils"
@@ -59,6 +70,8 @@ mp.options = require "mp.options"
 mp.options.read_options(options, "thumbfast")
 
 local properties = {}
+local os_name
+local enabled = not options.solfin_managed
 local pre_0_30_0 = mp.command_native_async == nil
 local pre_0_33_0 = true
 local support_media_control = mp.get_property_native("media-controls") ~= nil
@@ -68,7 +81,7 @@ function subprocess(args, async, callback)
 
     if not pre_0_30_0 then
         -- FIXME: figure out which exact env var needs to be stripped. (PR: #144, Issue: #106 and #139)
-        local env = os_name == "darwin" and "PATH="..os.getenv("PATH") or nil
+        local env = os_name == "darwin" and {"PATH="..(os.getenv("PATH") or "/usr/bin:/bin")} or nil
         if async then
             return mp.command_native_async({name = "subprocess", playback_only = true, args = args, env = env}, callback)
         else
@@ -140,9 +153,14 @@ local file_bytes = 0
 local spawned = false
 local disabled = false
 local force_disabled = false
-local spawn_waiting = false
-local spawn_working = false
 local script_written = false
+local worker_id
+local worker_generation = 0
+local pending_since
+local retry_at = 0
+local failures = 0
+local worker_timeout = 20
+local max_failures = 3
 
 local dirty = false
 
@@ -239,9 +257,7 @@ local function get_os()
     return str_os_name
 end
 
-local os_name = mp.get_property("platform") or get_os()
-
-local path_separator = os_name == "windows" and "\\" or "/"
+os_name = mp.get_property("platform") or get_os()
 
 if options.socket == "" then
     if os_name == "windows" then
@@ -263,6 +279,8 @@ local unique = mp.utils.getpid()
 
 options.socket = options.socket .. unique
 options.thumbnail = options.thumbnail .. unique
+local socket_base, thumbnail_base = options.socket, options.thumbnail
+local worker_script = mp.command_native({"expand-path", "~~/script-modules/thumbfast-worker.lua"})
 
 if options.direct_io then
     if os_name == "windows" then
@@ -406,7 +424,7 @@ local function info(w, h)
         (properties["demuxer-via-network"] and not options.network) or
         (albumart and not options.audio) or
         (image and not albumart) or
-        force_disabled
+        force_disabled or not enabled
 
     if info_timer then
         info_timer:kill()
@@ -431,12 +449,38 @@ local function remove_thumbnail_files()
     end
     os.remove(options.thumbnail)
     os.remove(options.thumbnail..".bgra")
+    os.remove(options.thumbnail..".tmp")
+end
+
+local function stop_worker()
+    -- Invalidate callbacks before aborting: old exits cannot reset a new worker.
+    worker_generation = worker_generation + 1
+    if worker_id then mp.abort_async_command(worker_id); worker_id = nil end
+    spawned = false
+    pending_since = nil
+    remove_thumbnail_files()
+    if os_name == "darwin" then os.remove(options.socket) end
+    real_w, real_h = nil, nil
+end
+
+local function worker_failed()
+    stop_worker()
+    failures = failures + 1
+    retry_at = mp.get_time() + failures
+    options.tone_mapping = "no"
+    mp.msg.warn("thumbnail worker failed or timed out (attempt "..failures.."/"..max_failures..")")
+    if failures >= max_failures then
+        force_disabled = true
+        file_timer:kill()
+        info(effective_w, effective_h)
+    end
+    mp.commandv("overlay-remove", options.overlay_id)
 end
 
 local activity_timer
 
 local function spawn(time)
-    if disabled then return end
+    if disabled or not enabled then return end
 
     local path = properties["path"]
     if path == nil then return end
@@ -455,6 +499,13 @@ local function spawn(time)
     end
 
     remove_thumbnail_files()
+    worker_generation = worker_generation + 1
+    local generation = worker_generation
+    if os_name == "darwin" then
+        options.socket = socket_base.."-"..generation
+        options.thumbnail = thumbnail_base.."-"..generation
+    end
+    local worker_thumbnail, worker_socket = options.thumbnail, options.socket
 
     local vid = properties["vid"]
     has_vid = vid or 0
@@ -464,7 +515,7 @@ local function spawn(time)
         "--load-scripts=no", "--osc=no", "--ytdl=no", "--load-stats-overlay=no", "--load-osd-console=no", "--load-auto-profiles=no",
         "--edition="..(properties["edition"] or "auto"), "--vid="..(vid or "auto"), "--no-sub", "--no-audio",
         "--start="..time, allow_fast_seek and "--hr-seek=no" or "--hr-seek=yes",
-        "--ytdl-format=worst", "--demuxer-readahead-secs=0", "--demuxer-max-bytes=128KiB",
+        "--ytdl-format=worst", "--demuxer-readahead-secs=0", "--demuxer-max-bytes=4MiB", "--network-timeout=10",
         "--vd-lavc-skiploopfilter=all", "--vd-lavc-software-fallback=1", "--vd-lavc-fast", "--vd-lavc-threads=2", "--hwdec="..(options.hwdec and "auto" or "no"),
         "--vf="..vf_string(filters_all, true),
         "--sws-scaler=fast-bilinear",
@@ -484,7 +535,14 @@ local function spawn(time)
         table.insert(args, "--macos-app-activation-policy=accessory")
     end
 
-    if os_name == "windows" or pre_0_33_0 then
+    if os_name == "darwin" then
+        -- Create before launch; preserve seeks sent while HTTP startup is busy.
+        local mailbox = io.open(options.socket, "w")
+        if not mailbox then worker_failed(); return end
+        mailbox:close()
+        table.insert(args, "--scripts="..worker_script)
+        table.insert(args, "--script-opts=solfin-thumbfast-mailbox="..options.socket)
+    elseif os_name == "windows" or pre_0_33_0 then
         table.insert(args, "--input-ipc-server="..options.socket)
     elseif not script_written then
         local client_script_path = options.socket..".run"
@@ -496,7 +554,7 @@ local function spawn(time)
             script_written = true
             script:write(string.format(client_script, options.socket))
             script:close()
-            subprocess({"chmod", "+x", client_script_path}, true)
+            subprocess({"chmod", "+x", client_script_path}, false)
             table.insert(args, "--scripts="..client_script_path)
         end
     else
@@ -508,51 +566,20 @@ local function spawn(time)
     table.insert(args, path)
 
     spawned = true
-    spawn_waiting = true
-
-    subprocess(args, true,
-        function(success, result)
-            if spawn_waiting and (success == false or (result.status ~= 0 and result.status ~= -2)) then
-                spawned = false
-                spawn_waiting = false
-                options.tone_mapping = "no"
-                mp.msg.error("mpv subprocess create failed")
-                if not spawn_working then -- notify users of required configuration
-                    if options.mpv_path == "mpv" then
-                        if properties["current-vo"] == "libmpv" then
-                            if options.mpv_path == mpv_path then -- attempt to locate ImPlay
-                                mpv_path = "ImPlay"
-                                spawn(time)
-                            else -- ImPlay not in path
-                                if os_name ~= "darwin" then
-                                    force_disabled = true
-                                    info(real_w or effective_w, real_h or effective_h)
-                                end
-                                mp.commandv("show-text", "thumbfast: ERROR! cannot create mpv subprocess", 5000)
-                                mp.commandv("script-message-to", "implay", "show-message", "thumbfast initial setup", "Set mpv_path=PATH_TO_ImPlay in thumbfast config:\n" .. string.gsub(mp.command_native({"expand-path", "~~/script-opts/thumbfast.conf"}), "[/\\]", path_separator).."\nand restart ImPlay")
-                            end
-                        else
-                            mp.commandv("show-text", "thumbfast: ERROR! cannot create mpv subprocess", 5000)
-                            if os_name == "windows" and frontend_path == nil then
-                                mp.commandv("script-message-to", "mpvnet", "show-text", "thumbfast: ERROR! install standalone mpv, see README", 5000, 20)
-                                mp.commandv("script-message", "mpv.net", "show-text", "thumbfast: ERROR! install standalone mpv, see README", 5000, 20)
-                            end
-                        end
-                    else
-                        mp.commandv("show-text", "thumbfast: ERROR! cannot create mpv subprocess", 5000)
-                        -- found ImPlay but not defined in config
-                        mp.commandv("script-message-to", "implay", "show-message", "thumbfast", "Set mpv_path=PATH_TO_ImPlay in thumbfast config:\n" .. string.gsub(mp.command_native({"expand-path", "~~/script-opts/thumbfast.conf"}), "[/\\]", path_separator).."\nand restart ImPlay")
-                    end
-                end
-            elseif success == true and (result.status == 0 or result.status == -2) then
-                if not spawn_working and properties["current-vo"] == "libmpv" and options.mpv_path ~= mpv_path then
-                    mp.commandv("script-message-to", "implay", "show-message", "thumbfast initial setup", "Set mpv_path=ImPlay in thumbfast config:\n" .. string.gsub(mp.command_native({"expand-path", "~~/script-opts/thumbfast.conf"}), "[/\\]", path_separator).."\nand restart ImPlay")
-                end
-                spawn_working = true
-                spawn_waiting = false
-            end
+    pending_since = mp.get_time()
+    worker_id = subprocess(args, true, function()
+        if generation ~= worker_generation then
+            -- Aborted workers can finish writing after stop_worker cleaned up.
+            os.remove(worker_thumbnail)
+            os.remove(worker_thumbnail..".tmp")
+            os.remove(worker_thumbnail..".bgra")
+            if os_name == "darwin" then os.remove(worker_socket) end
+            return
         end
-    )
+        worker_id = nil
+        worker_failed() -- even a clean exit is unexpected for an owned worker
+    end)
+    info(effective_w, effective_h)
 end
 
 local function run(command)
@@ -581,7 +608,7 @@ local function run(command)
         if not file then
             file = io.open("\\\\.\\pipe\\"..options.socket, "r+b")
         end
-    elseif pre_0_33_0 then
+    elseif pre_0_33_0 and os_name ~= "darwin" then
         subprocess({"/usr/bin/env", "sh", "-c", "echo '" .. command .. "' | socat - " .. options.socket})
         return
     elseif not file then
@@ -651,7 +678,7 @@ local function seek(fast)
     end
 end
 
-local seek_period = 3/60
+local seek_period = 0.15
 local seek_period_counter = 0
 local seek_timer
 seek_timer = mp.add_periodic_timer(seek_period, function()
@@ -660,23 +687,18 @@ seek_timer = mp.add_periodic_timer(seek_period, function()
         seek_period_counter = 1
     else
         if seek_period_counter == 2 then
-            if allow_fast_seek then
-                seek_timer:kill()
-                seek()
-            end
+            seek_timer:kill()
+            -- Avoid decoding an entire GOP for an exact HTTP refinement.
+            if allow_fast_seek and not properties["demuxer-via-network"] then seek() end
         else seek_period_counter = seek_period_counter + 1 end
     end
 end)
 seek_timer:kill()
 
 local function request_seek()
-    if seek_timer:is_enabled() then
-        seek_period_counter = 0
-    else
-        seek_timer:resume()
-        seek(allow_fast_seek)
-        seek_period_counter = 1
-    end
+    if not pending_since then pending_since = mp.get_time() end
+    seek_period_counter = 0
+    if not seek_timer:is_enabled() then seek_timer:resume() end
 end
 
 local function check_new_thumb()
@@ -688,9 +710,10 @@ local function check_new_thumb()
     move_file(options.thumbnail, tmp)
     local finfo = mp.utils.file_info(tmp)
     if not finfo then return false end
-    spawn_waiting = false
     local w, h = real_res(effective_w, effective_h, finfo.size)
     if w then -- only accept valid thumbnails
+        pending_since = nil
+        failures = 0
         move_file(tmp, options.thumbnail..".bgra")
 
         real_w, real_h = w, h
@@ -708,8 +731,14 @@ local function check_new_thumb()
 end
 
 file_timer = mp.add_periodic_timer(file_check_period, function()
-    if check_new_thumb() then
+    if enabled and not spawned and not force_disabled and mp.get_time() >= retry_at and last_seek_time then
+        spawn(last_seek_time)
+        request_seek()
+    end
+    if spawned and check_new_thumb() then
         draw(real_w, real_h, script_name)
+    elseif pending_since and mp.get_time() - pending_since >= worker_timeout then
+        worker_failed()
     end
 end)
 file_timer:kill()
@@ -724,6 +753,7 @@ local function clear()
         activity_timer:resume()
     end
     last_seek_time = nil
+    pending_since = nil
     show_thumbnail = false
     last_x = nil
     last_y = nil
@@ -741,17 +771,16 @@ local function quit()
         activity_timer:resume()
         return
     end
-    run("quit")
-    spawned = false
-    real_w, real_h = nil, nil
+    stop_worker()
     clear()
+    activity_timer:kill()
 end
 
 activity_timer = mp.add_timeout(options.quit_after_inactivity, quit)
 activity_timer:kill()
 
 local function thumb(time, r_x, r_y, script)
-    if disabled then return end
+    if disabled or not enabled then return end
 
     time = tonumber(time)
     if time == nil then return end
@@ -776,9 +805,12 @@ local function thumb(time, r_x, r_y, script)
         activity_timer:resume()
     end
 
+    local duration = properties["duration"]
+    time = math.max(0, math.min(time, duration and math.max(0, duration - 0.1) or time))
+    if properties["demuxer-via-network"] then time = math.floor(time) end
     if time == last_seek_time then return end
     last_seek_time = time
-    if not spawned then spawn(time) end
+    if not spawned and mp.get_time() >= retry_at then spawn(time) end
     request_seek()
     if not file_timer:is_enabled() then file_timer:resume() end
 end
@@ -812,9 +844,8 @@ local function watch_changes()
         if resized then
             -- mpv doesn't allow us to change output size
             local seek_time = last_seek_time
-            run("quit")
+            stop_worker()
             clear()
-            spawned = false
             spawn(seek_time or mp.get_property_number("time-pos", 0))
             file_timer:resume()
         else
@@ -891,8 +922,11 @@ local function sync_changes(prop, val)
 end
 
 local function file_load()
+    stop_worker()
     clear()
-    spawned = false
+    failures = 0
+    retry_at = 0
+    force_disabled = false
     real_w, real_h = nil, nil
     last_real_w, last_real_h = nil, nil
     last_tone_mapping = nil
@@ -907,8 +941,7 @@ local function file_load()
 end
 
 local function shutdown()
-    run("quit")
-    remove_thumbnail_files()
+    stop_worker()
     if os_name ~= "windows" then
         os.remove(options.socket)
         os.remove(options.socket..".run")
@@ -947,7 +980,37 @@ mp.observe_property("duration", "native", on_duration)
 mp.register_script_message("thumb", thumb)
 mp.register_script_message("clear", clear)
 
-mp.register_event("file-loaded", file_load)
+-- In Solfin-managed mode, start the worker after the playback file is loaded
+-- so its HTTP connection and first decoded frame are warm before hover.
+mp.register_event("start-file", function()
+    if options.solfin_managed then enabled = false end
+    stop_worker()
+    clear()
+    activity_timer:kill()
+    info(effective_w, effective_h)
+end)
+mp.register_event("end-file", function()
+    if options.solfin_managed then enabled = false end
+    stop_worker()
+    clear()
+    activity_timer:kill()
+end)
+mp.register_event("file-loaded", function()
+    file_load()
+    if options.solfin_managed then
+        enabled = true
+        info(effective_w, effective_h)
+        if options.spawn_first then
+            -- Let mpv publish output dimensions and resume its initial seek first.
+            mp.add_timeout(0.25, function()
+                if not spawned and not disabled and enabled then
+                    spawn(mp.get_property_number("time-pos", 0))
+                    if spawned then file_timer:resume() end
+                end
+            end)
+        end
+    end
+end)
 mp.register_event("shutdown", shutdown)
 
 mp.register_idle(watch_changes)
