@@ -484,8 +484,13 @@ struct NowPlayingBar: View {
             .overlay {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(SolfinDesign.spaceBlack.opacity(0.22))
+                    .allowsHitTesting(false)
             }
-            .overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.white.opacity(0.16)) }
+            .overlay {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(.white.opacity(0.16))
+                    .allowsHitTesting(false)
+            }
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
