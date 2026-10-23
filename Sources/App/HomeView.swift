@@ -366,27 +366,36 @@ private func capture<T>(_ operation: () async throws -> T) async -> Result<T, Er
 /// over each shelf into horizontal scrolling without affecting other page areas.
 private struct HorizontalWheelScrollView<Content: View>: View {
     @ViewBuilder let content: () -> Content
+    @State private var isHovering = false
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             content()
         }
         .overlay {
-            ShelfScrollWheelObserver()
+            ShelfScrollWheelObserver(isEnabled: isHovering)
                 .allowsHitTesting(false)
         }
+        .onHover { isHovering = $0 }
     }
 }
 
 private struct ShelfScrollWheelObserver: NSViewRepresentable {
+    let isEnabled: Bool
+
     func makeNSView(context: Context) -> ShelfScrollWheelView {
-        ShelfScrollWheelView()
+        let view = ShelfScrollWheelView()
+        view.isEnabled = isEnabled
+        return view
     }
 
-    func updateNSView(_ view: ShelfScrollWheelView, context: Context) {}
+    func updateNSView(_ view: ShelfScrollWheelView, context: Context) {
+        view.isEnabled = isEnabled
+    }
 }
 
 private final class ShelfScrollWheelView: NSView {
+    var isEnabled = false
     private var eventMonitor: Any?
 
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -403,7 +412,7 @@ private final class ShelfScrollWheelView: NSView {
 
     private func installMonitor(for window: NSWindow) {
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self, weak window] event in
-            guard let self, let window, self.window === window,
+            guard let self, self.isEnabled, let window, self.window === window,
                   event.window === window,
                   self.bounds.contains(self.convert(event.locationInWindow, from: window.contentView)),
                   let contentView = window.contentView else {
@@ -533,7 +542,7 @@ private struct FeaturedMediaBar: View {
                     .padding(.bottom, compact ? 64 : 88)
                 }
                 .overlay {
-                    CarouselScrollWheelObserver { direction in
+                    CarouselScrollWheelObserver(isEnabled: hovering) { direction in
                         if direction > 0 { next() } else { previous() }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -645,20 +654,24 @@ private struct FeaturedMediaBar: View {
 /// Observes wheel gestures over the featured hero without placing an input-blocking
 /// view over its buttons and navigation link.
 private struct CarouselScrollWheelObserver: NSViewRepresentable {
+    let isEnabled: Bool
     let onScroll: (CGFloat) -> Void
 
     func makeNSView(context: Context) -> CarouselScrollWheelView {
         let view = CarouselScrollWheelView()
+        view.isEnabled = isEnabled
         view.onScroll = onScroll
         return view
     }
 
     func updateNSView(_ view: CarouselScrollWheelView, context: Context) {
+        view.isEnabled = isEnabled
         view.onScroll = onScroll
     }
 }
 
 private final class CarouselScrollWheelView: NSView {
+    var isEnabled = false
     var onScroll: ((CGFloat) -> Void)?
     private var eventMonitor: Any?
     private var lastAdvance = Date.distantPast
@@ -677,21 +690,21 @@ private final class CarouselScrollWheelView: NSView {
         guard window != nil else { return }
 
         eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            guard let self, let window = self.window, event.window === window,
+            guard let self, self.isEnabled, let window = self.window, event.window === window,
                   self.bounds.contains(self.convert(event.locationInWindow, from: window.contentView)) else {
                 return event
             }
 
             let delta = abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY)
                 ? event.scrollingDeltaX : event.scrollingDeltaY
-            guard abs(delta) > 0.1 else { return nil }
+            guard abs(delta) > 0.1 else { return event }
 
             let now = Date()
             if now.timeIntervalSince(self.lastAdvance) >= 0.35 {
                 self.lastAdvance = now
                 self.onScroll?(delta)
             }
-            // A wheel gesture over the hero is carousel input, not page scrolling.
+            // Only while hovering the hero does its wheel gesture control the carousel.
             return nil
         }
     }
