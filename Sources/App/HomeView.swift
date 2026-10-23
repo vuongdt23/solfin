@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import JellyfinKit
 import PlaybackEngine
 
@@ -438,6 +439,13 @@ private struct FeaturedMediaBar: View {
                     .padding(.leading, leadingInset)
                     .padding(.bottom, compact ? 64 : 88)
                 }
+                .overlay {
+                    CarouselScrollWheelObserver { direction in
+                        if direction > 0 { next() } else { previous() }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .allowsHitTesting(false)
+                }
                 .overlay(alignment: .bottomTrailing) {
                     if items.count > 1 {
                         HStack(spacing: 14) {
@@ -456,6 +464,9 @@ private struct FeaturedMediaBar: View {
                         }
                         .padding(.trailing, 32)
                         .padding(.bottom, 20)
+                        .opacity(hovering ? 1 : 0)
+                        .allowsHitTesting(hovering)
+                        .animation(.easeOut(duration: 0.18), value: hovering)
                     }
                 }
                 .clipped()
@@ -536,4 +547,63 @@ private struct FeaturedMediaBar: View {
     }
     private func next() { select((selection + 1) % items.count) }
     private func previous() { select((selection - 1 + items.count) % items.count) }
+}
+
+/// Observes wheel gestures over the featured hero without placing an input-blocking
+/// view over its buttons and navigation link.
+private struct CarouselScrollWheelObserver: NSViewRepresentable {
+    let onScroll: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> CarouselScrollWheelView {
+        let view = CarouselScrollWheelView()
+        view.onScroll = onScroll
+        return view
+    }
+
+    func updateNSView(_ view: CarouselScrollWheelView, context: Context) {
+        view.onScroll = onScroll
+    }
+}
+
+private final class CarouselScrollWheelView: NSView {
+    var onScroll: ((CGFloat) -> Void)?
+    private var eventMonitor: Any?
+    private var lastAdvance = Date.distantPast
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Keep mouse clicks routed to the artwork, play buttons, and carousel controls.
+        nil
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+            self.eventMonitor = nil
+        }
+        guard window != nil else { return }
+
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self, event.window === self.window,
+                  self.bounds.contains(self.convert(event.locationInWindow, from: nil)) else {
+                return event
+            }
+
+            let delta = abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY)
+                ? event.scrollingDeltaX : event.scrollingDeltaY
+            guard abs(delta) > 0.1 else { return nil }
+
+            let now = Date()
+            if now.timeIntervalSince(self.lastAdvance) >= 0.35 {
+                self.lastAdvance = now
+                self.onScroll?(delta)
+            }
+            // A wheel gesture over the hero is carousel input, not page scrolling.
+            return nil
+        }
+    }
+
+    deinit {
+        if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
+    }
 }
