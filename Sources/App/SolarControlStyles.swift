@@ -59,13 +59,14 @@ extension View {
 
 struct SolarPillButtonStyle: ButtonStyle {
     let hovering: Bool
+    var isPrimary = true
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(hovering ? .white : .black)
-            .background(hovering ? SolfinDesign.solarOrange.opacity(0.88) : .white, in: Capsule())
+            .foregroundStyle(hovering || !isPrimary ? .white : .black)
+            .background(hovering ? SolfinDesign.solarOrange.opacity(0.88) : (isPrimary ? .white : .white.opacity(0.12)), in: Capsule())
             .overlay {
-                Capsule().strokeBorder(hovering || configuration.isPressed ? SolfinDesign.solarGold : .clear,
+                Capsule().strokeBorder(hovering || configuration.isPressed ? SolfinDesign.solarGold : (isPrimary ? .clear : .white.opacity(0.35)),
                                        lineWidth: configuration.isPressed ? 3 : 2)
             }
             .shadow(color: SolfinDesign.solarOrange.opacity(hovering || configuration.isPressed ? 0.42 : 0.16),

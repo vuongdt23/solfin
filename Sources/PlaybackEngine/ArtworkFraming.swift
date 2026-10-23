@@ -72,8 +72,8 @@ public actor ArtworkFaceCache {
 }
 
 /// Pure layout math, independent of Vision and SwiftUI. Never zooms further than
-/// aspect-fill. If the faces cannot fit together, relaxes the scale and lets the
-/// view extend the uncovered edges with a blurred backdrop.
+/// aspect-fill. Only the highest-positioned head (including hair/headroom) drives
+/// the crop. Lower heads never force zoom-out or move the framing.
 public struct ArtworkFraming {
     public let imageFrame: CGRect
     public let needsEdgeExtension: Bool
@@ -87,18 +87,30 @@ public struct ArtworkFraming {
         }
         let fillScale = max(canvasSize.width / imageSize.width, canvasSize.height / imageSize.height)
         let fitScale = min(canvasSize.width / imageSize.width, canvasSize.height / imageSize.height)
-        let bounds = faces.filter { !$0.isEmpty && !$0.isNull }.map { face in
+        let heads: [CGRect] = faces.filter { !$0.isEmpty && !$0.isNull }.map { face in
             // Add generous headroom: Vision detects facial features, not hair.
             CGRect(x: max(0, face.minX - face.width * 0.2),
                    y: max(0, face.minY - face.height * 0.55),
                    width: min(1, face.maxX + face.width * 0.2) - max(0, face.minX - face.width * 0.2),
                    height: min(1, face.maxY + face.height * 0.25) - max(0, face.minY - face.height * 0.55))
-        }.reduce(CGRect.null) { $0.union($1) }
+        }
+        let bounds: CGRect = heads.min { lhs, rhs in
+            // Normalized rectangles have a top-left origin. Use the head's top,
+            // not the face center; ties are deterministic regardless of Vision order.
+            lhs.minY == rhs.minY ? lhs.minX < rhs.minX : lhs.minY < rhs.minY
+        } ?? .null
         var scale = fillScale
         if !bounds.isNull {
-            let faceScale = min(canvasSize.width * 0.92 / (bounds.width * imageSize.width),
-                                canvasSize.height * 0.72 / (bounds.height * imageSize.height))
-            scale = max(fitScale, min(fillScale, faceScale))
+            // Safe margins guide placement, not scale. Only zoom out if the
+            // highest head itself is too large to fit at aspect-fill.
+            let fitsAtFill = bounds.width * imageSize.width * fillScale <= canvasSize.width
+                && bounds.height * imageSize.height * fillScale <= canvasSize.height
+            if !fitsAtFill {
+                // Use the full canvas when that single head needs more room.
+                let faceScale = min(canvasSize.width / (bounds.width * imageSize.width),
+                                    canvasSize.height / (bounds.height * imageSize.height))
+                scale = max(fitScale, min(fillScale, faceScale))
+            }
         }
         let width = imageSize.width * scale
         let height = imageSize.height * scale
@@ -116,6 +128,9 @@ public struct ArtworkFraming {
             // Edge faces cannot always have full margins without exposing empty
             // space. Prioritize the face center, while staying within the canvas.
             let centered = canvas * (safeMin + safeMax) / 2 - (faceMin + faceMax) * length / 2
+            let visibleMin = max(allowedMin, -faceMin * length)
+            let visibleMax = min(allowedMax, canvas - faceMax * length)
+            if visibleMin <= visibleMax { return min(max(centered, visibleMin), visibleMax) }
             return min(max(centered, allowedMin), allowedMax)
         }
         let x = offset(defaultValue: defaultX, length: width, canvas: canvasSize.width,

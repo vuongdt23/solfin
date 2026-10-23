@@ -63,7 +63,7 @@ private struct MovieDetailView: View {
             .frame(width: proxy.size.width, height: proxy.size.height,
                    alignment: .bottomLeading)
         }
-        .containerRelativeFrame(.vertical, alignment: .top) { available, _ in max(720, available - 8) }
+        .containerRelativeFrame(.vertical, alignment: .top) { available, _ in max(800, available - 8) }
     }
 }
 
@@ -71,6 +71,7 @@ struct ItemDetailView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var nowPlaying: NowPlaying
     let itemId: String
+    var sidebarLeadingInset: CGFloat = 106
 
     @State private var item: BaseItem?
     @State private var previousEpisode: BaseItem?
@@ -86,6 +87,7 @@ struct ItemDetailView: View {
     @State private var uploadMessage: String?
     @State private var primaryPlayButtonHovering = false
     @State private var startOverButtonHovering = false
+    @State private var advancedPlaybackExpanded = false
 
     private enum PlayAction: Equatable {
         case primary
@@ -139,11 +141,52 @@ struct ItemDetailView: View {
         } else {
             MovieDetailView(
                 background: { AnyView(self.backdrop(item, size: $0)) },
-                content: { width in AnyView(detailCopy(item, availableWidth: width)) },
+                content: { width in AnyView(movieCopy(item, availableWidth: width)) },
                 aura: { AnyView(solarAura) },
-                scrim: { AnyView(cinematicScrim) }
+                scrim: { AnyView(movieScrim) }
             )
         }
+    }
+
+    private func movieCopy(_ item: BaseItem, availableWidth: CGFloat) -> some View {
+        let width = max(280, availableWidth - sidebarLeadingInset - 48)
+        let wide = width >= 1250
+        return Group {
+            if wide {
+                HStack(alignment: .bottom, spacing: 56) {
+                    movieIdentityAndOverview(item, width: min(900, width * 0.56))
+                    moviePlaybackOptions(item)
+                        .frame(width: min(640, width * 0.38))
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 24) {
+                    movieIdentityAndOverview(item, width: min(1000, width))
+                    moviePlaybackOptions(item)
+                }
+            }
+        }
+        .frame(maxWidth: 1600, alignment: .leading)
+        .padding(.leading, sidebarLeadingInset)
+        .padding(.trailing, 48)
+        .padding(.top, 32)
+        .padding(.bottom, 48)
+    }
+
+    private func movieIdentityAndOverview(_ item: BaseItem, width: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 20) {
+            identity(item, availableWidth: width + sidebarLeadingInset + 42)
+            overview(item)
+            playbackError
+        }
+        .frame(width: width, alignment: .leading)
+    }
+
+    private func moviePlaybackOptions(_ item: BaseItem) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            trackPanel(item)
+            detailActions(item)
+        }
+        .frame(maxWidth: 1000, alignment: .leading)
     }
 
     private func detailCopy(_ item: BaseItem, availableWidth: CGFloat = 1280,
@@ -151,18 +194,16 @@ struct ItemDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             identity(item, availableWidth: availableWidth)
             overview(item)
-            if let genres = item.genres, !genres.isEmpty {
-                Text(genres.prefix(5).joined(separator: "  ·  "))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.76))
-            }
             playbackError
-            trackPanel(item, episodeStyle: episodeStyle)
-            detailActions(item)
+            if episodeStyle {
+                trackPanel(item, episodeStyle: true)
+                detailActions(item)
+            }
         }
         .frame(maxWidth: 1280, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 42)
+        .padding(.leading, episodeStyle ? 42 : sidebarLeadingInset)
+        .padding(.trailing, 42)
         .padding(.top, episodeStyle ? 12 : 42)
         .padding(.bottom, episodeStyle ? 12 : 32)
     }
@@ -170,12 +211,15 @@ struct ItemDetailView: View {
     @ViewBuilder private func backdrop(_ item: BaseItem, size: CGSize) -> some View {
         if let url = backdropURL(item) {
             ZStack {
+                // Constrain both image layers explicitly. The sharp layer contains the
+                // entire backdrop; only the soft edge extension is allowed to crop.
                 CachedImage(url: url, contentMode: .fill)
-                    .scaleEffect(1.12)
+                    .frame(width: size.width, height: size.height)
+                    .clipped()
                     .blur(radius: 28)
-                    .opacity(0.72)
-                    .overlay(Color.black.opacity(0.28))
+                    .opacity(0.6)
                 CachedImage(url: url, contentMode: .fit)
+                    .frame(width: size.width, height: size.height)
             }
             .frame(width: size.width, height: size.height)
             .clipped()
@@ -183,7 +227,8 @@ struct ItemDetailView: View {
             ZStack {
                 CachedImage(url: poster)
                     .frame(width: size.width, height: size.height).clipped().blur(radius: 24).scaleEffect(1.08)
-                CachedImage(url: poster, contentMode: .fit).padding(.vertical, 40)
+                CachedImage(url: poster, contentMode: .fit)
+                    .frame(width: size.width, height: max(1, size.height - 80))
             }
         } else {
             LinearGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.38), SolfinDesign.spaceBlack],
@@ -256,6 +301,21 @@ struct ItemDetailView: View {
         .frame(maxHeight: .infinity, alignment: .center)
     }
 
+    private var movieScrim: some View {
+        ZStack {
+            LinearGradient(stops: [.init(color: .black.opacity(0.64), location: 0),
+                                   .init(color: .black.opacity(0.28), location: 0.38),
+                                   .init(color: .clear, location: 0.72)],
+                           startPoint: .leading, endPoint: .trailing)
+            LinearGradient(stops: [.init(color: .clear, location: 0),
+                                   .init(color: .clear, location: 0.3),
+                                   .init(color: .black.opacity(0.45), location: 0.66),
+                                   .init(color: .black.opacity(0.88), location: 1)],
+                           startPoint: .top, endPoint: .bottom)
+        }
+        .allowsHitTesting(false)
+    }
+
     private var cinematicScrim: some View {
         ZStack {
             LinearGradient(colors: [.black.opacity(0.08), .clear, .black.opacity(0.18)],
@@ -277,9 +337,11 @@ struct ItemDetailView: View {
 
     private func identity(_ item: BaseItem, availableWidth: CGFloat) -> some View {
         let isEpisode = item.type == "Episode"
-        let logoWidth = min(1120, max(620, availableWidth * 0.62))
-        let logoHeight = min(360, max(220, availableWidth * 0.21))
-        let titleSize = min(88, max(58, availableWidth * 0.052))
+        let contentWidth = max(240, availableWidth - sidebarLeadingInset - 42)
+        let logoWidth = min(1000, contentWidth)
+        let logoHeight = min(240, max(120, contentWidth * 0.22))
+        let titleSize = isEpisode ? min(88, max(58, availableWidth * 0.052))
+            : min(72, max(36, contentWidth * 0.052))
         let seriesLogo = isEpisode ? episodeSeriesLogoURL(item) : nil
         return SolarHeroIdentity(
             item: item,
@@ -305,7 +367,7 @@ struct ItemDetailView: View {
                        hovering: primaryPlayButtonHovering)
                 .onHover { primaryPlayButtonHovering = $0 }
 
-            if resumeSeconds(item) > 0 {
+            if item.resumePositionSeconds > 0 {
                 playButton(item, action: .startOver, title: "Start Over", systemImage: "arrow.counterclockwise",
                            isPrimary: false, isBusy: pendingPlayAction == .startOver && isWaitingForLaunch,
                            hovering: startOverButtonHovering)
@@ -322,7 +384,7 @@ struct ItemDetailView: View {
         Button {
             guard pendingPlayAction == nil, !nowPlaying.isLaunching else { return }
             pendingPlayAction = action
-            play(item, startOver: action == .startOver)
+            play(item, startOver: action == .startOver || item.userData?.played == true)
         } label: {
             HStack(spacing: 8) {
                 if isBusy {
@@ -337,10 +399,10 @@ struct ItemDetailView: View {
             }
             .font(.callout.weight(.semibold))
             .padding(.horizontal, isPrimary ? 20 : 16)
-            .frame(height: 42)
+            .frame(height: item.type == "Episode" ? 42 : 48)
             .contentShape(Capsule())
         }
-        .buttonStyle(SolarPillButtonStyle(hovering: hovering))
+        .buttonStyle(SolarPillButtonStyle(hovering: hovering, isPrimary: isPrimary))
         .opacity(pendingPlayAction == nil || isBusy ? 1 : 0.62)
     }
 
@@ -348,17 +410,17 @@ struct ItemDetailView: View {
         if let overview = item.overview, !overview.isEmpty {
             VStack(alignment: .leading, spacing: 7) {
                 Text(overview)
-                    .font(.system(size: 16, weight: .regular))
+                    .font(.system(size: item.type == "Episode" ? 16 : 18, weight: .regular))
                     .foregroundStyle(.white.opacity(0.9))
                     .lineSpacing(5)
                     .multilineTextAlignment(.leading)
-                    .lineLimit(overviewExpanded ? nil : 3)
-                    .frame(maxWidth: 1040, alignment: .leading)
-                if overview.count > 620 {
+                    .lineLimit(overviewExpanded ? nil : (item.type == "Episode" ? 3 : 5))
+                    .frame(maxWidth: 760, alignment: .leading)
+                if overview.count > 200 {
                     Button(overviewExpanded ? "Show Less" : "More") { withAnimation { overviewExpanded.toggle() } }
                         .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(.white)
                 }
-            }.frame(maxWidth: 1040, alignment: .leading)
+            }.frame(maxWidth: 760, alignment: .leading)
                 .padding(.top, 1)
         }
     }
@@ -395,7 +457,7 @@ struct ItemDetailView: View {
                     .foregroundStyle(.white.opacity(0.58))
                     .padding(.horizontal, 16).padding(.vertical, 9)
                 Divider().overlay(.white.opacity(0.1))
-                if !video.isEmpty {
+                if episodeStyle, !video.isEmpty {
                     trackRow(title: "Video", icon: "film", selection: $selectedVideoTrack, tracks: video, includesOff: false)
                     Divider().overlay(.white.opacity(0.08)).padding(.leading, 52)
                 }
@@ -405,6 +467,16 @@ struct ItemDetailView: View {
                 }
                 trackRow(title: "Subtitles", icon: "captions.bubble", selection: $selectedSubtitleTrack,
                          tracks: subtitles, includesOff: true)
+                if !episodeStyle, !video.isEmpty {
+                    Divider().overlay(.white.opacity(0.08))
+                    DisclosureGroup("Advanced playback", isExpanded: $advancedPlaybackExpanded) {
+                        trackRow(title: "Video", icon: "film", selection: $selectedVideoTrack,
+                                 tracks: video, includesOff: false)
+                    }
+                    .font(.callout)
+                    .tint(.white.opacity(0.8))
+                    .padding(16)
+                }
             }
             .background {
                 if !episodeStyle {
@@ -425,8 +497,7 @@ struct ItemDetailView: View {
                 .font(.system(size: 14, weight: .medium))
                 .frame(width: 24).foregroundStyle(.white.opacity(0.72))
             Text(title).font(.callout.weight(.medium)).foregroundStyle(.white.opacity(0.84))
-                .frame(width: 76, alignment: .leading)
-            Spacer(minLength: 12)
+            Spacer(minLength: 4)
             Menu {
                 if includesOff { Button("Off") { selection.wrappedValue = -1 }.foregroundStyle(.white) }
                 ForEach(tracks, id: \.id) { track in
@@ -439,13 +510,17 @@ struct ItemDetailView: View {
             } label: {
                 HStack(spacing: 12) {
                     Text(selectedTrackLabel(selection.wrappedValue, tracks: tracks, includesOff: includesOff))
-                        .font(.callout).lineLimit(1)
+                        .font(.callout)
+                        .multilineTextAlignment(.trailing)
+                        .fixedSize(horizontal: false, vertical: true)
                     Image(systemName: "chevron.down")
                         .font(.system(size: 9, weight: .bold))
                 }
                 .foregroundStyle(.white.opacity(0.94))
                 .tint(.white)
-                .padding(.horizontal, 12).frame(height: 34)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .frame(minHeight: 34)
                 .background(.black.opacity(0.24), in: RoundedRectangle(cornerRadius: 9))
                 .overlay { RoundedRectangle(cornerRadius: 9).strokeBorder(.white.opacity(0.13)) }
             }
@@ -520,8 +595,9 @@ struct ItemDetailView: View {
         guard let ticks = item.runTimeTicks else { return nil }; let minutes = Int(Ticks.toSeconds(ticks) / 60)
         return minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
     }
-    private func resumeSeconds(_ item: BaseItem) -> Double { Ticks.toSeconds(item.userData?.playbackPositionTicks) }
-    private func playLabel(_ item: BaseItem) -> String { "Play" }
+    private func playLabel(_ item: BaseItem) -> String {
+        item.resumePositionSeconds > 0 ? "Resume · \(item.resumeTimestamp)" : "Play"
+    }
     private func play(_ item: BaseItem, startOver: Bool = false) {
         appState.playbackError = nil
         guard item.type == "Episode", let seriesId = item.seriesId else {
@@ -551,6 +627,7 @@ struct ItemDetailView: View {
     }
     private func load() async {
         loadError = nil; previousEpisode = nil; nextEpisode = nil
+        overviewExpanded = false; advancedPlaybackExpanded = false; uploadMessage = nil
         do {
             let loaded = try await appState.api.item(id: itemId); item = loaded
             configureTrackDefaults(for: loaded)

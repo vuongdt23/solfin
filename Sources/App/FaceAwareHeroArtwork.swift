@@ -20,18 +20,30 @@ struct FaceAwareHeroArtwork: View {
                     let framing = ArtworkFraming(imageSize: artwork.image.size,
                                                  canvasSize: size, faces: artwork.faces)
                     ZStack(alignment: .topLeading) {
-                        if framing.needsEdgeExtension {
-                            Image(nsImage: artwork.image)
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                                .frame(width: size.width, height: size.height)
-                                .clipped()
-                                .blur(radius: 36)
-                                .overlay(.black.opacity(0.3))
-                        }
                         Image(nsImage: artwork.image)
                             .resizable()
+                            .interpolation(.high)
                             .frame(width: framing.imageFrame.width, height: framing.imageFrame.height)
+                            .mask {
+                                // A contained portrait should blend into the dark copy
+                                // area, not end at a hard boundary over a blurred duplicate.
+                                let horizontalFeather = min(0.15, 160 / max(1, framing.imageFrame.width))
+                                let verticalFeather = min(0.15, 120 / max(1, framing.imageFrame.height))
+                                LinearGradient(stops: [
+                                    .init(color: framing.imageFrame.minX > 1 ? .clear : .white, location: 0),
+                                    .init(color: .white, location: horizontalFeather),
+                                    .init(color: .white, location: 1 - horizontalFeather),
+                                    .init(color: framing.imageFrame.maxX < size.width - 1 ? .clear : .white, location: 1)
+                                ], startPoint: .leading, endPoint: .trailing)
+                                .mask {
+                                    LinearGradient(stops: [
+                                        .init(color: framing.imageFrame.minY > 1 ? .clear : .white, location: 0),
+                                        .init(color: .white, location: verticalFeather),
+                                        .init(color: .white, location: 1 - verticalFeather),
+                                        .init(color: framing.imageFrame.maxY < size.height - 1 ? .clear : .white, location: 1)
+                                    ], startPoint: .top, endPoint: .bottom)
+                                }
+                            }
                             .offset(x: framing.imageFrame.minX, y: framing.imageFrame.minY)
                     }
                     .frame(width: size.width, height: size.height, alignment: .topLeading)
