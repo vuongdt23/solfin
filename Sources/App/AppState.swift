@@ -14,6 +14,9 @@ final class AppState: ObservableObject {
     @Published var isAuthenticating = false
     @Published var playbackError: String?
     @Published var isValidatingStoredSession = false
+    @Published private(set) var credentialStorage: CredentialStorage = .localFile
+    @Published var credentialStorageError: String?
+    var localCredentialFileURL: URL { store.localFileURL }
 
     // Settings (persisted lightly in UserDefaults).
     @AppStorage("solfin.mpvPath") var mpvPathOverride: String = ""
@@ -24,6 +27,10 @@ final class AppState: ObservableObject {
     private let store = CredentialStore()
     private(set) var api: APIClient
 
+    // Retain only the last decorative stack IDs across Home view recreation.
+    // Scope by session so switching servers/users never mixes library histories.
+    var libraryPosterHistory: [String: [String]] = [:]
+
     /// Path to the bundled mpv config-dir (mpv.conf + solfin-osc), inside the app bundle.
     var mpvConfigDir: String? {
         Bundle.main.resourcePath.map { $0 + "/mpv" }
@@ -31,8 +38,11 @@ final class AppState: ObservableObject {
 
     init() {
         let info = ClientInfo(deviceId: store.deviceId)
-        let saved = store.loadSessions()
-        let existing = store.loadSession()
+        var saved: [ServerSession] = []
+        do { saved = try store.loadSessions() }
+        catch { credentialStorageError = "Could not load saved credentials: \(error.localizedDescription)" }
+        let existing = store.activeSession(in: saved)
+        credentialStorage = store.storage
         self.savedSessions = saved
         let base = existing?.serverURL ?? URL(string: "http://localhost:8096")!
         self.api = APIClient(baseURL: base, clientInfo: info)
@@ -74,7 +84,9 @@ final class AppState: ObservableObject {
         do {
             let session = try await client.login(username: username, password: password)
             try store.save(session)
-            savedSessions = store.loadSessions()
+            // The secret is already in memory; avoid rereading every Keychain item.
+            savedSessions.removeAll { $0.id == session.id }
+            savedSessions.append(session)
             activate(session)
             serverToReauthenticate = nil
             serverSwitchError = nil
@@ -131,8 +143,12 @@ final class AppState: ObservableObject {
 
     func removeServer(_ session: ServerSession) {
         let wasActive = self.session?.id == session.id
-        store.remove(session)
-        savedSessions = store.loadSessions()
+        do { try store.remove(session) }
+        catch {
+            credentialStorageError = "Could not forget this server: \(error.localizedDescription)"
+            return
+        }
+        savedSessions.removeAll { $0.id == session.id }
         if wasActive {
             self.session = nil
             isAddingServer = false
@@ -142,6 +158,16 @@ final class AppState: ObservableObject {
             if let replacement = savedSessions.first {
                 Task { await switchServer(to: replacement) }
             }
+        }
+    }
+
+    func changeCredentialStorage(to target: CredentialStorage) {
+        credentialStorageError = nil
+        do {
+            try store.changeStorage(to: target, sessions: savedSessions)
+            credentialStorage = store.storage
+        } catch {
+            credentialStorageError = "Could not change credential storage: \(error.localizedDescription)"
         }
     }
 

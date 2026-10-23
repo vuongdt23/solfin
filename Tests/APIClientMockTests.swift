@@ -229,6 +229,80 @@ final class APIClientMockTests: XCTestCase {
         XCTAssertNil(next)   // no network call needed; returns nil immediately
     }
 
+    func testLibraryPosterPreviewIsScopedAndSkipsMissingDuplicateAndOfflineArtwork() async throws {
+        MockURLProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/Users/u1/Items")
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            XCTAssertEqual(query.first { $0.name == "ParentId" }?.value, "tv")
+            XCTAssertEqual(query.first { $0.name == "IncludeItemTypes" }?.value, "Series")
+            XCTAssertEqual(query.first { $0.name == "Limit" }?.value, "24")
+            XCTAssertEqual(query.first { $0.name == "Recursive" }?.value, "true")
+            XCTAssertEqual(query.first { $0.name == "SortBy" }?.value, "Random")
+            XCTAssertEqual(query.first { $0.name == "HasPrimaryImage" }?.value, "true")
+            XCTAssertEqual(query.first { $0.name == "EnableImages" }?.value, "true")
+            let json = """
+            {"Items":[
+              {"Id":"missing","Name":"No art","Type":"Series"},
+              {"Id":"a","Name":"A","Type":"Series","ImageTags":{"Primary":"pa"}},
+              {"Id":"a","Name":"A duplicate","Type":"Series","ImageTags":{"Primary":"pa"}},
+              {"Id":"offline","Name":"Offline","Type":"Series","LocationType":"Offline","ImageTags":{"Primary":"po"}},
+              {"Id":"empty","Name":"Empty tag","Type":"Series","ImageTags":{"Primary":""}},
+              {"Id":"b","Name":"B","Type":"Series","ImageTags":{"Primary":"pb"}},
+              {"Id":"c","Name":"C","Type":"Series","ImageTags":{"Primary":"pc"}},
+              {"Id":"d","Name":"D","Type":"Series","ImageTags":{"Primary":"pd"}}
+            ]}
+            """
+            return (200, Data(json.utf8))
+        }
+        let library = try JSONDecoder().decode(BaseItem.self, from: Data(
+            #"{"Id":"tv","Name":"Shows","CollectionType":"tvshows"}"#.utf8))
+        let posters = try await makeClient(authed: true).libraryPosterItems(for: library)
+        XCTAssertEqual(posters.map(\.id), ["a", "b", "c"])
+    }
+
+    func testLibraryPosterPreviewSelectsTypesAndHandlesEmptyLibrary() async throws {
+        for (collection, expected) in [("movies", "Movie"), ("music", "MusicAlbum"),
+                                       ("books", "Book"), ("mixed", "Movie,Series")] {
+            MockURLProtocol.handler = { request in
+                let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+                XCTAssertEqual(query.first { $0.name == "IncludeItemTypes" }?.value, expected)
+                XCTAssertEqual(query.first { $0.name == "ParentId" }?.value, "library")
+                return (200, Data(#"{"Items":[]}"#.utf8))
+            }
+            let library = try JSONDecoder().decode(BaseItem.self, from: Data(
+                "{\"Id\":\"library\",\"Name\":\"Library\",\"CollectionType\":\"\(collection)\"}".utf8))
+            let posters = try await makeClient(authed: true).libraryPosterItems(for: library)
+            XCTAssertTrue(posters.isEmpty)
+        }
+    }
+
+    func testLibraryPosterPreviewPrefersDifferentTitlesOnReload() async throws {
+        MockURLProtocol.handler = { _ in
+            let items = (1...6).map { index in
+                "{\"Id\":\"\(index)\",\"Name\":\"Title \(index)\",\"ImageTags\":{\"Primary\":\"p\(index)\"}}"
+            }.joined(separator: ",")
+            return (200, Data("{\"Items\":[\(items)]}".utf8))
+        }
+        let library = try JSONDecoder().decode(BaseItem.self, from: Data(
+            #"{"Id":"movies","Name":"Movies","CollectionType":"movies"}"#.utf8))
+        let client = makeClient(authed: true)
+        let first = try await client.libraryPosterItems(for: library)
+        let second = try await client.libraryPosterItems(for: library, excluding: first.map(\.id))
+        XCTAssertEqual(first.map(\.id), ["1", "2", "3"])
+        XCTAssertEqual(second.map(\.id), ["4", "5", "6"])
+    }
+
+    func testLibraryPosterPreviewStillFillsSmallLibraryWithPreviousTitles() async throws {
+        MockURLProtocol.handler = { _ in
+            let json = #"{"Items":[{"Id":"a","Name":"A","ImageTags":{"Primary":"pa"}},{"Id":"b","Name":"B","ImageTags":{"Primary":"pb"}}]}"#
+            return (200, Data(json.utf8))
+        }
+        let library = try JSONDecoder().decode(BaseItem.self, from: Data(
+            #"{"Id":"tv","Name":"Shows","CollectionType":"tvshows"}"#.utf8))
+        let posters = try await makeClient(authed: true).libraryPosterItems(for: library, excluding: ["a"])
+        XCTAssertEqual(posters.map(\.id), ["b", "a"])
+    }
+
     func testUnauthenticatedBrowseThrows() async {
         let client = makeClient(authed: false)
         do { _ = try await client.views(); XCTFail("expected notAuthenticated") }

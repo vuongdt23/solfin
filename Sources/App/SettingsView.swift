@@ -49,6 +49,7 @@ struct SettingsView: View {
     @AppStorage("solfin.cacheMaxEntries") private var cacheMaxEntries = 500
     @AppStorage("solfin.cacheMaxMB") private var cacheMaxMB = 500
     @State private var cacheMessage: String?
+    @State private var confirmLocalCredentials = false
 
     var body: some View {
         TabView {
@@ -89,6 +90,23 @@ struct SettingsView: View {
                 .tabItem { Label("Logging", systemImage: "doc.badge.gearshape") }
 
             Form {
+                Section("Credential storage") {
+                    Picker("Save access tokens", selection: credentialStorageBinding) {
+                        ForEach(CredentialStorage.allCases) { Text($0.title).tag($0) }
+                    }
+                    .disabled(appState.isAuthenticating)
+                    Text("Keychain protects tokens with macOS access controls. Local file avoids prompts but stores reusable account tokens in plaintext, readable by other apps running as your user and potentially included in backups.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    if appState.credentialStorage == .localFile {
+                        Text(appState.localCredentialFileURL.path)
+                            .font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
+                        Text("Owner-only permissions: folder 0700, file 0600. Old Keychain copies are left untouched to avoid more prompts; you can remove them in Keychain Access.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if let error = appState.credentialStorageError {
+                        Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                    }
+                }
                 Section("Active Server") {
                     LabeledContent("Server", value: appState.session?.serverURL.absoluteString ?? "Not connected")
                     LabeledContent("User", value: appState.session?.userName ?? "—")
@@ -148,10 +166,25 @@ struct SettingsView: View {
             .tabItem { Label("Account", systemImage: "person.crop.circle") }
         }
         .frame(minWidth: 820, idealWidth: 960, minHeight: 560, idealHeight: 680)
+        .confirmationDialog("Store access tokens in a local plaintext file?", isPresented: $confirmLocalCredentials,
+                            titleVisibility: .visible) {
+            Button("Use Local File") { appState.changeCredentialStorage(to: .localFile) }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This avoids Keychain prompts. Other apps running as your macOS user can read the tokens. Existing loaded sessions will be copied; your password is not saved.")
+        }
         .onAppear {
             configStore.load(bundledConfigDir: appState.mpvConfigDir)
 
         }
+    }
+
+    private var credentialStorageBinding: Binding<CredentialStorage> {
+        Binding(get: { appState.credentialStorage }, set: { target in
+            guard target != appState.credentialStorage else { return }
+            if target == .localFile { confirmLocalCredentials = true }
+            else { appState.changeCredentialStorage(to: target) }
+        })
     }
 
     private var activeServerBinding: Binding<String> {

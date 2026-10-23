@@ -7,6 +7,8 @@ struct HomeView: View {
     let embeddedInShell: Bool
 
     @State private var views: [BaseItem] = []
+    @State private var libraryPosters: [String: [BaseItem]] = [:]
+    @State private var libraryArtworkReload = UUID()
     @State private var resume: [BaseItem] = []
     @State private var nextUp: [BaseItem] = []
     @State private var latestMovies: [BaseItem] = []
@@ -42,41 +44,47 @@ struct HomeView: View {
         }
         .navigationTitle("Home")
         .task { await load() }
+        .task(id: libraryArtworkReload) { await loadLibraryPosters() }
         .refreshable { await load() }
     }
 
     private var content: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                if !featured.isEmpty {
-                    FeaturedMediaBar(items: featured,
-                                     contentInset: contentHorizontalPadding,
-                                     controlLeadingInset: heroControlLeadingInset)
-                }
-                VStack(alignment: .leading, spacing: 36) {
-                    if isLoading && resume.isEmpty && nextUp.isEmpty { loadingShelves }
-                    if !views.isEmpty { librariesSection }
-                    if !resume.isEmpty { landscapeShelf("Continue Watching", resume) }
-                    if !nextUp.isEmpty { landscapeShelf("Next Up", nextUp) }
-                    if !latestShows.isEmpty { shelf("Recently Added in Shows", latestShows) }
-                    if !latestMovies.isEmpty { shelf("Recently Added in Movies", latestMovies) }
-                    if let loadError, resume.isEmpty && nextUp.isEmpty && latestMovies.isEmpty && latestShows.isEmpty {
-                        EmptyContentView(title: "Home is unavailable", message: loadError,
-                                         systemImage: "wifi.exclamationmark") { Task { await load() } }
+        GeometryReader { viewport in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    if !featured.isEmpty {
+                        FeaturedMediaBar(items: featured,
+                                         contentInset: contentHorizontalPadding,
+                                         controlLeadingInset: heroControlLeadingInset,
+                                         heroHeight: max(460, min(1040, viewport.size.height * 0.78)))
                     }
+                    VStack(alignment: .leading, spacing: 32) {
+                        if isLoading && resume.isEmpty && nextUp.isEmpty { loadingShelves }
+                        if !resume.isEmpty { landscapeShelf("Continue Watching", resume, isResume: true) }
+                        if !nextUp.isEmpty { landscapeShelf("Next Up", nextUp) }
+                        if !views.isEmpty {
+                            librariesSection(availableWidth: viewport.size.width
+                                             - max(contentHorizontalPadding, heroControlLeadingInset - 26) - 32)
+                        }
+                        if !latestShows.isEmpty { shelf("Recently Added in Shows", latestShows) }
+                        if !latestMovies.isEmpty { shelf("Recently Added in Movies", latestMovies) }
+                        if let loadError, resume.isEmpty && nextUp.isEmpty && latestMovies.isEmpty && latestShows.isEmpty {
+                            EmptyContentView(title: "Home is unavailable", message: loadError,
+                                             systemImage: "wifi.exclamationmark") { Task { await load() } }
+                        }
+                    }
+                    .padding(.leading, max(contentHorizontalPadding, heroControlLeadingInset - 26))
+                    .padding(.trailing, 32)
+                    .padding(.top, featured.isEmpty ? 32 : 24)
+                    .padding(.bottom, 48)
                 }
-                .padding(.horizontal, contentHorizontalPadding)
-                .padding(.top, featured.isEmpty ? 28 : 12)
-                .padding(.bottom, 44)
             }
+            .scrollContentBackground(.hidden)
         }
         .background {
             ZStack {
-                SolfinDesign.solarBackground
-                RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.16), .clear],
-                               center: UnitPoint(x: 0.96, y: 0.02), startRadius: 0, endRadius: 720)
-                    .blendMode(.screen)
-                RadialGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.14), .clear],
+                SolfinDesign.spaceBlack
+                RadialGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.08), .clear],
                                center: UnitPoint(x: 0.12, y: 0.88), startRadius: 60, endRadius: 900)
                     .blendMode(.screen)
             }
@@ -106,15 +114,18 @@ struct HomeView: View {
         }.redacted(reason: .placeholder)
     }
 
-    private var librariesSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sectionHeading("Your Libraries")
+    private func librariesSection(availableWidth: CGFloat) -> some View {
+        // Two substantial collection cards fit typical windows; ultrawide
+        // windows cap their size rather than stretching the artwork endlessly.
+        let tileWidth = min(560, max(380, (availableWidth - 26) / 2))
+        return VStack(alignment: .leading, spacing: 14) {
+            sectionHeading("Your Libraries", detail: "Browse all")
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 14) {
+                LazyHStack(spacing: 22) {
                     ForEach(views) { view in
-                        NavigationLink(value: view) { LibraryBanner(item: view) }.buttonStyle(.plain)
+                        HomeLibraryTile(item: view, posters: libraryPosters[view.id] ?? [], width: tileWidth)
                     }
-                }.padding(.vertical, 4).padding(.horizontal, 2)
+                }.padding(.vertical, 8).padding(.horizontal, 2)
             }
         }
     }
@@ -126,15 +137,17 @@ struct HomeView: View {
         else { ItemDetailView(itemId: item.id) }
     }
 
-    private func landscapeShelf(_ title: String, _ items: [BaseItem]) -> some View {
+    private func landscapeShelf(_ title: String, _ items: [BaseItem], isResume: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            sectionHeading(title)
+            sectionHeading(title, detail: isResume ? "Pick up where you left off" : nil)
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 16) {
                     ForEach(items) { item in
                         // Continue Watching and Next Up keep their dedicated wide card style,
                         // independent of the library/home card preference.
-                        NavigationLink(value: item) { LandscapeCard(item: item) }.buttonStyle(.plain)
+                        NavigationLink(value: item) {
+                            LandscapeCard(item: item, showResumeDetails: isResume)
+                        }.buttonStyle(.plain)
                     }
                 }.padding(.vertical, 8).padding(.horizontal, 2)
             }
@@ -157,13 +170,13 @@ struct HomeView: View {
     private func sectionHeading(_ title: String, detail: String? = nil) -> some View {
         HStack(alignment: .lastTextBaseline, spacing: 12) {
             Text(title)
-                .font(.title2.weight(.bold))
+                .font(.system(size: 24, weight: .bold))
                 .foregroundStyle(.white)
             if let detail {
                 Text(detail.uppercased())
                     .font(.caption2.weight(.bold))
                     .tracking(1.1)
-                    .foregroundStyle(.white.opacity(0.42))
+                    .foregroundStyle(.white.opacity(0.58))
             }
             Spacer()
         }
@@ -203,53 +216,45 @@ struct HomeView: View {
         }
         loadError = errors.first
         isLoading = false
+        // Home owns the refresh cycle, not lazy tile lifetimes. Scrolling away
+        // and back must not change artwork, but a new Home load should.
+        libraryArtworkReload = UUID()
+    }
+
+    private func loadLibraryPosters() async {
+        let api = appState.api
+        let sessionID = appState.session?.id ?? ""
+        let history = appState.libraryPosterHistory
+        await withTaskGroup(of: (String, [BaseItem]?).self) { group in
+            for library in views {
+                let key = "\(sessionID)-\(library.id)"
+                let previous = history[key] ?? []
+                group.addTask {
+                    let posters = try? await api.libraryPosterItems(for: library, excluding: previous)
+                    return (library.id, posters)
+                }
+            }
+            for await (id, posters) in group {
+                guard !Task.isCancelled, appState.session?.id == api.session?.id else { continue }
+                if let posters {
+                    libraryPosters[id] = posters
+                    appState.libraryPosterHistory["\(sessionID)-\(id)"] = posters.map(\.id)
+                }
+                // Preserve the previous stack if this decorative request fails.
+            }
+        }
     }
 }
 
-private struct FeaturedTitle: View {
-    let item: BaseItem
-
-    var body: some View {
-        SolarMediaLogo(item: item)
-    }
-}
-
-private struct FeaturedPlayButtonStyle: ButtonStyle {
-    let hovering: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(.black)
-            .background(hovering ? Color.white.opacity(0.86) : .white, in: Capsule())
-            .overlay { Capsule().strokeBorder(hovering || configuration.isPressed ? SolfinDesign.solarGold : .clear, lineWidth: configuration.isPressed ? 3 : 2) }
-            .shadow(color: SolfinDesign.solarOrange.opacity(hovering || configuration.isPressed ? 0.42 : 0.16), radius: hovering ? 20 : 10, y: 5)
-            .scaleEffect(configuration.isPressed ? 0.97 : hovering ? 1.035 : 1)
-    }
-}
-
-private struct FeaturedInfoButtonStyle: ButtonStyle {
-    let hovering: Bool
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .foregroundStyle(.white)
-            .background(hovering || configuration.isPressed ? SolfinDesign.solarOrange.opacity(0.72) : .white.opacity(0.22), in: Circle())
-            .overlay { Circle().strokeBorder(hovering || configuration.isPressed ? SolfinDesign.solarGold : .white.opacity(0.2), lineWidth: hovering || configuration.isPressed ? 2 : 1) }
-            .shadow(color: SolfinDesign.solarOrange.opacity(hovering || configuration.isPressed ? 0.48 : 0.12), radius: hovering ? 18 : 8, y: 4)
-            .scaleEffect(configuration.isPressed ? 0.94 : hovering ? 1.08 : 1)
-    }
-}
-
-private struct FeaturedCarouselButtonStyle: ButtonStyle {
+private struct FeaturedDetailsButtonStyle: ButtonStyle {
     let hovering: Bool
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(.white)
-            .background(hovering || configuration.isPressed ? SolfinDesign.solarOrange.opacity(0.78) : .black.opacity(0.5), in: Circle())
-            .overlay { Circle().strokeBorder(hovering || configuration.isPressed ? SolfinDesign.solarGold : .white.opacity(0.14), lineWidth: hovering || configuration.isPressed ? 2 : 1) }
-            .shadow(color: SolfinDesign.solarOrange.opacity(hovering || configuration.isPressed ? 0.48 : 0.16), radius: hovering ? 20 : 10, y: 5)
-            .scaleEffect(configuration.isPressed ? 0.94 : hovering ? 1.12 : 1)
+            .background(.white.opacity(hovering || configuration.isPressed ? 0.24 : 0.12), in: Capsule())
+            .overlay { Capsule().strokeBorder(.white.opacity(hovering ? 0.55 : 0.24)) }
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
     }
 }
 
@@ -269,9 +274,9 @@ private struct FeaturedPlayButton: View {
     var body: some View {
         Button(action: action) {
             Label(title, systemImage: "play.fill")
-                .font(.headline.weight(.semibold))
-                .padding(.horizontal, 22)
-                .padding(.vertical, 12)
+                .font(.system(size: 17, weight: .bold))
+                .padding(.horizontal, 28)
+                .frame(height: 52)
         }
         .buttonStyle(SolarPillButtonStyle(hovering: hovering))
         .onHover { hovering = $0 }
@@ -286,11 +291,12 @@ private struct FeaturedInfoButton: View {
 
     var body: some View {
         NavigationLink(value: item) {
-            Image(systemName: "info")
-                .font(.headline.weight(.semibold))
-                .frame(width: 46, height: 46)
+            Label("Details", systemImage: "info.circle")
+                .font(.system(size: 17, weight: .semibold))
+                .padding(.horizontal, 22)
+                .frame(height: 52)
         }
-        .buttonStyle(SolarRoundButtonStyle(hovering: hovering))
+        .buttonStyle(FeaturedDetailsButtonStyle(hovering: hovering))
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.16), value: hovering)
         .help("Open details")
@@ -355,6 +361,7 @@ private struct FeaturedMediaBar: View {
     let items: [BaseItem]
     let contentInset: CGFloat
     let controlLeadingInset: CGFloat
+    let heroHeight: CGFloat
     @State private var selection = 0
     @State private var hovering = false
 
@@ -364,8 +371,9 @@ private struct FeaturedMediaBar: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let compact = proxy.size.height < 600
-            let textWidth = min(560, proxy.size.width - leadingInset - 40)
+            let compact = proxy.size.height < 580
+            let expansive = proxy.size.width > 1600
+            let textWidth = min(expansive ? 680 : 560, proxy.size.width - leadingInset - 40)
 
             // The fixed canvas owns layout; oversized fill images live only in
             // overlays, so their intrinsic dimensions cannot enlarge the hero.
@@ -383,31 +391,39 @@ private struct FeaturedMediaBar: View {
                 }
                 .overlay {
                     LinearGradient(stops: [
-                        .init(color: SolfinDesign.spaceBlack.opacity(0.64), location: 0),
-                        .init(color: SolfinDesign.spaceBlack.opacity(0.38), location: 0.25),
-                        .init(color: SolfinDesign.spaceBlack.opacity(0.10), location: 0.48),
-                        .init(color: .clear, location: 0.65)
+                        .init(color: SolfinDesign.spaceBlack.opacity(0.76), location: 0),
+                        .init(color: SolfinDesign.spaceBlack.opacity(0.42), location: 0.28),
+                        .init(color: SolfinDesign.spaceBlack.opacity(0.08), location: 0.58),
+                        .init(color: .clear, location: 0.8)
                     ], startPoint: .leading, endPoint: .trailing)
                     .allowsHitTesting(false)
                 }
                 .overlay {
                     LinearGradient(stops: [
-                        .init(color: .clear, location: 0.48),
-                        .init(color: SolfinDesign.spaceBlack.opacity(0.5), location: 0.76),
+                        .init(color: .clear, location: 0.3),
+                        .init(color: SolfinDesign.spaceBlack.opacity(0.48), location: 0.7),
                         .init(color: SolfinDesign.spaceBlack, location: 1)
                     ], startPoint: .top, endPoint: .bottom)
                     .allowsHitTesting(false)
                 }
                 .overlay(alignment: .bottomLeading) {
                     VStack(alignment: .leading, spacing: compact ? 12 : 20) {
-                        SolarContextLabel(text: "Featured in your library")
-                        SolarMediaLogo(item: item, maxWidth: min(500, textWidth),
-                                       height: compact ? 100 : 170,
-                                       fallbackSize: compact ? 42 : 64)
+                        HStack(spacing: 12) {
+                            Capsule().fill(SolfinDesign.solarGold).frame(width: 28, height: 2)
+                            SolarContextLabel(text: "Featured in your library")
+                        }
+                        SolarMediaLogo(item: item, maxWidth: min(expansive ? 620 : 520, textWidth),
+                                       height: compact ? 100 : expansive ? 200 : 160,
+                                       fallbackSize: compact ? 48 : expansive ? 80 : 64)
                         SolarMediaMetadata(item: item, runtime: runtime(item))
                         if !compact, let genres = item.genres { SolarGenreRow(genres: genres) }
                         if let overview = item.overview, !overview.isEmpty {
-                            SolarHeroOverview(text: overview, maxWidth: textWidth, lineLimit: compact ? 2 : 3)
+                            Text(overview)
+                                .font(.system(size: expansive ? 22 : 19, weight: .medium))
+                                .lineSpacing(5)
+                                .foregroundStyle(.white.opacity(0.84))
+                                .lineLimit(compact ? 2 : 3)
+                                .frame(maxWidth: textWidth, alignment: .leading)
                         }
                         SolarHeroActions {
                             FeaturedPlayButton(title: playLabel(item)) { playFeatured(item) }
@@ -418,7 +434,7 @@ private struct FeaturedMediaBar: View {
                     .frame(width: textWidth, alignment: .leading)
                     .shadow(color: .black.opacity(0.4), radius: 12, y: 3)
                     .padding(.leading, leadingInset)
-                    .padding(.bottom, 80)
+                    .padding(.bottom, compact ? 64 : 88)
                 }
                 .overlay(alignment: .bottomTrailing) {
                     if items.count > 1 {
@@ -432,7 +448,7 @@ private struct FeaturedMediaBar: View {
                             }
                             Text(String(format: "%02d / %02d", selection + 1, items.count))
                                 .font(.caption.monospacedDigit())
-                                .foregroundStyle(.white.opacity(0.6))
+                                .foregroundStyle(.white.opacity(0.78))
                             carouselButton("chevron.left", action: previous)
                             carouselButton("chevron.right", action: next)
                         }
@@ -443,17 +459,18 @@ private struct FeaturedMediaBar: View {
                 .clipped()
         }
         .frame(maxWidth: .infinity)
-        .containerRelativeFrame(.vertical, alignment: .top) { available, _ in
-            // Keep the tall, full-bleed artwork treatment responsive to the viewport.
-            2 * max(400, min(660, available * 0.64))
-        }
+        .frame(height: heroHeight)
         .ignoresSafeArea(edges: .top)
         .onHover { hovering = $0 }
         .task(id: items.map(\.id).joined(separator: ",")) {
-            // Warm the shared logo overlay cache for every item in the media bar so
-            // starting playback from the homepage does not need a cold download.
+            // Warm logos and local face analysis for subsequent carousel slides,
+            // so both playback and artwork framing can use their shared caches.
             for item in items {
                 await LogoOverlayCache.shared.prefetch(for: item, api: appState.api)
+                guard !Task.isCancelled else { return }
+                if let url = appState.api.backdropImageURL(for: item, maxWidth: nil) {
+                    _ = await ArtworkFaceCache.shared.analysis(for: url)
+                }
             }
         }
         .task(id: "\(selection)-\(hovering)-\(autoAdvance)") {
@@ -468,15 +485,7 @@ private struct FeaturedMediaBar: View {
 
     private func heroArtwork(size: CGSize) -> some View {
         let url = appState.api.backdropImageURL(for: item, maxWidth: nil)
-        // Preserve the top of the artwork; vertical overflow crops at the bottom.
-        return SolfinDesign.spaceBlack
-            .overlay {
-                CachedImage(url: url, contentMode: .fill)
-                    .frame(width: size.width, height: size.height, alignment: .top)
-                    .clipped()
-            }
-            .frame(width: size.width, height: size.height)
-            .clipped()
+        return FaceAwareHeroArtwork(url: url, size: size)
     }
 
     private func carouselButton(_ icon: String, action: @escaping () -> Void) -> some View {
@@ -485,11 +494,13 @@ private struct FeaturedMediaBar: View {
                                action: action)
     }
     private func runtime(_ item: BaseItem) -> String? {
-        guard let ticks = item.runTimeTicks else { return nil }
+        guard let ticks = item.runTimeTicks, ticks >= Ticks.perSecond * 60 else { return nil }
         let minutes = Int(Ticks.toSeconds(ticks) / 60)
         return minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
     }
-    private func playLabel(_ item: BaseItem) -> String { "Play" }
+    private func playLabel(_ item: BaseItem) -> String {
+        Ticks.toSeconds(item.userData?.playbackPositionTicks) > 0 ? "Resume" : "Play"
+    }
     private func playFeatured(_ item: BaseItem) {
         if item.type == "Series" {
             Task { await playSeries(item) }
