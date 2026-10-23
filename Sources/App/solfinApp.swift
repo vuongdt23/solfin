@@ -29,12 +29,17 @@ struct SolfinApp: App {
 
 struct RootView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var nowPlaying: NowPlaying
     var body: some View {
         Group {
             if appState.isSignedIn { AppShellView() }
             else { LoginView() }
         }
         .task { await appState.validateStoredSession() }
+        .onDisappear { nowPlaying.stop() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            nowPlaying.stop()
+        }
         .animation(.easeInOut(duration: 0.25), value: appState.isSignedIn)
     }
 }

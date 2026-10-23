@@ -70,6 +70,8 @@ public final class PlaybackController {
     private var state: State = .idle
     private var hasStartedPlayback = false
     private var progressTimer: DispatchSourceTimer?
+    private let lifecycleLock = NSLock()
+    private var stopRequested = false
 
     private let timePosId = 1
     private let pauseId = 2
@@ -140,14 +142,17 @@ public final class PlaybackController {
                 let title = prepared.title
                 let mpvLogPath = SolfinLog.makeMPVLogPath(title: title)
                 let launchStarted = Date()
-                try mpv.launch(binaryPath: binary, configDir: config.configDir,
-                               additionalConfigPath: config.additionalConfigPath,
-                               initialURL: plan.streamURL.absoluteString,
-                               startSeconds: plan.resumeSeconds,
-                               mediaTitle: title,
-                               logoOverlay: prepared.logoOverlay,
-                               mpvLogPath: mpvLogPath,
-                               mpvMessageLevel: SolfinLog.currentLevel.mpvMessageLevel)
+                let launched = try launchIfNotStopped {
+                    try mpv.launch(binaryPath: binary, configDir: config.configDir,
+                                   additionalConfigPath: config.additionalConfigPath,
+                                   initialURL: plan.streamURL.absoluteString,
+                                   startSeconds: plan.resumeSeconds,
+                                   mediaTitle: title,
+                                   logoOverlay: prepared.logoOverlay,
+                                   mpvLogPath: mpvLogPath,
+                                   mpvMessageLevel: SolfinLog.currentLevel.mpvMessageLevel)
+                }
+                guard launched else { return }
                 SolfinLog.info("mpv Process.run returned in \(Int(Date().timeIntervalSince(launchStarted) * 1000))ms log=\(mpvLogPath ?? "off")", category: .mpv)
                 mpv.onExit = { [weak self] _ in self?.finalize() }
 
@@ -172,8 +177,21 @@ public final class PlaybackController {
 
     /// Ask mpv to quit; finalize() runs from the process exit / socket close.
     public func stop() {
-        ipc?.quit()
+        lifecycleLock.lock()
+        stopRequested = true
         mpv.terminate()
+        lifecycleLock.unlock()
+        ipc?.quit()
+    }
+
+    /// Serialize process startup with stop so an in-flight media preflight cannot
+    /// launch a new mpv window after the app has begun shutting down.
+    private func launchIfNotStopped(_ launch: () throws -> Void) throws -> Bool {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        guard !stopRequested else { return false }
+        try launch()
+        return true
     }
 
     public func setPaused(_ paused: Bool) {
