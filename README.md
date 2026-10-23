@@ -38,7 +38,14 @@ state (resume points, watched status) in sync.
   previews** (patched thumbfast worker), audio/subtitle
   track menus, a prominent **playback-speed** control (1.5× a tap away), volume slider, and
   a top title bar — tuned to Solfin's solar orange accent and tiny sun seek-handle motif in the **Inter** UI font. Real media titles
-  shown via `--force-media-title`.
+  shown via `--force-media-title`. Immediate hover tooltips and brief action feedback
+  explain controls; compact timeline spacing and proportional screen-height scaling
+  keep the OSC readable on 4K displays. Smaller windows move secondary actions into a
+  **More controls** menu.
+  Menus support ↑/↓, Enter and Escape. The volume slider includes configured boost
+  headroom (130% by default), with a 100% reference tick. Ordinary text subtitles
+  temporarily move above visible controls; authored ASS/SSA and bitmap tracks retain
+  their positioning.
 - **External mpv, isolated config** — solfin runs mpv with its own `--config-dir`, so your
   personal `~/.config/mpv` is never touched.
 - Launches **fullscreen**; a **Now Playing** strip in the app reflects live playback state.
@@ -97,6 +104,13 @@ manually in Keychain Access if desired. Switching back copies tokens to Keychain
 and deletes the local file only after the writes succeed.
 
 ## Testing
+
+OSC regression tests (mock mpv host; geometry, clicks, menus, fades, subtitles,
+feedback, escaping, volume boost and preview routing):
+
+```sh
+luajit tools/test-mpv-controls.lua
+```
 
 Unit tests (no network — `URLProtocol`-mocked):
 
