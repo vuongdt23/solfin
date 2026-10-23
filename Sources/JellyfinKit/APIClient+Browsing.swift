@@ -101,6 +101,44 @@ public extension APIClient {
         return try decode([BaseItem].self, from: try await send(req)).filter { !$0.isOffline }
     }
 
+    /// Random artwork scoped to a library. Use the recursive Items endpoint,
+    /// not Latest: TV latest results can be grouped around episodes rather than
+    /// returning the series posters needed here.
+    func libraryPosterItems(for library: BaseItem, excluding previousIDs: [String] = []) async throws -> [BaseItem] {
+        let uid = try requireUser()
+        let types: String
+        switch library.collectionType?.lowercased() {
+        case "movies": types = "Movie"
+        case "tvshows": types = "Series"
+        case "music": types = "MusicAlbum"
+        case "books": types = "Book"
+        default: types = "Movie,Series"
+        }
+        let query = [
+            URLQueryItem(name: "ParentId", value: library.id),
+            URLQueryItem(name: "Recursive", value: "true"),
+            URLQueryItem(name: "IncludeItemTypes", value: types),
+            URLQueryItem(name: "SortBy", value: "Random"),
+            URLQueryItem(name: "Limit", value: "24"),
+            URLQueryItem(name: "HasPrimaryImage", value: "true"),
+            URLQueryItem(name: "EnableImages", value: "true"),
+            URLQueryItem(name: "ImageTypeLimit", value: "1"),
+            URLQueryItem(name: "Fields", value: "ImageTags,PrimaryImageAspectRatio,LocationType"),
+        ]
+        let request = try makeRequest(path: "Users/\(uid)/Items", query: query)
+        let response = try decode(ItemsResponse.self, from: try await send(request))
+        var seen = Set<String>()
+        let candidates = response.items.filter { item in
+            guard !item.isOffline, let tag = item.imageTags?["Primary"], !tag.isEmpty else { return false }
+            return seen.insert(item.id).inserted
+        }
+        let previous = Set(previousIDs)
+        // Prefer a completely fresh stack, but don't leave small libraries empty.
+        let fresh = candidates.filter { !previous.contains($0.id) }
+        let repeats = candidates.filter { previous.contains($0.id) }
+        return Array((fresh + repeats).prefix(3))
+    }
+
     /// Search the user's video libraries by title.
     func searchItems(term: String, includeItemTypes: String? = nil,
                      startIndex: Int = 0, limit: Int = 60) async throws -> ItemsResponse {

@@ -47,15 +47,24 @@ struct AppShellView: View {
                                     : AnyView(SolfinDesign.solarBackground))
         .preferredColorScheme(.dark)
         .toolbarBackground(.hidden, for: .windowToolbar)
-        .safeAreaPadding(.bottom, nowPlaying.isActive ? 82 : 0)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if nowPlaying.isActive {
+                NowPlayingBar()
+                    .frame(maxWidth: 1180)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity)
+                    .background {
+                        SolfinDesign.spaceBlack.opacity(0.96)
+                            .overlay(alignment: .top) {
+                                Rectangle().fill(.white.opacity(0.1)).frame(height: 1)
+                            }
+                            .ignoresSafeArea(edges: .bottom)
+                    }
+            }
+        }
         .overlay(alignment: .center) {
             PlaybackLaunchOverlay()
-        }
-        .overlay(alignment: .bottom) {
-            NowPlayingBar()
-                .frame(maxWidth: 1180)
-                .padding(.horizontal, 18)
-                .padding(.bottom, 12)
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.86), value: nowPlaying.isActive)
         .task(id: appState.session?.id) { await loadLibraries() }

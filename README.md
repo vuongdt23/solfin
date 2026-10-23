@@ -80,6 +80,22 @@ open ~/Library/Developer/Xcode/DerivedData/solfin-*/Build/Products/Debug/Solfin.
 
 In the app: sign in (server URL, username, password), pick a title, hit **Play**.
 
+### Credential storage
+
+**Local file — no prompts** is the default for new setups. Keychain remains
+available under **Settings → Account → Save access tokens**. Existing Keychain
+installations keep their selected storage; choose Local file and confirm to migrate
+loaded sessions without rereading Keychain. Startup reads credentials only once.
+Passwords are never saved.
+
+Local mode stores reusable access tokens in plaintext at
+`~/Library/Application Support/Solfin/credentials.json` with owner-only permissions
+(folder `0700`, file `0600`). Other software running as your user can read them,
+and backups may include them. Local mode never accesses Keychain. Existing
+Keychain copies are retained to avoid deletion prompts; remove stale Solfin entries
+manually in Keychain Access if desired. Switching back copies tokens to Keychain
+and deletes the local file only after the writes succeed.
+
 ## Testing
 
 Unit tests (no network — `URLProtocol`-mocked):

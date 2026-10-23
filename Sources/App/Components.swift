@@ -177,13 +177,16 @@ struct LandscapeCard: View {
     let item: BaseItem
     let size: LibraryCardSize
     let useThumbnailArtwork: Bool
+    let showResumeDetails: Bool
     @State private var hovering = false
     @State private var playButtonHovering = false
 
-    init(item: BaseItem, size: LibraryCardSize = .medium, useThumbnailArtwork: Bool = false) {
+    init(item: BaseItem, size: LibraryCardSize = .medium, useThumbnailArtwork: Bool = false,
+         showResumeDetails: Bool = false) {
         self.item = item
         self.size = size
         self.useThumbnailArtwork = useThumbnailArtwork
+        self.showResumeDetails = showResumeDetails
     }
 
     var body: some View {
@@ -192,15 +195,29 @@ struct LandscapeCard: View {
                 PosterImage(url: artworkURL)
                     .frame(width: size.bannerWidth, height: size.bannerHeight)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                LinearGradient(colors: [.clear, .black.opacity(0.34)], startPoint: .center, endPoint: .bottom)
+                LinearGradient(colors: [.clear, .black.opacity(showResumeDetails ? 0.7 : 0.34)], startPoint: .center, endPoint: .bottom)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                if hovering {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .fill(RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.34), SolfinDesign.solarRed.opacity(0.18), SolfinDesign.nebulaPurple.opacity(0.22), .clear], center: .center, startRadius: 8, endRadius: 140))
-                        .blur(radius: 16)
-                        .padding(-14)
-                        .allowsHitTesting(false)
-                        .transition(.opacity)
+                if showResumeDetails, let remainingText {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Text(remainingText)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(.black.opacity(0.48), in: Capsule())
+                            Spacer()
+                        }
+                        .padding(14)
+                    }
+                    .allowsHitTesting(false)
+                }
+                if hovering || showResumeDetails {
+                    if hovering {
+                        SolarCardHoverGlow(isHovering: true, radius: 140)
+                            .transition(.opacity)
+                    }
                     Button {
                         nowPlaying.play(item: item, api: appState.api, config: appState.makePlaybackConfig()) { appState.playbackError = $0 }
                     } label: {
@@ -212,18 +229,28 @@ struct LandscapeCard: View {
                             .shadow(color: SolfinDesign.solarOrange.opacity(playButtonHovering ? 0.7 : 0.35), radius: playButtonHovering ? 26 : 18, y: 5)
                             .scaleEffect(playButtonHovering ? 1.12 : 1)
                     }
-                    .buttonStyle(.plain).help("Play")
+                    .buttonStyle(.plain).help(showResumeDetails ? "Resume" : "Play")
                     .onHover { playButtonHovering = $0 }
                     .animation(.easeOut(duration: 0.16), value: playButtonHovering)
-                    .accessibilityLabel("Play \(item.name)")
+                    .accessibilityLabel("\(showResumeDetails ? "Resume" : "Play") \(item.name)")
                 }
-                if let pct = item.userData?.playedPercentage, pct > 0 {
-                    GeometryReader { geo in
-                        VStack { Spacer(); Rectangle().fill(LinearGradient(colors: [SolfinDesign.solarOrange, SolfinDesign.nebulaPurple], startPoint: .leading, endPoint: .trailing)).frame(width: geo.size.width * min(pct, 100) / 100, height: 4) }
+                if let progressFraction {
+                    VStack {
+                        Spacer(minLength: 0)
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Rectangle().fill(.white.opacity(0.24))
+                                Rectangle()
+                                    .fill(SolfinDesign.solarGold)
+                                    .frame(width: geo.size.width * progressFraction)
+                            }
+                        }.frame(height: showResumeDetails ? 5 : 4)
                     }
+                    .allowsHitTesting(false)
                 }
             }
             .frame(width: size.bannerWidth, height: size.bannerHeight)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(hovering ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarGold, SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: hovering ? 2 : 1) }
             .compositingGroup()
             .shadow(color: SolfinDesign.solarOrange.opacity(hovering ? 0.22 : 0), radius: 24, y: 10)
@@ -236,6 +263,26 @@ struct LandscapeCard: View {
         .frame(width: size.bannerWidth, alignment: .leading)
         .contentShape(Rectangle()).onHover { hovering = $0 }
         .animation(.spring(response: 0.28, dampingFraction: 0.8), value: hovering)
+    }
+
+    private var progressFraction: Double? {
+        if let percentage = item.userData?.playedPercentage, percentage > 0 {
+            return min(percentage, 100) / 100
+        }
+        let duration = Ticks.toSeconds(item.runTimeTicks)
+        let position = Ticks.toSeconds(item.userData?.playbackPositionTicks)
+        guard duration > 0, position > 0 else { return nil }
+        return min(position / duration, 1)
+    }
+
+    private var remainingText: String? {
+        let duration = Ticks.toSeconds(item.runTimeTicks)
+        guard duration > 0 else { return nil }
+        let position = item.userData?.playbackPositionTicks.map { Ticks.toSeconds($0) }
+            ?? (duration * (progressFraction ?? 0))
+        let remaining = max(0, duration - position)
+        guard remaining > 0 else { return nil }
+        return "\(Int(ceil(remaining / 60))) min left"
     }
 
     private var artworkURL: URL? {
@@ -378,23 +425,33 @@ struct NowPlayingBar: View {
                     }
                 }
                 .frame(width: 52, height: 52)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(name).font(.callout.weight(.semibold)).lineLimit(1)
-                    Text(nowPlaying.subtitle ?? nowPlaying.state.rawValue.capitalized)
-                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }.frame(width: 180, alignment: .leading)
-                Text(timeString(displayPosition)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(nowPlaying.state == .paused ? "PAUSED" : nowPlaying.isQueueTransitioning ? "LOADING" : "NOW PLAYING")
+                        .font(.system(size: 9, weight: .bold))
+                        .tracking(1.2)
+                        .foregroundStyle(SolfinDesign.solarGold)
+                    Text(name).font(.callout.weight(.semibold)).foregroundStyle(.white).lineLimit(1)
+                    if let subtitle = nowPlaying.subtitle {
+                        Text(subtitle)
+                            .font(.caption).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                    }
+                }.frame(width: 150, alignment: .leading)
+                Text(timeString(displayPosition)).font(.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.72))
                 Slider(value: Binding(get: { displayPosition }, set: { draftPosition = $0 }),
                        in: 0...max(nowPlaying.durationSeconds, 1), onEditingChanged: { editing in
                     dragging = editing
                     if !editing { nowPlaying.seek(to: draftPosition) }
-                }).disabled(!nowPlaying.isSeekable).accessibilityLabel("Playback position")
+                })
+                .tint(SolfinDesign.solarGold)
+                .disabled(!nowPlaying.isSeekable)
+                .accessibilityLabel("Playback position")
                 Text("−\(timeString(max(0, nowPlaying.durationSeconds - displayPosition)))")
-                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                    .font(.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.72))
                 control("backward.end.fill", "Previous episode", enabled: nowPlaying.hasPreviousInQueue && !nowPlaying.isQueueTransitioning) { nowPlaying.playPrevious() }
                 control("gobackward.15", "Back 15 seconds", enabled: !nowPlaying.isQueueTransitioning) { nowPlaying.skip(seconds: -15) }
                 control(nowPlaying.state == .paused ? "play.fill" : "pause.fill",
-                        nowPlaying.state == .paused ? "Play" : "Pause", enabled: !nowPlaying.isQueueTransitioning) { nowPlaying.togglePause() }
+                        nowPlaying.state == .paused ? "Play" : "Pause", enabled: !nowPlaying.isQueueTransitioning,
+                        prominent: true) { nowPlaying.togglePause() }
                 control("goforward.30", "Forward 30 seconds", enabled: !nowPlaying.isQueueTransitioning) { nowPlaying.skip(seconds: 30) }
                 control("forward.end.fill", "Next episode", enabled: nowPlaying.hasNextInQueue && !nowPlaying.isQueueTransitioning) { nowPlaying.playNext() }
                 if nowPlaying.isQueueTransitioning {
@@ -414,8 +471,10 @@ struct NowPlayingBar: View {
             }
             .sheet(isPresented: $showSubtitleEditor) { SubtitleEditorView() }
             .popover(isPresented: $showMediaInfo) { MediaInfoView() }
-            .padding(10)
-            .glassSurface(cornerRadius: 18)
+            .padding(12)
+            .foregroundStyle(.white.opacity(0.88))
+            .background(.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 16))
+            .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.12)) }
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
@@ -473,11 +532,20 @@ struct NowPlayingBar: View {
     }
     private var displayPosition: Double { dragging ? draftPosition : nowPlaying.positionSeconds }
     private func control(_ icon: String, _ label: String, enabled: Bool = true,
-                         action: @escaping () -> Void) -> some View {
-        Button(action: action) { Image(systemName: icon).frame(width: 26, height: 26) }
-            .buttonStyle(.plain).accessibilityLabel(label)
-            .disabled(!enabled)
-            .opacity(enabled ? 1 : 0.35)
+                         prominent: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: prominent ? 16 : 13, weight: .semibold))
+                .foregroundStyle(prominent ? .black : .white.opacity(0.88))
+                .frame(width: prominent ? 40 : 26, height: prominent ? 40 : 30)
+                .background(prominent ? Color.white : .clear, in: Circle())
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(label)
+        .accessibilityLabel(label)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.28)
     }
     private func timeString(_ seconds: Double) -> String {
         let value = max(0, Int(seconds)); let hours = value / 3600
