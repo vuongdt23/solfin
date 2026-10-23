@@ -111,7 +111,7 @@ struct HomeView: View {
     private var loadingShelves: some View {
         VStack(alignment: .leading, spacing: 14) {
             RoundedRectangle(cornerRadius: 5).fill(.secondary.opacity(0.12)).frame(width: 190, height: 22)
-            ScrollView(.horizontal, showsIndicators: false) {
+            HorizontalWheelScrollView {
                 HStack(spacing: 18) {
                     ForEach(0..<6, id: \.self) { _ in
                         RoundedRectangle(cornerRadius: SolfinDesign.posterRadius)
@@ -128,7 +128,7 @@ struct HomeView: View {
         let tileWidth = min(560, max(380, (availableWidth - 26) / 2))
         return VStack(alignment: .leading, spacing: 14) {
             sectionHeading("Your Libraries", detail: "Browse all")
-            ScrollView(.horizontal, showsIndicators: false) {
+            HorizontalWheelScrollView {
                 LazyHStack(spacing: 22) {
                     ForEach(views) { view in
                         HomeLibraryTile(item: view, posters: libraryPosters[view.id] ?? [], width: tileWidth)
@@ -148,7 +148,7 @@ struct HomeView: View {
     private func landscapeShelf(_ title: String, _ items: [BaseItem], isResume: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             sectionHeading(title, detail: isResume ? "Pick up where you left off" : nil)
-            ScrollView(.horizontal, showsIndicators: false) {
+            HorizontalWheelScrollView {
                 LazyHStack(spacing: 16) {
                     ForEach(items) { item in
                         // Continue Watching and Next Up keep their dedicated wide card style,
@@ -165,7 +165,7 @@ struct HomeView: View {
     private func shelf(_ title: String, _ items: [BaseItem]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             sectionHeading(title)
-            ScrollView(.horizontal, showsIndicators: false) {
+            HorizontalWheelScrollView {
                 LazyHStack(spacing: 18) {
                     ForEach(items) { item in
                         NavigationLink(value: item) { homeCard(item) }.buttonStyle(.plain)
@@ -361,6 +361,103 @@ private func capture<T>(_ operation: () async throws -> T) async -> Result<T, Er
     catch { return .failure(error) }
 }
 
+/// Horizontal SwiftUI scroll views on macOS respond to horizontal wheel deltas,
+/// but a typical vertical mouse wheel does not move them. Translate wheel input
+/// over each shelf into horizontal scrolling without affecting other page areas.
+private struct HorizontalWheelScrollView<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    @State private var isHovering = false
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            content()
+        }
+        .overlay {
+            ShelfScrollWheelObserver(isEnabled: isHovering)
+                .allowsHitTesting(false)
+        }
+        .onHover { isHovering = $0 }
+    }
+}
+
+private struct ShelfScrollWheelObserver: NSViewRepresentable {
+    let isEnabled: Bool
+
+    func makeNSView(context: Context) -> ShelfScrollWheelView {
+        let view = ShelfScrollWheelView()
+        view.isEnabled = isEnabled
+        return view
+    }
+
+    func updateNSView(_ view: ShelfScrollWheelView, context: Context) {
+        view.isEnabled = isEnabled
+    }
+}
+
+private final class ShelfScrollWheelView: NSView {
+    var isEnabled = false
+    private var eventMonitor: Any?
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+            self.eventMonitor = nil
+        }
+        guard let window else { return }
+        installMonitor(for: window)
+    }
+
+    private func installMonitor(for window: NSWindow) {
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self, weak window] event in
+            guard let self, self.isEnabled, let window, self.window === window,
+                  event.window === window,
+                  self.bounds.contains(self.convert(event.locationInWindow, from: window.contentView)),
+                  let contentView = window.contentView else {
+                return event
+            }
+
+            // Find the actual horizontal shelf scroll view under the wheel
+            // location. SwiftUI overlays aren't guaranteed to be descendants
+            // of the NSScrollView they visually cover.
+            let point = contentView.convert(event.locationInWindow, from: nil)
+            var hitView = contentView.hitTest(point)
+            var shelfScrollView: NSScrollView?
+            while let view = hitView {
+                if let scrollView = view as? NSScrollView,
+                   let documentView = scrollView.documentView,
+                   documentView.frame.width > scrollView.contentView.bounds.width + 1 {
+                    shelfScrollView = scrollView
+                    break
+                }
+                hitView = view.superview
+            }
+            guard let scrollView = shelfScrollView,
+                  let documentView = scrollView.documentView else { return event }
+
+            // Use horizontal wheel movement when present, otherwise map the
+            // normal vertical wheel/trackpad gesture onto the shelf's x-axis.
+            let delta = abs(event.scrollingDeltaX) > 0.1
+                ? event.scrollingDeltaX : event.scrollingDeltaY
+            guard abs(delta) > 0.1 else { return event }
+
+            let clipView = scrollView.contentView
+            let maxX = max(0, documentView.frame.width - clipView.bounds.width)
+            let targetX = min(max(clipView.bounds.origin.x - delta, 0), maxX)
+            guard abs(targetX - clipView.bounds.origin.x) > 0.1 else { return event }
+            clipView.scroll(to: NSPoint(x: targetX, y: clipView.bounds.origin.y))
+            scrollView.reflectScrolledClipView(clipView)
+            return nil
+        }
+    }
+
+    deinit {
+        if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
+    }
+}
+
 private struct FeaturedMediaBar: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var nowPlaying: NowPlaying
@@ -443,13 +540,6 @@ private struct FeaturedMediaBar: View {
                     .shadow(color: .black.opacity(0.4), radius: 12, y: 3)
                     .padding(.leading, leadingInset)
                     .padding(.bottom, compact ? 64 : 88)
-                }
-                .overlay {
-                    CarouselScrollWheelObserver { direction in
-                        if direction > 0 { next() } else { previous() }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .allowsHitTesting(false)
                 }
                 .overlay(alignment: .bottomTrailing) {
                     if items.count > 1 {
@@ -552,63 +642,4 @@ private struct FeaturedMediaBar: View {
     }
     private func next() { select((selection + 1) % items.count) }
     private func previous() { select((selection - 1 + items.count) % items.count) }
-}
-
-/// Observes wheel gestures over the featured hero without placing an input-blocking
-/// view over its buttons and navigation link.
-private struct CarouselScrollWheelObserver: NSViewRepresentable {
-    let onScroll: (CGFloat) -> Void
-
-    func makeNSView(context: Context) -> CarouselScrollWheelView {
-        let view = CarouselScrollWheelView()
-        view.onScroll = onScroll
-        return view
-    }
-
-    func updateNSView(_ view: CarouselScrollWheelView, context: Context) {
-        view.onScroll = onScroll
-    }
-}
-
-private final class CarouselScrollWheelView: NSView {
-    var onScroll: ((CGFloat) -> Void)?
-    private var eventMonitor: Any?
-    private var lastAdvance = Date.distantPast
-
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        // Keep mouse clicks routed to the artwork, play buttons, and carousel controls.
-        nil
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        if let eventMonitor {
-            NSEvent.removeMonitor(eventMonitor)
-            self.eventMonitor = nil
-        }
-        guard window != nil else { return }
-
-        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            guard let self, event.window === self.window,
-                  self.bounds.contains(self.convert(event.locationInWindow, from: nil)) else {
-                return event
-            }
-
-            let delta = abs(event.scrollingDeltaX) > abs(event.scrollingDeltaY)
-                ? event.scrollingDeltaX : event.scrollingDeltaY
-            guard abs(delta) > 0.1 else { return nil }
-
-            let now = Date()
-            if now.timeIntervalSince(self.lastAdvance) >= 0.35 {
-                self.lastAdvance = now
-                self.onScroll?(delta)
-            }
-            // A wheel gesture over the hero is carousel input, not page scrolling.
-            return nil
-        }
-    }
-
-    deinit {
-        if let eventMonitor { NSEvent.removeMonitor(eventMonitor) }
-    }
 }
