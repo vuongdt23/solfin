@@ -55,12 +55,14 @@ struct PosterCard: View {
     @EnvironmentObject private var nowPlaying: NowPlaying
     let item: BaseItem
     let size: LibraryDensity
+    let showsPlaybackControls: Bool
     @State private var hovering = false
     @State private var playButtonHovering = false
 
-    init(item: BaseItem, size: LibraryDensity = LibraryDensity(size: .small)) {
+    init(item: BaseItem, size: LibraryDensity = LibraryDensity(size: .small), showsPlaybackControls: Bool = true) {
         self.item = item
         self.size = size
+        self.showsPlaybackControls = showsPlaybackControls
     }
 
     private var posterWidth: CGFloat { size.posterWidth }
@@ -72,7 +74,7 @@ struct PosterCard: View {
                 PosterImage(url: appState.api.primaryImageURL(for: item))
                     .frame(width: posterWidth, height: posterHeight)
                     .clipShape(RoundedRectangle(cornerRadius: SolfinDesign.posterRadius, style: .continuous))
-                    .overlay(alignment: .bottom) { progressBar }
+                    .overlay(alignment: .bottom) { if showsPlaybackControls { progressBar } }
                     .overlay {
                         RoundedRectangle(cornerRadius: SolfinDesign.posterRadius, style: .continuous)
                             .strokeBorder(hovering ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarGold, SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: hovering ? 2 : 1)
@@ -84,6 +86,8 @@ struct PosterCard: View {
                         .padding(-14)
                         .allowsHitTesting(false)
                         .transition(.opacity)
+                }
+                if hovering && showsPlaybackControls {
                     Button {
                         nowPlaying.play(item: item, api: appState.api, config: appState.makePlaybackConfig()) { appState.playbackError = $0 }
                     } label: {
@@ -178,15 +182,17 @@ struct LandscapeCard: View {
     let size: LibraryCardSize
     let useThumbnailArtwork: Bool
     let showResumeDetails: Bool
+    let showsPlaybackControls: Bool
     @State private var hovering = false
     @State private var playButtonHovering = false
 
     init(item: BaseItem, size: LibraryCardSize = .medium, useThumbnailArtwork: Bool = false,
-         showResumeDetails: Bool = false) {
+         showResumeDetails: Bool = false, showsPlaybackControls: Bool = true) {
         self.item = item
         self.size = size
         self.useThumbnailArtwork = useThumbnailArtwork
         self.showResumeDetails = showResumeDetails
+        self.showsPlaybackControls = showsPlaybackControls
     }
 
     var body: some View {
@@ -213,11 +219,12 @@ struct LandscapeCard: View {
                     }
                     .allowsHitTesting(false)
                 }
-                if hovering || showResumeDetails {
-                    if hovering {
-                        SolarCardHoverGlow(isHovering: true, radius: 140)
-                            .transition(.opacity)
-                    }
+                if hovering {
+                    SolarCardHoverGlow(isHovering: true, radius: 140)
+                        .transition(.opacity)
+                        .allowsHitTesting(false)
+                }
+                if showsPlaybackControls && hovering {
                     Button {
                         nowPlaying.play(item: item, api: appState.api, config: appState.makePlaybackConfig()) { appState.playbackError = $0 }
                     } label: {
@@ -234,7 +241,7 @@ struct LandscapeCard: View {
                     .animation(.easeOut(duration: 0.16), value: playButtonHovering)
                     .accessibilityLabel("\(showResumeDetails ? "Resume" : "Play") \(item.name)")
                 }
-                if let progressFraction {
+                if showsPlaybackControls, let progressFraction {
                     VStack {
                         Spacer(minLength: 0)
                         GeometryReader { geo in

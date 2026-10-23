@@ -34,16 +34,18 @@ struct LibraryView: View {
                         EmptyContentView(title: "Library unavailable", message: loadError,
                                          systemImage: "wifi.exclamationmark") { reload() }
                     } else if items.isEmpty {
-                        EmptyContentView(title: playedFilter == .all ? "Nothing here" : "No matching titles",
-                                         message: playedFilter == .all
-                                         ? "This library does not contain supported video items."
-                                         : "Try changing the watched filter.")
-                    } else if filteredItems.isEmpty {
-                        EmptyContentView(title: "No matches",
-                                         message: "No loaded titles match \"\(filterText.trimmingCharacters(in: .whitespacesAndNewlines))\".",
-                                         systemImage: "magnifyingglass")
+                        EmptyContentView(title: query.isEmpty && playedFilter == .all ? "Nothing here" : "No matching titles",
+                                         message: query.isEmpty
+                                         ? "Try changing the watched filter, or add titles to this library."
+                                         : "No titles match \"\(query)\" in this library. Try another search or watched filter.",
+                                         systemImage: query.isEmpty ? "film" : "magnifyingglass")
                     } else {
                         itemGrid
+                        if hasMore {
+                            Color.clear.frame(height: 1)
+                                .onAppear { Task { await loadNextPage() } }
+                                .id(serverStartIndex)
+                        }
                         if isLoading { ProgressView().controlSize(.small).padding(24).tint(SolfinDesign.solarOrange) }
                         if let loadError, !items.isEmpty {
                             VStack(spacing: 8) {
@@ -62,34 +64,65 @@ struct LibraryView: View {
         .scrollContentBackground(.hidden)
         .navigationTitle("")
         .toolbarBackground(.hidden, for: .windowToolbar)
-        .searchable(text: $filterText, placement: .toolbar, prompt: "Filter loaded titles")
-        .task(id: "\(parent.id)-\(sort.rawValue)-\(sortAscending)-\(playedFilter.rawValue)") { await reloadAndWait() }
+        .searchable(text: $filterText, placement: .toolbar, prompt: "Search \(parent.name.lowercased())")
+        .task(id: "\(parent.id)-\(sort.rawValue)-\(sortAscending)-\(playedFilter.rawValue)-\(query)") {
+            await reloadAndWait(debounce: !query.isEmpty)
+        }
     }
 
     private var libraryHeader: some View {
-        HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(parent.name)
-                    .font(.largeTitle.weight(.bold))
-                    .foregroundStyle(.white)
-                if let count = totalCount {
-                    Text(filterText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                         ? "\(count) items"
-                         : "\(filteredItems.count) of \(count) items")
-                        .font(.callout.weight(.medium))
-                        .foregroundStyle(.white.opacity(0.56))
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 20) {
+                libraryHeading
+                Spacer(minLength: 20)
+                libraryControls
+            }
+            VStack(alignment: .leading, spacing: 16) {
+                libraryHeading
+                ScrollView(.horizontal, showsIndicators: false) {
+                    libraryControls
+                        .padding(.vertical, 6)
                 }
             }
-            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.bottom, 20)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(.white.opacity(0.1))
+                .frame(height: 1)
+                .allowsHitTesting(false)
+        }
+    }
+
+    private var libraryHeading: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 14) {
+            Text(parent.name)
+                .font(.largeTitle.weight(.bold))
+                .foregroundStyle(.white)
+            if let count = totalCount {
+                Text(query.isEmpty ? "\(count) titles" : "\(count) results")
+                    .font(.callout.weight(.medium))
+                    .foregroundStyle(.white.opacity(0.52))
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var libraryControls: some View {
+        HStack(spacing: 10) {
             Menu {
                 Picker("Watched", selection: playedFilterBinding) {
                     ForEach(PlayedFilter.allCases) { Text($0.title).tag($0) }
                 }
             } label: {
-                Label(playedFilter.title, systemImage: "line.3.horizontal.decrease.circle")
+                toolbarMenuLabel(playedFilter.title, icon: "line.3.horizontal.decrease")
             }
             .menuStyle(.borderlessButton)
-            .buttonStyle(SolarToolbarButtonStyle())
+            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .modifier(LibraryToolbarControl(isActive: playedFilter != .all))
+            .help("Filter by watched status")
 
             Menu {
                 Section("Sort By") {
@@ -100,22 +133,24 @@ struct LibraryView: View {
                         }
                     }
                 }
-                Divider()
-                Section("Direction") {
+                Section("Order") {
                     Button { sortAscending = true } label: {
-                        if sortAscending { Label("Ascending", systemImage: "checkmark") }
-                        else { Text("Ascending") }
+                        if sortAscending { Label(sortOrderTitle(ascending: true), systemImage: "checkmark") }
+                        else { Text(sortOrderTitle(ascending: true)) }
                     }
                     Button { sortAscending = false } label: {
-                        if !sortAscending { Label("Descending", systemImage: "checkmark") }
-                        else { Text("Descending") }
+                        if !sortAscending { Label(sortOrderTitle(ascending: false), systemImage: "checkmark") }
+                        else { Text(sortOrderTitle(ascending: false)) }
                     }
                 }
             } label: {
-                Label("Sort", systemImage: sortAscending ? "arrow.up" : "arrow.down")
+                toolbarMenuLabel(sort.title(for: parent.collectionType), icon: sortAscending ? "arrow.up" : "arrow.down")
             }
             .menuStyle(.borderlessButton)
-            .buttonStyle(SolarToolbarButtonStyle())
+            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .modifier(LibraryToolbarControl())
+            .help("Sort by \(sort.title.lowercased()) · \(sortDirectionTitle.lowercased())")
 
             Menu {
                 Section("Card type") {
@@ -129,25 +164,45 @@ struct LibraryView: View {
                     }
                 }
             } label: {
-                Label("Cards", systemImage: "square.grid.3x3")
+                toolbarMenuLabel("\(cardType.title) · \(cardSize.title)", icon: "square.grid.2x2")
             }
             .menuStyle(.borderlessButton)
-            .buttonStyle(SolarToolbarButtonStyle())
+            .menuIndicator(.hidden)
+            .buttonStyle(.plain)
+            .modifier(LibraryToolbarControl())
+            .help("Change card type and size")
+            if playedFilter != .all || !query.isEmpty {
+                Button {
+                    filterText = ""
+                    playedFilterRaw = PlayedFilter.all.rawValue
+                } label: { Image(systemName: "xmark.circle") }
+                .buttonStyle(.plain)
+                .modifier(LibraryToolbarControl())
+                .help("Clear search and watched filter")
+                .accessibilityLabel("Clear search and watched filter")
+            }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 16)
-        .background {
-            RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(.ultraThinMaterial)
-                .overlay { RoundedRectangle(cornerRadius: 22).fill(Color.black.opacity(0.28)) }
-                .overlay {
-                    RoundedRectangle(cornerRadius: 22, style: .continuous)
-                        .strokeBorder(LinearGradient(colors: [SolfinDesign.solarOrange.opacity(0.24),
-                                                              .white.opacity(0.08),
-                                                              SolfinDesign.nebulaPurple.opacity(0.22)],
-                                                     startPoint: .topLeading,
-                                                     endPoint: .bottomTrailing))
-                }
+        .fixedSize(horizontal: true, vertical: false)
+        .foregroundStyle(.white.opacity(0.9))
+    }
+
+    private func toolbarMenuLabel(_ title: String, icon: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon).font(.system(size: 13, weight: .medium))
+            Text(title)
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+                .opacity(0.6)
+        }
+    }
+
+    private var sortDirectionTitle: String { sortOrderTitle(ascending: sortAscending) }
+
+    private func sortOrderTitle(ascending: Bool) -> String {
+        switch sort {
+        case .name: ascending ? "A to Z" : "Z to A"
+        case .newest, .recentEpisodes, .releaseDate: ascending ? "Oldest first" : "Newest first"
+        case .rating: ascending ? "Lowest rated first" : "Highest rated first"
         }
     }
 
@@ -156,20 +211,10 @@ struct LibraryView: View {
         return availableSorts.contains(stored) ? stored : .name
     }
     private var playedFilter: PlayedFilter { PlayedFilter(rawValue: playedFilterRaw) ?? .all }
-    private var filteredItems: [BaseItem] {
-        let query = filterText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return items }
-        return items.filter { item in
-            item.name.localizedCaseInsensitiveContains(query)
-                || (item.seriesName?.localizedCaseInsensitiveContains(query) == true)
-        }
-    }
+    private var query: String { filterText.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var cardSize: LibraryCardSize { LibraryCardSize(rawValue: cardSizeRaw) ?? .small }
     private var cardType: LibraryCardType { LibraryCardType(rawValue: cardTypeRaw) ?? .poster }
     private var density: LibraryDensity { LibraryDensity(size: cardSize) }
-    private var sortBinding: Binding<LibrarySort> {
-        Binding(get: { sort }, set: { sortRaw = $0.rawValue })
-    }
     private var playedFilterBinding: Binding<PlayedFilter> {
         Binding(get: { playedFilter }, set: { playedFilterRaw = $0.rawValue })
     }
@@ -186,16 +231,8 @@ struct LibraryView: View {
 
     @ViewBuilder
     private var itemLinks: some View {
-        ForEach(filteredItems) { item in
-            NavigationLink(value: item) {
-                switch cardType {
-                case .thumbnail: ThumbnailCard(item: item, size: cardSize)
-                case .banner: LandscapeCard(item: item, size: cardSize)
-                case .poster: PosterCard(item: item, size: density)
-                }
-            }
-            .buttonStyle(.plain)
-            .onAppear { if item.id == items.last?.id { Task { await loadNextPage() } } }
+        ForEach(items) { item in
+            LibraryItemCard(item: item, cardType: cardType, size: cardSize)
         }
     }
 
@@ -210,9 +247,17 @@ struct LibraryView: View {
     }
 
     private func reload() { Task { await reloadAndWait() } }
-    private func reloadAndWait() async {
+    private func reloadAndWait(debounce: Bool = false) async {
         let token = UUID(); generation = token
         items = []; totalCount = nil; serverStartIndex = 0; hasMore = true; recentSeriesLoaded = false; loadError = nil
+        // A canceled request must not keep the next generation locked in loading.
+        isLoading = true
+        if debounce {
+            do { try await Task.sleep(for: .milliseconds(300)) }
+            catch { return }
+        }
+        guard !Task.isCancelled, token == generation else { return }
+        isLoading = false
         await loadNextPage(token: token)
     }
 
@@ -226,9 +271,10 @@ struct LibraryView: View {
                 let activeSeries = try await appState.api.recentlyActiveSeries(parentId: parent.id,
                                                                                limit: nil,
                                                                                sortOrder: sortAscending ? "Ascending" : "Descending",
-                                                                               filters: playedFilter.apiValue)
-                guard expected == generation else { return }
-                items = sortAscending ? Array(activeSeries.reversed()) : activeSeries
+                                                                               filters: playedFilter.apiValue,
+                                                                               searchTerm: query)
+                guard expected == generation, !Task.isCancelled else { return }
+                items = activeSeries
                 totalCount = items.count
                 recentSeriesLoaded = true
                 hasMore = false
@@ -242,8 +288,8 @@ struct LibraryView: View {
                 let response = try await appState.api.items(
                     parentId: parent.id, startIndex: serverStartIndex, limit: pageSize,
                     sortBy: sort.apiValue, sortOrder: sortAscending ? "Ascending" : "Descending",
-                    includeItemTypes: itemTypes, filters: playedFilter.apiValue)
-                guard expected == generation else { return }
+                    includeItemTypes: itemTypes, filters: playedFilter.apiValue, searchTerm: query)
+                guard expected == generation, !Task.isCancelled else { return }
                 let availableItems = response.items.filter(\.isBrowsableMedia)
                 items.append(contentsOf: availableItems.filter { candidate in !items.contains(where: { $0.id == candidate.id }) })
                 serverStartIndex += response.items.count
@@ -252,7 +298,7 @@ struct LibraryView: View {
                     && serverStartIndex < (response.totalRecordCount ?? Int.max)
             }
         } catch {
-            guard expected == generation else { return }
+            guard expected == generation, !Task.isCancelled else { return }
             loadError = error.localizedDescription
         }
         if expected == generation { isLoading = false }
@@ -273,9 +319,9 @@ private enum LibrarySort: String, CaseIterable, Identifiable {
         switch self {
         case .name: "Title"
         case .newest:
-            collectionType?.lowercased() == "movies" ? "Recently Added Movies" : "Recently Added Series"
-        case .recentEpisodes: "Recently Added Episodes"
-        case .releaseDate: "Release Date"
+            "Recently added"
+        case .recentEpisodes: "Episode activity"
+        case .releaseDate: "Release date"
         case .rating: "Rating"
         }
     }
@@ -292,7 +338,7 @@ private enum LibrarySort: String, CaseIterable, Identifiable {
 private enum PlayedFilter: String, CaseIterable, Identifiable {
     case all, unplayed, played
     var id: String { rawValue }
-    var title: String { switch self { case .all: "All"; case .unplayed: "Unplayed"; case .played: "Played" } }
+    var title: String { switch self { case .all: "All titles"; case .unplayed: "Unwatched"; case .played: "Watched" } }
     var apiValue: String? { switch self { case .all: nil; case .unplayed: "IsUnplayed"; case .played: "IsPlayed" } }
 }
 

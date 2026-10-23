@@ -22,7 +22,7 @@ public extension APIClient {
     func items(parentId: String, startIndex: Int = 0, limit: Int = 100,
                sortBy: String = "SortName", sortOrder: String = "Ascending",
                includeItemTypes: String? = nil, recursive: Bool = false,
-               filters: String? = nil) async throws -> ItemsResponse {
+               filters: String? = nil, searchTerm: String? = nil) async throws -> ItemsResponse {
         let uid = try requireUser()
         var q = [
             URLQueryItem(name: "ParentId", value: parentId),
@@ -38,6 +38,9 @@ public extension APIClient {
             q.append(URLQueryItem(name: "IncludeItemTypes", value: includeItemTypes))
         }
         if let filters { q.append(URLQueryItem(name: "Filters", value: filters)) }
+        if let searchTerm, !searchTerm.isEmpty {
+            q.append(URLQueryItem(name: "SearchTerm", value: searchTerm))
+        }
         let req = try makeRequest(path: "Users/\(uid)/Items", query: q)
         return try decode(ItemsResponse.self, from: try await send(req))
     }
@@ -171,7 +174,7 @@ public extension APIClient {
     /// a scanned recent episode are still included and sorted alphabetically after active series.
     func recentlyActiveSeries(parentId: String, limit: Int? = nil, sortOrder: String = "Descending",
                               filters: String? = nil, episodeScanLimit: Int = 1_000,
-                              allSeriesLimit: Int = 5_000) async throws -> [BaseItem] {
+                              allSeriesLimit: Int = 5_000, searchTerm: String? = nil) async throws -> [BaseItem] {
         async let seriesResponse = items(parentId: parentId,
                                          startIndex: 0,
                                          limit: allSeriesLimit,
@@ -179,7 +182,8 @@ public extension APIClient {
                                          sortOrder: "Ascending",
                                          includeItemTypes: "Series",
                                          recursive: true,
-                                         filters: filters)
+                                         filters: filters,
+                                         searchTerm: searchTerm)
         // Items/Latest is backed by Jellyfin's recent-items query and is much
         // cheaper than recursively sorting and materializing a large episode
         // result set. The previous Items query made this view noticeably slower

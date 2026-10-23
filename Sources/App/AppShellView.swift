@@ -148,7 +148,7 @@ struct AppShellView: View {
             SeriesDetailView(series: item, sidebarLeadingInset: sidebarExpanded ? 172 : 38)
         }
         else if item.collectionType != nil || item.type == "CollectionFolder" { LibraryView(parent: item) }
-        else { ItemDetailView(itemId: item.id) }
+        else { ItemDetailView(itemId: item.id, sidebarLeadingInset: sidebarExpanded ? 252 : 106) }
     }
 
     private func loadLibraries() async {

@@ -97,7 +97,7 @@ struct HomeView: View {
         return (showcase + latestMovies + latestShows + resume + nextUp).filter { item in
             guard item.backdropImageTags?.isEmpty == false else { return false }
             return seen.insert(item.id).inserted
-        }.prefix(8).map { $0 }
+        }.prefix(20).map { $0 }
     }
 
     private var loadingShelves: some View {

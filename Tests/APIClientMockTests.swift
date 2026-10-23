@@ -45,6 +45,42 @@ final class APIClientMockTests: XCTestCase {
         XCTAssertEqual(response.items.filter(\.isBrowsableMedia).map(\.id), ["available"])
     }
 
+    func testLibrarySearchKeepsScopeFiltersSortAndPagination() async throws {
+        MockURLProtocol.handler = { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            func value(_ name: String) -> String? { query.first { $0.name == name }?.value }
+            XCTAssertEqual(value("ParentId"), "movies")
+            XCTAssertEqual(value("SearchTerm"), "The Bear & Friends")
+            XCTAssertEqual(value("Filters"), "IsUnplayed")
+            XCTAssertEqual(value("SortBy"), "ProductionYear")
+            XCTAssertEqual(value("SortOrder"), "Descending")
+            XCTAssertEqual(value("StartIndex"), "60")
+            XCTAssertEqual(value("Limit"), "60")
+            XCTAssertEqual(value("Recursive"), "true")
+            XCTAssertEqual(value("EnableUserData"), "true")
+            return (200, Data(#"{"Items":[],"TotalRecordCount":0}"#.utf8))
+        }
+        _ = try await makeClient(authed: true).items(
+            parentId: "movies", startIndex: 60, limit: 60, sortBy: "ProductionYear", sortOrder: "Descending",
+            includeItemTypes: "Movie", filters: "IsUnplayed", searchTerm: "The Bear & Friends")
+    }
+
+    func testRecentEpisodeSearchFiltersSeriesWithoutFilteringEpisodeActivity() async throws {
+        MockURLProtocol.handler = { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            if request.url?.path == "/Users/u1/Items/Latest" {
+                XCTAssertNil(query.first { $0.name == "SearchTerm" })
+                return (200, Data(#"[{"Id":"ep","Name":"Pilot","SeriesId":"s","DateCreated":"2026-10-01"}]"#.utf8))
+            }
+            XCTAssertEqual(query.first { $0.name == "SearchTerm" }?.value, "Bear")
+            XCTAssertEqual(query.first { $0.name == "Filters" }?.value, "IsUnplayed")
+            return (200, Data(#"{"Items":[{"Id":"s","Name":"The Bear","Type":"Series"}]}"#.utf8))
+        }
+        let result = try await makeClient(authed: true).recentlyActiveSeries(
+            parentId: "tv", filters: "IsUnplayed", searchTerm: "Bear")
+        XCTAssertEqual(result.map(\.id), ["s"])
+    }
+
     func testDirectPlayPlanPicksDirectPlaySource() async throws {
         // Two sources: first is NOT direct-play, second IS — selection must pick the second.
         MockURLProtocol.handler = { _ in
