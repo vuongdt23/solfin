@@ -106,6 +106,7 @@ struct HomeView: View {
             .overlay(alignment: .topTrailing) {
                 HomeLayoutMenu(layoutRaw: $layoutRaw, heroStyleRaw: $heroStyleRaw,
                                isTopHovered: isTopHovered)
+                    .frame(width: 160, height: 36)
                     .padding(.trailing, 32)
                     .padding(.top, 16)
             }

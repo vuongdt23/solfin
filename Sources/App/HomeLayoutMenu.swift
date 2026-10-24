@@ -18,6 +18,12 @@ struct HomeLayoutMenu: NSViewRepresentable {
         configure(button)
     }
 
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: HomeLayoutMenuButton, context: Context) -> CGSize? {
+        // NSViewRepresentable otherwise accepts the overlay's full-page proposal;
+        // intrinsicContentSize alone does not constrain SwiftUI layout.
+        CGSize(width: 160, height: 36)
+    }
+
     private func configure(_ button: HomeLayoutMenuButton) {
         button.layout = HomeLayout.saved(layoutRaw)
         button.heroStyle = HomeHeroStyle.saved(heroStyleRaw)
