@@ -93,7 +93,7 @@ struct HomeView: View {
                                                                                 leadingInset: contentLeadingInset))
                     .padding(.leading, contentLeadingInset)
                     .padding(.trailing, 32)
-                    .padding(.top, layout == .cinematic && !featured.isEmpty ? 24 : 68)
+                    .padding(.top, layout == .cinematic && featured.isEmpty ? 32 : 24)
                     .padding(.bottom, 48)
                     // Horizontal shelves scroll internally; constrain the page
                     // content to the window instead of its combined shelf width.
