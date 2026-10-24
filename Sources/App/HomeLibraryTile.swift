@@ -10,9 +10,11 @@ struct HomeLibraryTile: View {
     let item: BaseItem
     let posters: [BaseItem]
     var width: CGFloat = 480
+    var tileHeight: CGFloat? = nil
+    var gallery = false
     @State private var hovering = false
 
-    private var height: CGFloat { width * 0.52 }
+    private var height: CGFloat { tileHeight ?? width * 0.52 }
     private var posterWidth: CGFloat { height * 0.49 }
     private var posterHeight: CGFloat { posterWidth * 1.5 }
     private var cornerRadius: CGFloat { 22 }
@@ -37,16 +39,22 @@ struct HomeLibraryTile: View {
                     .fill(Color(red: 0.065, green: 0.062, blue: 0.08))
                 LinearGradient(colors: [.clear, accent.opacity(hovering ? 0.14 : 0.07)],
                                startPoint: .leading, endPoint: .trailing)
-                posterStack
-                    .offset(y: hovering && !reduceMotion ? -3 : 0)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
+                Group {
+                    if gallery { posterCollage } else { posterStack }
+                }
+                .offset(y: hovering && !reduceMotion ? -3 : 0)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                if gallery {
+                    LinearGradient(colors: [.black.opacity(0.12), .black.opacity(0.88)],
+                                   startPoint: .top, endPoint: .bottom)
+                }
                 VStack(alignment: .leading, spacing: 16) {
                     Image(systemName: icon)
                         .font(.system(size: 24, weight: .medium))
                         .foregroundStyle(accent)
                     Text(item.name)
-                        .font(.system(size: width >= 460 ? 34 : 30, weight: .bold))
+                        .font(.system(size: gallery && width >= 550 ? 44 : width >= 460 ? 34 : 30, weight: .bold))
                         .foregroundStyle(.white)
                         .lineLimit(2)
                     HStack(spacing: 7) {
@@ -57,8 +65,10 @@ struct HomeLibraryTile: View {
                     }
                     .foregroundStyle(.white.opacity(hovering ? 0.86 : 0.6))
                 }
-                .frame(width: width * 0.4, alignment: .leading)
+                .frame(width: width * (gallery ? 0.8 : 0.4), alignment: .leading)
                 .padding(.leading, width * 0.07)
+                .frame(maxHeight: .infinity, alignment: gallery ? .bottomLeading : .leading)
+                .padding(.bottom, gallery ? 26 : 0)
             }
             .frame(width: width, height: height)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
@@ -74,6 +84,27 @@ struct HomeLibraryTile: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Browse \(item.name)")
         .help("Open \(item.name)")
+    }
+
+    private var posterCollage: some View {
+        HStack(spacing: 10) {
+            ForEach(0..<4, id: \.self) { column in
+                VStack(spacing: 10) {
+                    ForEach(0..<2, id: \.self) { row in
+                        let index = (column * 2 + row) % max(1, posters.count)
+                        LibraryTilePoster(url: posters.isEmpty ? nil
+                                          : appState.api.primaryImageURL(for: posters[index], maxHeight: 640),
+                                          icon: icon, accent: accent)
+                            .frame(width: width * 0.29, height: width * 0.435)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    }
+                }
+                .offset(y: column.isMultiple(of: 2) ? -35 : 25)
+            }
+        }
+        .rotationEffect(.degrees(-9))
+        .frame(width: width, height: height)
+        .clipped()
     }
 
     private var posterStack: some View {

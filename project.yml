@@ -76,12 +76,16 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.solfin.probe
 
-  # Unit tests for the pure logic in JellyfinKit + PlaybackEngine
+  # Unit tests for shared modules and standalone Home layout policy
   solfinTests:
     type: bundle.unit-test
     platform: macOS
     sources:
       - path: Tests
+      - path: Sources/App/HomeLayout.swift
+      - path: Sources/App/HomePresentation.swift
+      - path: Sources/App/HomeShelfGeometry.swift
+      - path: Sources/App/NativeHomeShelf.swift
     dependencies:
       - target: JellyfinKit
       - target: PlaybackEngine

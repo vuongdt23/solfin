@@ -41,6 +41,8 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("solfin.autoplayNext") private var autoplayNext = true
     @AppStorage("solfin.featuredAutoAdvance") private var featuredAutoAdvance = true
+    @AppStorage("solfin.homeLayout") private var homeLayoutRaw = HomeLayout.cinematic.rawValue
+    @AppStorage("solfin.homeHeroStyle") private var homeHeroStyleRaw = HomeHeroStyle.full.rawValue
     @AppStorage(SolfinLog.levelKey) private var logLevelRaw = SolfinLogLevel.info.rawValue
     @AppStorage(SolfinLog.directoryKey) private var logDirectory = ""
     @StateObject private var configStore = MPVConfigurationStore()
@@ -55,10 +57,20 @@ struct SettingsView: View {
         TabView {
             Form {
                 Section("Home") {
-                    Toggle("Automatically advance featured media", isOn: $featuredAutoAdvance)
-                    Text("The home feature uses a large cinematic backdrop with Solfin's solar dark theme.")
+                    Picker("Home layout", selection: $homeLayoutRaw) {
+                        ForEach(HomeLayout.allCases) { Text($0.title).tag($0.rawValue) }
+                    }
+                    if HomeLayout.saved(homeLayoutRaw) == .cinematic {
+                        Picker("Hero presentation", selection: $homeHeroStyleRaw) {
+                            ForEach(HomeHeroStyle.allCases) { Text($0.title).tag($0.rawValue) }
+                        }
+                        Toggle("Automatically advance featured media", isOn: $featuredAutoAdvance)
+                    }
+                    Text(HomeLayout.saved(homeLayoutRaw).summary)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    Text("You can also switch layouts using the Home Layout menu on the homepage.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section("Episodes") {
                     Toggle("Automatically play the next episode", isOn: $autoplayNext)

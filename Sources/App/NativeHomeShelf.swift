@@ -1,0 +1,147 @@
+import SwiftUI
+import AppKit
+
+private struct HomeShelfWidthKey: EnvironmentKey {
+    static let defaultValue: CGFloat? = nil
+}
+
+extension EnvironmentValues {
+    var homeShelfWidth: CGFloat? {
+        get { self[HomeShelfWidthKey.self] }
+        set { self[HomeShelfWidthKey.self] = newValue }
+    }
+}
+
+/// Locates the shelf by its visible canvas, not by SwiftUI's private hit-test
+/// hierarchy. The content stays in the original SwiftUI navigation environment.
+struct HomeShelfWheelObserver: NSViewRepresentable {
+    let isEnabled: Bool
+
+    func makeNSView(context: Context) -> HomeShelfWheelView {
+        let view = HomeShelfWheelView()
+        view.isEnabled = isEnabled
+        return view
+    }
+    func updateNSView(_ view: HomeShelfWheelView, context: Context) {
+        view.isEnabled = isEnabled
+        view.scheduleScrollerUpdate()
+    }
+}
+
+final class HomeShelfWheelView: NSView {
+    var isEnabled = false
+    private var monitor: Any?
+    private var scrollerUpdatePending = false
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let monitor { NSEvent.removeMonitor(monitor); self.monitor = nil }
+        guard window != nil else { return }
+        scheduleScrollerUpdate()
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard let self, let window = self.window, event.window === window,
+                  let root = window.contentView,
+                  self.shouldHandleWheel(at: event.locationInWindow),
+                  let scrollView = self.shelf(in: root) else { return event }
+            self.hideScrollers(in: scrollView)
+            // Horizontal gestures stay native, including momentum. Never map
+            // vertical wheel input onto the shelf's horizontal axis.
+            guard Self.isVerticalGesture(deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY),
+                  let page = self.verticalPage(above: scrollView) else { return event }
+            // A nested horizontal NSScrollView can swallow vertical input.
+            // Deliver it directly to its enclosing page instead.
+            page.scrollWheel(with: event)
+            return nil
+        }
+    }
+
+    static func isVerticalGesture(deltaX: CGFloat, deltaY: CGFloat) -> Bool {
+        abs(deltaY) > abs(deltaX)
+    }
+
+    func verticalPage(above shelf: NSScrollView) -> NSScrollView? {
+        var ancestor = shelf.superview
+        while let view = ancestor {
+            if let scroll = view as? NSScrollView,
+               let document = scroll.documentView,
+               document.frame.height > scroll.contentView.bounds.height + 1 {
+                return scroll
+            }
+            ancestor = view.superview
+        }
+        return nil
+    }
+
+    func shouldHandleWheel(at windowPoint: NSPoint) -> Bool {
+        guard isEnabled, !isHiddenOrHasHiddenAncestor, window != nil else { return false }
+        let point = convert(windowPoint, from: nil)
+        let hoverRect = bounds.intersection(visibleRect)
+        return !hoverRect.isEmpty && hoverRect.contains(point)
+    }
+
+    override func layout() {
+        super.layout()
+        scheduleScrollerUpdate()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        scheduleScrollerUpdate()
+    }
+
+    func scheduleScrollerUpdate() {
+        guard !scrollerUpdatePending else { return }
+        scrollerUpdatePending = true
+        // SwiftUI can reset NSScrollView properties during its update pass.
+        // Apply after that pass, once the shelf's native frame is available.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.scrollerUpdatePending = false
+            guard let root = self.window?.contentView,
+                  let scroll = self.shelf(in: root) else { return }
+            self.hideScrollers(in: scroll)
+        }
+    }
+
+    private func hideScrollers(in scroll: NSScrollView) {
+        // Never alter a vertical page, even if SwiftUI temporarily gives the
+        // observer and page coincident frames during layout.
+        guard isHorizontalShelf(scroll) else { return }
+        if scroll.hasHorizontalScroller { scroll.hasHorizontalScroller = false }
+        scroll.horizontalScroller?.isHidden = true
+    }
+
+    private func isHorizontalShelf(_ scroll: NSScrollView) -> Bool {
+        guard !scroll.hasVerticalScroller, let document = scroll.documentView else { return false }
+        return document.frame.height <= scroll.contentView.bounds.height + 24
+    }
+
+    private func shelf(in root: NSView) -> NSScrollView? {
+        let canvas = convert(bounds, to: nil)
+        if let scroll = root as? NSScrollView, isHorizontalShelf(scroll) {
+            let clip = scroll.contentView
+            let candidate = scroll.convert(scroll.bounds, to: nil)
+            let clipCanvas = clip.convert(clip.bounds, to: nil)
+            // Match the outer frame as well as the clip: macOS's Always setting
+            // reserves a scrollbar gutter, so clip height alone does not match.
+            let outerMatches = abs(candidate.minX - canvas.minX) < 4
+                && abs(candidate.minY - canvas.minY) < 4
+                && abs(candidate.width - canvas.width) < 4
+                && abs(candidate.height - canvas.height) < 4
+            let clipMatches = abs(clipCanvas.minX - canvas.minX) < 4
+                && abs(clipCanvas.minY - canvas.minY) < 4
+                && abs(clipCanvas.width - canvas.width) < 4
+                && abs(clipCanvas.height - canvas.height) < 4
+            if canvas.width > 0 && canvas.height > 0 && (outerMatches || clipMatches) {
+                return scroll
+            }
+        }
+        for child in root.subviews {
+            if let found = shelf(in: child) { return found }
+        }
+        return nil
+    }
+
+    deinit { if let monitor { NSEvent.removeMonitor(monitor) } }
+}
