@@ -160,17 +160,55 @@ struct HomeEditorialTile: View {
                             Text("Explore title").font(.caption.weight(.semibold))
                             Image(systemName: "arrow.up.right").font(.caption.bold())
                         }
-                        .foregroundStyle(hovering ? SolfinDesign.solarGold : .white.opacity(0.75))
+                        .foregroundStyle(.white.opacity(0.75))
                     }
                     .padding(prominent ? 28 : 20)
                 }
                 .frame(height: height)
                 .clipShape(RoundedRectangle(cornerRadius: 20))
+                .cardHoverEffect(isActive: hovering, lift: 6, scale: 1.025)
                 .contentShape(RoundedRectangle(cornerRadius: 20))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .accessibilityLabel("\(context): \(item.name). Open details")
+    }
+}
+
+struct HomeRecentComposition: View {
+    let items: [BaseItem]
+    let geometry: HomeRecentGeometry
+
+    private var supporting: [BaseItem] { Array(items.dropFirst().prefix(geometry.supportingCount)) }
+
+    var body: some View {
+        if let lead = items.first {
+            let layout = geometry.sideBySide
+                ? AnyLayout(HStackLayout(alignment: .top, spacing: HomeRecentGeometry.sectionSpacing))
+                : AnyLayout(VStackLayout(alignment: .leading, spacing: HomeRecentGeometry.sectionSpacing))
+            layout {
+                HomeEditorialTile(item: lead, context: "Recently added",
+                                  height: geometry.leadHeight, prominent: true)
+                    .frame(width: geometry.leadWidth)
+                if !supporting.isEmpty { supportingGrid }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var supportingGrid: some View {
+        let columns = Array(repeating: GridItem(.fixed(geometry.cardWidth),
+                                                spacing: HomeRecentGeometry.cardSpacing),
+                            count: geometry.columns)
+        return LazyVGrid(columns: columns, alignment: .leading, spacing: HomeRecentGeometry.cardSpacing) {
+            ForEach(supporting) { item in
+                HomeCollectionPoster(item: item, compact: true,
+                                     showsFullArtwork: geometry.artwork == .poster,
+                                     artworkHeight: geometry.artworkHeight)
+                    .frame(width: geometry.cardWidth, alignment: .leading)
+            }
+        }
+        .frame(width: geometry.supportingWidth, alignment: .leading)
     }
 }
 
@@ -188,7 +226,7 @@ struct HomeEditorialComposition: View {
                     if posterSupport {
                         HStack(alignment: .top, spacing: 16) {
                             ForEach(Array(items.dropFirst().prefix(2))) { item in
-                                HomeCollectionPoster(item: item, height: 420)
+                                HomeCollectionPoster(item: item)
                             }
                         }
                     } else {
@@ -205,7 +243,7 @@ struct HomeEditorialComposition: View {
                     if items.count > 1 {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: min(280, availableWidth)))], spacing: 18) {
                             ForEach(Array(items.dropFirst().prefix(2))) { item in
-                                if posterSupport { HomeCollectionPoster(item: item, height: 380) }
+                                if posterSupport { HomeCollectionPoster(item: item) }
                                 else { HomeEditorialTile(item: item, context: context, height: 220) }
                             }
                         }

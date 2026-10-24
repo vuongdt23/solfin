@@ -552,7 +552,10 @@ struct ItemDetailView: View {
                     Text(episode.name).font(.headline).lineLimit(2)
                     Text(episodeCode(episode)).font(.caption).foregroundStyle(.secondary)
                 }
-            }.padding(12).frame(maxWidth: 440, alignment: .leading)
+            }
+            .padding(12)
+            .frame(maxWidth: 440, alignment: .leading)
+            .cardHoverEffect(lift: 5, scale: 1.02)
         }.buttonStyle(.plain)
     }
 

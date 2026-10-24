@@ -43,7 +43,7 @@ struct SettingsView: View {
     @AppStorage("solfin.featuredAutoAdvance") private var featuredAutoAdvance = true
     @AppStorage("solfin.homeLayout") private var homeLayoutRaw = HomeLayout.cinematic.rawValue
     @AppStorage("solfin.homeHeroStyle") private var homeHeroStyleRaw = HomeHeroStyle.full.rawValue
-    @AppStorage("solfin.homeLibraryArtworkStyle") private var libraryArtworkStyleRaw = HomeLibraryArtworkStyle.wall.rawValue
+    @AppStorage("solfin.homeLibraryArtworkStyle") private var libraryArtworkStyleRaw = HomeLibraryArtworkStyle.fan.rawValue
     @AppStorage(SolfinLog.levelKey) private var logLevelRaw = SolfinLogLevel.info.rawValue
     @AppStorage(SolfinLog.directoryKey) private var logDirectory = ""
     @StateObject private var configStore = MPVConfigurationStore()

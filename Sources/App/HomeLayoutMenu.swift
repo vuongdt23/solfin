@@ -39,7 +39,7 @@ struct HomeLayoutMenu: NSViewRepresentable {
 final class HomeLayoutMenuButton: NSButton {
     var layout = HomeLayout.cinematic
     var heroStyle = HomeHeroStyle.full
-    var libraryArtworkStyle = HomeLibraryArtworkStyle.wall
+    var libraryArtworkStyle = HomeLibraryArtworkStyle.fan
     var selectLayout: ((HomeLayout) -> Void)?
     var selectHero: ((HomeHeroStyle) -> Void)?
     var selectLibraryArtwork: ((HomeLibraryArtworkStyle) -> Void)?

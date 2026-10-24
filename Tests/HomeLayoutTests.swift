@@ -28,10 +28,11 @@ final class HomeLayoutTests: XCTestCase {
         XCTAssertFalse(HomeLayout.library.sections.contains(.discover))
     }
 
-    func testLibraryArtworkStylesHavePersistedOptionsAndSafeFallback() {
-        XCTAssertEqual(HomeLibraryArtworkStyle.saved("unknown"), .wall)
-        XCTAssertEqual(HomeLibraryArtworkStyle.allCases.map(\.rawValue), ["wall", "fan", "grid", "random"])
-        XCTAssertTrue(HomeLibraryArtworkStyle.allCases.allSatisfy { !$0.title.isEmpty })
+    func testLibraryArtworkDefaultsToFanAndKeepsOnlyFanAndRandom() {
+        XCTAssertEqual(HomeLibraryArtworkStyle.saved(""), .fan)
+        XCTAssertEqual(HomeLibraryArtworkStyle.saved("wall"), .fan)
+        XCTAssertEqual(HomeLibraryArtworkStyle.allCases.map(\.rawValue), ["fan", "random"])
+        XCTAssertEqual(HomeLibraryArtworkStyle.saved("random"), .random)
     }
 
     func testModesHaveUniqueSectionsAndDisplayCopy() {
