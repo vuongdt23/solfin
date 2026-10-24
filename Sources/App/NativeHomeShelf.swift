@@ -45,18 +45,32 @@ final class HomeShelfWheelView: NSView {
                   self.shouldHandleWheel(at: event.locationInWindow),
                   let scrollView = self.shelf(in: root) else { return event }
             self.hideScrollers(in: scrollView)
-            // Native horizontal gestures retain AppKit's momentum handling.
-            guard abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) else { return event }
-            let clip = scrollView.contentView
-            let delta = event.scrollingDeltaY * (event.hasPreciseScrollingDeltas ? 1 : 12)
-            let x = HomeShelfGeometry.targetX(current: clip.bounds.minX, delta: delta,
-                                             documentWidth: scrollView.documentView?.frame.width ?? 0,
-                                             viewportWidth: clip.bounds.width)
-            guard abs(x - clip.bounds.minX) > 0.1 else { return event }
-            clip.scroll(to: CGPoint(x: x, y: clip.bounds.minY))
-            scrollView.reflectScrolledClipView(clip)
+            // Horizontal gestures stay native, including momentum. Never map
+            // vertical wheel input onto the shelf's horizontal axis.
+            guard Self.isVerticalGesture(deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY),
+                  let page = self.verticalPage(above: scrollView) else { return event }
+            // A nested horizontal NSScrollView can swallow vertical input.
+            // Deliver it directly to its enclosing page instead.
+            page.scrollWheel(with: event)
             return nil
         }
+    }
+
+    static func isVerticalGesture(deltaX: CGFloat, deltaY: CGFloat) -> Bool {
+        abs(deltaY) > abs(deltaX)
+    }
+
+    func verticalPage(above shelf: NSScrollView) -> NSScrollView? {
+        var ancestor = shelf.superview
+        while let view = ancestor {
+            if let scroll = view as? NSScrollView,
+               let document = scroll.documentView,
+               document.frame.height > scroll.contentView.bounds.height + 1 {
+                return scroll
+            }
+            ancestor = view.superview
+        }
+        return nil
     }
 
     func shouldHandleWheel(at windowPoint: NSPoint) -> Bool {

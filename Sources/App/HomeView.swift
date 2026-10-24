@@ -398,9 +398,9 @@ private struct FeaturedPagerDot: View {
     }
 }
 
-/// Horizontal SwiftUI scroll views on macOS respond to horizontal wheel deltas,
-/// but a typical vertical mouse wheel does not move them. Translate wheel input
-/// over each shelf into horizontal scrolling without affecting other page areas.
+/// Horizontal gestures browse the shelf; vertical gestures always navigate the
+/// page, including while hovering cards. The observer hides native scrollers and
+/// forwards vertical input past the nested horizontal scroll view.
 private struct HorizontalWheelScrollView<Content: View>: View {
     @Environment(\.homeShelfWidth) private var shelfWidth
     @State private var isShelfHovered = false

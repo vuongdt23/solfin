@@ -49,6 +49,27 @@ final class HomeShelfScrollerTests: XCTestCase {
         XCTAssertFalse(observer.shouldHandleWheel(at: inside))
     }
 
+    func testVerticalGesturesNeverBecomeHorizontalShelfInput() {
+        XCTAssertTrue(HomeShelfWheelView.isVerticalGesture(deltaX: 0, deltaY: -30))
+        XCTAssertTrue(HomeShelfWheelView.isVerticalGesture(deltaX: 2, deltaY: 30))
+        XCTAssertFalse(HomeShelfWheelView.isVerticalGesture(deltaX: -30, deltaY: 2))
+        XCTAssertFalse(HomeShelfWheelView.isVerticalGesture(deltaX: 30, deltaY: 0))
+        XCTAssertFalse(HomeShelfWheelView.isVerticalGesture(deltaX: 0, deltaY: 0))
+    }
+
+    @MainActor
+    func testVerticalInputTargetsEnclosingPageNotShelf() {
+        let page = NSScrollView(frame: NSRect(x: 0, y: 0, width: 900, height: 500))
+        let document = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 2000))
+        page.documentView = document
+        let shelf = NSScrollView(frame: NSRect(x: 0, y: 100, width: 800, height: 200))
+        shelf.documentView = NSView(frame: NSRect(x: 0, y: 0, width: 2000, height: 200))
+        document.addSubview(shelf)
+        let observer = HomeShelfWheelView()
+        XCTAssertTrue(observer.verticalPage(above: shelf) === page)
+        XCTAssertNil(observer.verticalPage(above: page))
+    }
+
     @MainActor
     func testCoincidentPageFrameNeverDisablesVerticalScrolling() async {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 500),
