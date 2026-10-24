@@ -23,9 +23,11 @@ struct HomeView: View {
     @AppStorage("solfin.homeCardType") private var cardTypeRaw = LibraryCardType.poster.rawValue
     @AppStorage("solfin.homeLayout") private var layoutRaw = HomeLayout.cinematic.rawValue
     @AppStorage("solfin.homeHeroStyle") private var heroStyleRaw = HomeHeroStyle.full.rawValue
+    @AppStorage("solfin.homeLibraryArtworkStyle") private var libraryArtworkStyleRaw = HomeLibraryArtworkStyle.wall.rawValue
 
     private var layout: HomeLayout { HomeLayout.saved(layoutRaw) }
     private var heroStyle: HomeHeroStyle { HomeHeroStyle.saved(heroStyleRaw) }
+    private var libraryArtworkStyle: HomeLibraryArtworkStyle { HomeLibraryArtworkStyle.saved(libraryArtworkStyleRaw) }
     private var contentLeadingInset: CGFloat { max(contentHorizontalPadding, heroControlLeadingInset - 26) }
 
     private var cardSize: LibraryCardSize { LibraryCardSize(rawValue: cardSizeRaw) ?? .small }
@@ -105,6 +107,7 @@ struct HomeView: View {
             .scrollContentBackground(.hidden)
             .overlay(alignment: .topTrailing) {
                 HomeLayoutMenu(layoutRaw: $layoutRaw, heroStyleRaw: $heroStyleRaw,
+                               libraryArtworkStyleRaw: $libraryArtworkStyleRaw,
                                isTopHovered: isTopHovered)
                     .frame(width: 160, height: 36)
                     .padding(.trailing, 32)
@@ -163,11 +166,11 @@ struct HomeView: View {
                                                                     excluding: selectedIDs.union(resume.map(\.id))),
                                      width: availableWidth, context: "Explore your library")
                 }
-                if !views.isEmpty && selection.lead == nil { LibraryGalleryHomeView(libraries: views, posters: libraryPosters, availableWidth: availableWidth) }
+                if !views.isEmpty && selection.lead == nil { LibraryGalleryHomeView(libraries: views, posters: libraryPosters, availableWidth: availableWidth, artworkStyle: libraryArtworkStyle) }
                 recentlyAddedShelves
                 if !views.isEmpty && selection.lead != nil { librariesSection(availableWidth: availableWidth) }
             case .library:
-                if !views.isEmpty { LibraryGalleryHomeView(libraries: views, posters: libraryPosters, availableWidth: availableWidth) }
+                if !views.isEmpty { LibraryGalleryHomeView(libraries: views, posters: libraryPosters, availableWidth: availableWidth, artworkStyle: libraryArtworkStyle) }
                 recentCollection(availableWidth: availableWidth)
                 watchingShelves
             }
@@ -270,7 +273,7 @@ struct HomeView: View {
             HorizontalWheelScrollView {
                 LazyHStack(spacing: 22) {
                     ForEach(views) { view in
-                        HomeLibraryTile(item: view, posters: libraryPosters[view.id] ?? [], width: tileWidth)
+                        HomeLibraryTile(item: view, posters: libraryPosters[view.id] ?? [], width: tileWidth, artworkStyle: libraryArtworkStyle)
                     }
                 }.padding(.vertical, 8).padding(.horizontal, 2)
             }

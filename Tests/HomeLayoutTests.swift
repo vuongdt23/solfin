@@ -28,6 +28,12 @@ final class HomeLayoutTests: XCTestCase {
         XCTAssertFalse(HomeLayout.library.sections.contains(.discover))
     }
 
+    func testLibraryArtworkStylesHavePersistedOptionsAndSafeFallback() {
+        XCTAssertEqual(HomeLibraryArtworkStyle.saved("unknown"), .wall)
+        XCTAssertEqual(HomeLibraryArtworkStyle.allCases.map(\.rawValue), ["wall", "fan", "grid", "random"])
+        XCTAssertTrue(HomeLibraryArtworkStyle.allCases.allSatisfy { !$0.title.isEmpty })
+    }
+
     func testModesHaveUniqueSectionsAndDisplayCopy() {
         for mode in HomeLayout.allCases {
             XCTAssertEqual(Set(mode.sections).count, mode.sections.count)

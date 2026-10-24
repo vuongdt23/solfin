@@ -53,12 +53,19 @@ private struct MovieDetailView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            ZStack(alignment: .bottomLeading) {
-                background(proxy.size)
+            let bannerHeight = max(proxy.size.width * 9 / 16, 1100)
+            ZStack(alignment: .topLeading) {
+                // Let the artwork canvas extend below the movie hero's viewport,
+                // as it does on series detail. Keep the copy anchored to the
+                // visible hero so it remains in the same place as the banner grows.
+                background(CGSize(width: proxy.size.width, height: bannerHeight))
                 aura()
+                    .frame(width: proxy.size.width, height: bannerHeight, alignment: .top)
                 scrim()
+                    .frame(width: proxy.size.width, height: bannerHeight, alignment: .top)
                 content(proxy.size.width)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(width: proxy.size.width, height: proxy.size.height,
+                           alignment: .bottomLeading)
             }
             .frame(width: proxy.size.width, height: proxy.size.height,
                    alignment: .bottomLeading)
@@ -87,7 +94,6 @@ struct ItemDetailView: View {
     @State private var uploadMessage: String?
     @State private var primaryPlayButtonHovering = false
     @State private var startOverButtonHovering = false
-    @State private var advancedPlaybackExpanded = false
 
     private enum PlayAction: Equatable {
         case primary
@@ -209,25 +215,37 @@ struct ItemDetailView: View {
     }
 
     @ViewBuilder private func backdrop(_ item: BaseItem, size: CGSize) -> some View {
+        let bannerHeight = max(size.width * 9 / 16, 1100)
         if let url = backdropURL(item) {
             ZStack {
-                // Keep the original composition intact. A blurred aspect-fill duplicate
-                // makes edge characters look like a second, aggressively cropped image.
                 Color.black
+                // Match the series banner: a soft, enlarged edge layer fills the
+                // wide canvas while the complete original artwork stays visible.
+                CachedImage(url: url, contentMode: .fill)
+                    .scaleEffect(1.12)
+                    .blur(radius: 28)
+                    .opacity(0.72)
+                    .overlay(Color.black.opacity(0.28))
                 CachedImage(url: url, contentMode: .fit)
-                    .frame(width: size.width, height: size.height)
             }
-            .frame(width: size.width, height: size.height)
+            .frame(width: size.width, height: bannerHeight, alignment: .top)
             .clipped()
         } else if let poster = appState.api.playablePosterURL(for: item, maxHeight: nil) {
             ZStack {
                 Color.black
+                CachedImage(url: poster, contentMode: .fill)
+                    .scaleEffect(1.12)
+                    .blur(radius: 28)
+                    .opacity(0.72)
+                    .overlay(Color.black.opacity(0.28))
                 CachedImage(url: poster, contentMode: .fit)
-                    .frame(width: size.width, height: max(1, size.height - 80))
             }
+            .frame(width: size.width, height: bannerHeight, alignment: .top)
+            .clipped()
         } else {
             LinearGradient(colors: [SolfinDesign.nebulaPurple.opacity(0.38), SolfinDesign.spaceBlack],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
+                .frame(width: size.width, height: bannerHeight)
         }
     }
 
@@ -452,9 +470,12 @@ struct ItemDetailView: View {
                     .foregroundStyle(.white.opacity(0.58))
                     .padding(.horizontal, 16).padding(.vertical, 9)
                 Divider().overlay(.white.opacity(0.1))
-                if episodeStyle, !video.isEmpty {
-                    trackRow(title: "Video", icon: "film", selection: $selectedVideoTrack, tracks: video, includesOff: false)
-                    Divider().overlay(.white.opacity(0.08)).padding(.leading, 52)
+                if !video.isEmpty {
+                    trackRow(title: "Video", icon: "film", selection: $selectedVideoTrack,
+                             tracks: video, includesOff: false)
+                    if !audio.isEmpty || !subtitles.isEmpty {
+                        Divider().overlay(.white.opacity(0.08)).padding(.leading, 52)
+                    }
                 }
                 if !audio.isEmpty {
                     trackRow(title: "Audio", icon: "waveform", selection: $selectedAudioTrack, tracks: audio, includesOff: false)
@@ -462,16 +483,6 @@ struct ItemDetailView: View {
                 }
                 trackRow(title: "Subtitles", icon: "captions.bubble", selection: $selectedSubtitleTrack,
                          tracks: subtitles, includesOff: true)
-                if !episodeStyle, !video.isEmpty {
-                    Divider().overlay(.white.opacity(0.08))
-                    DisclosureGroup("Advanced playback", isExpanded: $advancedPlaybackExpanded) {
-                        trackRow(title: "Video", icon: "film", selection: $selectedVideoTrack,
-                                 tracks: video, includesOff: false)
-                    }
-                    .font(.callout)
-                    .tint(.white.opacity(0.8))
-                    .padding(16)
-                }
             }
             .background {
                 if !episodeStyle {
@@ -622,7 +633,7 @@ struct ItemDetailView: View {
     }
     private func load() async {
         loadError = nil; previousEpisode = nil; nextEpisode = nil
-        overviewExpanded = false; advancedPlaybackExpanded = false; uploadMessage = nil
+        overviewExpanded = false; uploadMessage = nil
         do {
             let loaded = try await appState.api.item(id: itemId); item = loaded
             configureTrackDefaults(for: loaded)

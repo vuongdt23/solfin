@@ -110,6 +110,7 @@ struct LibraryGalleryHomeView: View {
     let libraries: [BaseItem]
     let posters: [String: [BaseItem]]
     let availableWidth: CGFloat
+    var artworkStyle: HomeLibraryArtworkStyle = .wall
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -117,11 +118,11 @@ struct LibraryGalleryHomeView: View {
             if availableWidth >= 1000 && libraries.count >= 3 {
                 HStack(alignment: .top, spacing: 20) {
                     HomeLibraryTile(item: libraries[0], posters: posters[libraries[0].id] ?? [],
-                                    width: (availableWidth - 20) * 0.6, tileHeight: 460, gallery: true)
+                                    width: (availableWidth - 20) * 0.6, tileHeight: 460, gallery: true, artworkStyle: artworkStyle)
                     VStack(spacing: 20) {
                         ForEach(Array(libraries.dropFirst().prefix(2))) { library in
                             HomeLibraryTile(item: library, posters: posters[library.id] ?? [],
-                                            width: (availableWidth - 20) * 0.4, tileHeight: 220, gallery: true)
+                                            width: (availableWidth - 20) * 0.4, tileHeight: 220, gallery: true, artworkStyle: artworkStyle)
                         }
                     }
                 }
@@ -138,7 +139,7 @@ struct LibraryGalleryHomeView: View {
         return LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: columns), spacing: 20) {
             ForEach(items) { library in
                 HomeLibraryTile(item: library, posters: posters[library.id] ?? [], width: width,
-                                tileHeight: min(400, max(260, width * 0.62)), gallery: true)
+                                tileHeight: min(400, max(260, width * 0.62)), gallery: true, artworkStyle: artworkStyle)
             }
         }
     }
