@@ -38,11 +38,10 @@ final class HomeLayoutMenuButton: NSButton {
 
     init() {
         super.init(frame: .zero)
-        title = "Home Layout ▾"
-        image = NSImage(systemSymbolName: "rectangle.3.group", accessibilityDescription: nil)
-        imagePosition = .imageLeading
+        title = "Home Layout"
         bezelStyle = .rounded
-        isBordered = true
+        isBordered = false
+        focusRingType = .none
         font = .systemFont(ofSize: 13, weight: .semibold)
         contentTintColor = .white
         target = self
@@ -53,17 +52,56 @@ final class HomeLayoutMenuButton: NSButton {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    override var intrinsicContentSize: NSSize { NSSize(width: 154, height: 36) }
+    override var intrinsicContentSize: NSSize { NSSize(width: 160, height: 36) }
+
+    // Only the menu mechanics are native. Draw the original quiet dark pill
+    // instead of letting NSButton introduce a standard macOS bezel.
+    override func draw(_ dirtyRect: NSRect) {
+        let pill = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
+                                xRadius: bounds.height / 2, yRadius: bounds.height / 2)
+        NSColor.black.withAlphaComponent(cell?.isHighlighted == true ? 0.78 : 0.62).setFill()
+        pill.fill()
+        let focused = window?.firstResponder === self
+        NSColor.white.withAlphaComponent(focused ? 0.55 : 0.18).setStroke()
+        pill.lineWidth = focused ? 2 : 1
+        pill.stroke()
+
+        let symbolConfig = NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+        if let symbol = NSImage(systemSymbolName: "rectangle.3.group", accessibilityDescription: nil)?
+            .withSymbolConfiguration(symbolConfig) {
+            drawWhiteSymbol(symbol, in: NSRect(x: 13, y: (bounds.height - 15) / 2, width: 17, height: 15))
+        }
+        let text = NSAttributedString(string: "Home Layout", attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+            .foregroundColor: NSColor.white
+        ])
+        text.draw(at: NSPoint(x: 37, y: (bounds.height - text.size().height) / 2))
+        if let chevron = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)) {
+            drawWhiteSymbol(chevron, in: NSRect(x: bounds.width - 22, y: (bounds.height - 7) / 2,
+                                              width: 9, height: 7))
+        }
+    }
+
+    private func drawWhiteSymbol(_ image: NSImage, in rect: NSRect) {
+        let tinted = NSImage(size: image.size)
+        tinted.lockFocus()
+        image.draw(at: .zero, from: .zero, operation: .sourceOver, fraction: 1)
+        NSColor.white.setFill()
+        NSRect(origin: .zero, size: image.size).fill(using: .sourceAtop)
+        tinted.unlockFocus()
+        tinted.draw(in: rect)
+    }
 
     override func becomeFirstResponder() -> Bool {
         let accepted = super.becomeFirstResponder()
-        if accepted { pendingHide?.cancel(); alphaValue = 1 }
+        if accepted { pendingHide?.cancel(); alphaValue = 1; needsDisplay = true }
         return accepted
     }
 
     override func resignFirstResponder() -> Bool {
         let accepted = super.resignFirstResponder()
-        if accepted { updateVisibility(topHovered) }
+        if accepted { updateVisibility(topHovered); needsDisplay = true }
         return accepted
     }
 
