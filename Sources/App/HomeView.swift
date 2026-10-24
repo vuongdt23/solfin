@@ -403,6 +403,7 @@ private struct FeaturedPagerDot: View {
 /// over each shelf into horizontal scrolling without affecting other page areas.
 private struct HorizontalWheelScrollView<Content: View>: View {
     @Environment(\.homeShelfWidth) private var shelfWidth
+    @State private var isShelfHovered = false
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -412,8 +413,9 @@ private struct HorizontalWheelScrollView<Content: View>: View {
         .scrollIndicators(.hidden)
         .frame(width: shelfWidth, alignment: .leading)
         .overlay {
-            HomeShelfWheelObserver().allowsHitTesting(false)
+            HomeShelfWheelObserver(isEnabled: isShelfHovered).allowsHitTesting(false)
         }
+        .onHover { isShelfHovered = $0 }
     }
 }
 

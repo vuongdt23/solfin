@@ -15,13 +15,21 @@ extension EnvironmentValues {
 /// Locates the shelf by its visible canvas, not by SwiftUI's private hit-test
 /// hierarchy. The content stays in the original SwiftUI navigation environment.
 struct HomeShelfWheelObserver: NSViewRepresentable {
-    func makeNSView(context: Context) -> HomeShelfWheelView { HomeShelfWheelView() }
+    let isEnabled: Bool
+
+    func makeNSView(context: Context) -> HomeShelfWheelView {
+        let view = HomeShelfWheelView()
+        view.isEnabled = isEnabled
+        return view
+    }
     func updateNSView(_ view: HomeShelfWheelView, context: Context) {
+        view.isEnabled = isEnabled
         view.scheduleScrollerUpdate()
     }
 }
 
 final class HomeShelfWheelView: NSView {
+    var isEnabled = false
     private var monitor: Any?
     private var scrollerUpdatePending = false
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -33,9 +41,9 @@ final class HomeShelfWheelView: NSView {
         scheduleScrollerUpdate()
         monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
             guard let self, let window = self.window, event.window === window,
-                  self.visibleRect.contains(self.convert(event.locationInWindow, from: nil)),
-                  let root = window.contentView else { return event }
-            guard let scrollView = self.shelf(in: root) else { return event }
+                  let root = window.contentView,
+                  self.shouldHandleWheel(at: event.locationInWindow),
+                  let scrollView = self.shelf(in: root) else { return event }
             self.hideScrollers(in: scrollView)
             // Native horizontal gestures retain AppKit's momentum handling.
             guard abs(event.scrollingDeltaY) > abs(event.scrollingDeltaX) else { return event }
@@ -49,6 +57,13 @@ final class HomeShelfWheelView: NSView {
             scrollView.reflectScrolledClipView(clip)
             return nil
         }
+    }
+
+    func shouldHandleWheel(at windowPoint: NSPoint) -> Bool {
+        guard isEnabled, !isHiddenOrHasHiddenAncestor, window != nil else { return false }
+        let point = convert(windowPoint, from: nil)
+        let hoverRect = bounds.intersection(visibleRect)
+        return !hoverRect.isEmpty && hoverRect.contains(point)
     }
 
     override func layout() {
@@ -76,15 +91,21 @@ final class HomeShelfWheelView: NSView {
     }
 
     private func hideScrollers(in scroll: NSScrollView) {
+        // Never alter a vertical page, even if SwiftUI temporarily gives the
+        // observer and page coincident frames during layout.
+        guard isHorizontalShelf(scroll) else { return }
         if scroll.hasHorizontalScroller { scroll.hasHorizontalScroller = false }
-        if scroll.hasVerticalScroller { scroll.hasVerticalScroller = false }
         scroll.horizontalScroller?.isHidden = true
-        scroll.verticalScroller?.isHidden = true
+    }
+
+    private func isHorizontalShelf(_ scroll: NSScrollView) -> Bool {
+        guard !scroll.hasVerticalScroller, let document = scroll.documentView else { return false }
+        return document.frame.height <= scroll.contentView.bounds.height + 24
     }
 
     private func shelf(in root: NSView) -> NSScrollView? {
         let canvas = convert(bounds, to: nil)
-        if let scroll = root as? NSScrollView {
+        if let scroll = root as? NSScrollView, isHorizontalShelf(scroll) {
             let clip = scroll.contentView
             let candidate = scroll.convert(scroll.bounds, to: nil)
             let clipCanvas = clip.convert(clip.bounds, to: nil)

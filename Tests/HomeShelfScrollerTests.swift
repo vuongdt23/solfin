@@ -30,4 +30,43 @@ final class HomeShelfScrollerTests: XCTestCase {
         XCTAssertEqual(scroll.contentView.bounds.minX, 100, accuracy: 1)
         XCTAssertEqual(document.frame.width, 2000)
     }
+
+    @MainActor
+    func testWheelRoutingRequiresHoverAndPointInsideShelf() {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 500),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 500))
+        window.contentView = root
+        let observer = HomeShelfWheelView(frame: NSRect(x: 20, y: 100, width: 800, height: 200))
+        root.addSubview(observer)
+        let inside = observer.convert(NSPoint(x: 100, y: 100), to: nil)
+        let outside = observer.convert(NSPoint(x: 100, y: 250), to: nil)
+        XCTAssertFalse(observer.shouldHandleWheel(at: inside))
+        observer.isEnabled = true
+        XCTAssertTrue(observer.shouldHandleWheel(at: inside))
+        XCTAssertFalse(observer.shouldHandleWheel(at: outside))
+        observer.isHidden = true
+        XCTAssertFalse(observer.shouldHandleWheel(at: inside))
+    }
+
+    @MainActor
+    func testCoincidentPageFrameNeverDisablesVerticalScrolling() async {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 900, height: 500),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        let root = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 500))
+        window.contentView = root
+        let page = NSScrollView(frame: root.bounds)
+        page.hasVerticalScroller = true
+        page.hasHorizontalScroller = true
+        page.documentView = NSView(frame: NSRect(x: 0, y: 0, width: 900, height: 2000))
+        root.addSubview(page)
+        let observer = HomeShelfWheelView(frame: page.frame)
+        root.addSubview(observer)
+        observer.scheduleScrollerUpdate()
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertTrue(page.hasVerticalScroller)
+        XCTAssertTrue(page.hasHorizontalScroller)
+        page.contentView.scroll(to: NSPoint(x: 0, y: 100))
+        XCTAssertEqual(page.contentView.bounds.minY, 100, accuracy: 1)
+    }
 }
