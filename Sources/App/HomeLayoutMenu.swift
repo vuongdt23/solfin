@@ -6,6 +6,7 @@ import AppKit
 struct HomeLayoutMenu: NSViewRepresentable {
     @Binding var layoutRaw: String
     @Binding var heroStyleRaw: String
+    @Binding var libraryArtworkStyleRaw: String
     let isTopHovered: Bool
 
     func makeNSView(context: Context) -> HomeLayoutMenuButton {
@@ -27,8 +28,10 @@ struct HomeLayoutMenu: NSViewRepresentable {
     private func configure(_ button: HomeLayoutMenuButton) {
         button.layout = HomeLayout.saved(layoutRaw)
         button.heroStyle = HomeHeroStyle.saved(heroStyleRaw)
+        button.libraryArtworkStyle = HomeLibraryArtworkStyle.saved(libraryArtworkStyleRaw)
         button.selectLayout = { layoutRaw = $0.rawValue }
         button.selectHero = { heroStyleRaw = $0.rawValue }
+        button.selectLibraryArtwork = { libraryArtworkStyleRaw = $0.rawValue }
         button.updateVisibility(isTopHovered)
     }
 }
@@ -36,8 +39,10 @@ struct HomeLayoutMenu: NSViewRepresentable {
 final class HomeLayoutMenuButton: NSButton {
     var layout = HomeLayout.cinematic
     var heroStyle = HomeHeroStyle.full
+    var libraryArtworkStyle = HomeLibraryArtworkStyle.wall
     var selectLayout: ((HomeLayout) -> Void)?
     var selectHero: ((HomeHeroStyle) -> Void)?
+    var selectLibraryArtwork: ((HomeLibraryArtworkStyle) -> Void)?
     private var menuOpen = false
     private var topHovered = false
     private var pendingHide: DispatchWorkItem?
@@ -158,6 +163,16 @@ final class HomeLayoutMenuButton: NSButton {
                 menu.addItem(item)
             }
         }
+        if layout == .library {
+            menu.addItem(.separator())
+            for style in HomeLibraryArtworkStyle.allCases {
+                let item = NSMenuItem(title: style.title, action: #selector(chooseLibraryArtwork(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = style.rawValue
+                item.state = style == libraryArtworkStyle ? .on : .off
+                menu.addItem(item)
+            }
+        }
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: bounds.minY), in: self)
         menuOpen = false
         updateVisibility(topHovered)
@@ -171,6 +186,12 @@ final class HomeLayoutMenuButton: NSButton {
     @objc private func chooseHero(_ sender: NSMenuItem) {
         guard let raw = sender.representedObject as? String, let style = HomeHeroStyle(rawValue: raw) else { return }
         selectHero?(style)
+    }
+
+    @objc private func chooseLibraryArtwork(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let style = HomeLibraryArtworkStyle(rawValue: raw) else { return }
+        selectLibraryArtwork?(style)
     }
 
     deinit { pendingHide?.cancel() }

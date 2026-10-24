@@ -122,7 +122,7 @@ public extension APIClient {
             URLQueryItem(name: "Recursive", value: "true"),
             URLQueryItem(name: "IncludeItemTypes", value: types),
             URLQueryItem(name: "SortBy", value: "Random"),
-            URLQueryItem(name: "Limit", value: "24"),
+            URLQueryItem(name: "Limit", value: "36"),
             URLQueryItem(name: "HasPrimaryImage", value: "true"),
             URLQueryItem(name: "EnableImages", value: "true"),
             URLQueryItem(name: "ImageTypeLimit", value: "1"),
@@ -139,7 +139,8 @@ public extension APIClient {
         // Prefer a completely fresh stack, but don't leave small libraries empty.
         let fresh = candidates.filter { !previous.contains($0.id) }
         let repeats = candidates.filter { previous.contains($0.id) }
-        return Array((fresh + repeats).prefix(3))
+        // Keep a deeper pool so wide poster fans can show more cards.
+        return Array((fresh + repeats).prefix(24))
     }
 
     /// Search the user's video libraries by title.

@@ -271,7 +271,7 @@ final class APIClientMockTests: XCTestCase {
             let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
             XCTAssertEqual(query.first { $0.name == "ParentId" }?.value, "tv")
             XCTAssertEqual(query.first { $0.name == "IncludeItemTypes" }?.value, "Series")
-            XCTAssertEqual(query.first { $0.name == "Limit" }?.value, "24")
+            XCTAssertEqual(query.first { $0.name == "Limit" }?.value, "36")
             XCTAssertEqual(query.first { $0.name == "Recursive" }?.value, "true")
             XCTAssertEqual(query.first { $0.name == "SortBy" }?.value, "Random")
             XCTAssertEqual(query.first { $0.name == "HasPrimaryImage" }?.value, "true")
@@ -293,7 +293,7 @@ final class APIClientMockTests: XCTestCase {
         let library = try JSONDecoder().decode(BaseItem.self, from: Data(
             #"{"Id":"tv","Name":"Shows","CollectionType":"tvshows"}"#.utf8))
         let posters = try await makeClient(authed: true).libraryPosterItems(for: library)
-        XCTAssertEqual(posters.map(\.id), ["a", "b", "c"])
+        XCTAssertEqual(posters.map(\.id), ["a", "b", "c", "d"])
     }
 
     func testLibraryPosterPreviewSelectsTypesAndHandlesEmptyLibrary() async throws {
@@ -314,7 +314,7 @@ final class APIClientMockTests: XCTestCase {
 
     func testLibraryPosterPreviewPrefersDifferentTitlesOnReload() async throws {
         MockURLProtocol.handler = { _ in
-            let items = (1...6).map { index in
+            let items = (1...32).map { index in
                 "{\"Id\":\"\(index)\",\"Name\":\"Title \(index)\",\"ImageTags\":{\"Primary\":\"p\(index)\"}}"
             }.joined(separator: ",")
             return (200, Data("{\"Items\":[\(items)]}".utf8))
@@ -324,8 +324,8 @@ final class APIClientMockTests: XCTestCase {
         let client = makeClient(authed: true)
         let first = try await client.libraryPosterItems(for: library)
         let second = try await client.libraryPosterItems(for: library, excluding: first.map(\.id))
-        XCTAssertEqual(first.map(\.id), ["1", "2", "3"])
-        XCTAssertEqual(second.map(\.id), ["4", "5", "6"])
+        XCTAssertEqual(first.map(\.id), (1...24).map(String.init))
+        XCTAssertEqual(second.map(\.id), (25...32).map(String.init) + (1...16).map(String.init))
     }
 
     func testLibraryPosterPreviewStillFillsSmallLibraryWithPreviousTitles() async throws {

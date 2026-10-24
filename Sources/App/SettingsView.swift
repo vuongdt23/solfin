@@ -43,6 +43,7 @@ struct SettingsView: View {
     @AppStorage("solfin.featuredAutoAdvance") private var featuredAutoAdvance = true
     @AppStorage("solfin.homeLayout") private var homeLayoutRaw = HomeLayout.cinematic.rawValue
     @AppStorage("solfin.homeHeroStyle") private var homeHeroStyleRaw = HomeHeroStyle.full.rawValue
+    @AppStorage("solfin.homeLibraryArtworkStyle") private var libraryArtworkStyleRaw = HomeLibraryArtworkStyle.wall.rawValue
     @AppStorage(SolfinLog.levelKey) private var logLevelRaw = SolfinLogLevel.info.rawValue
     @AppStorage(SolfinLog.directoryKey) private var logDirectory = ""
     @StateObject private var configStore = MPVConfigurationStore()
@@ -65,6 +66,11 @@ struct SettingsView: View {
                             ForEach(HomeHeroStyle.allCases) { Text($0.title).tag($0.rawValue) }
                         }
                         Toggle("Automatically advance featured media", isOn: $featuredAutoAdvance)
+                    }
+                    if HomeLayout.saved(homeLayoutRaw) == .library {
+                        Picker("Library artwork", selection: $libraryArtworkStyleRaw) {
+                            ForEach(HomeLibraryArtworkStyle.allCases) { Text($0.title).tag($0.rawValue) }
+                        }
                     }
                     Text(HomeLayout.saved(homeLayoutRaw).summary)
                         .font(.caption)

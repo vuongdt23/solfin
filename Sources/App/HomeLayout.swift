@@ -41,6 +41,21 @@ enum HomeLayout: String, CaseIterable, Identifiable {
     }
 }
 
+enum HomeLibraryArtworkStyle: String, CaseIterable, Identifiable {
+    case wall, fan, grid, random
+
+    var id: String { rawValue }
+    static func saved(_ rawValue: String) -> Self { Self(rawValue: rawValue) ?? .wall }
+    var title: String {
+        switch self {
+        case .wall: return "Tilted Wall"
+        case .fan: return "Poster Fan"
+        case .grid: return "Clean Grid"
+        case .random: return "Random Collage"
+        }
+    }
+}
+
 enum HomeSection: String, Identifiable {
     case watching, libraries, recentlyAdded, discover
     var id: String { rawValue }
