@@ -406,9 +406,10 @@ private struct HorizontalWheelScrollView<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: true) {
+        ScrollView(.horizontal, showsIndicators: false) {
             content()
         }
+        .scrollIndicators(.hidden)
         .frame(width: shelfWidth, alignment: .leading)
         .overlay {
             HomeShelfWheelObserver().allowsHitTesting(false)
