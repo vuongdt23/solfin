@@ -68,6 +68,7 @@ struct WatchNowHomeView: View {
             }
             .frame(height: height)
             .clipShape(RoundedRectangle(cornerRadius: 24))
+            .cardHoverEffect(lift: 7, scale: 1.02)
     }
 
     @ViewBuilder private var actions: some View {
@@ -103,6 +104,7 @@ struct WatchNowHomeView: View {
             }
             .frame(height: height)
             .clipShape(RoundedRectangle(cornerRadius: 20))
+            .cardHoverEffect(lift: 6, scale: 1.025)
     }
 }
 
@@ -110,7 +112,7 @@ struct LibraryGalleryHomeView: View {
     let libraries: [BaseItem]
     let posters: [String: [BaseItem]]
     let availableWidth: CGFloat
-    var artworkStyle: HomeLibraryArtworkStyle = .wall
+    var artworkStyle: HomeLibraryArtworkStyle = .fan
 
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {

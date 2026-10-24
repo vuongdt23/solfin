@@ -115,10 +115,12 @@ private enum SearchScope: String, CaseIterable, Identifiable {
 private struct SearchEpisodeRow: View {
     @EnvironmentObject private var appState: AppState
     let episode: BaseItem
+    @State private var hovering = false
     var body: some View {
         HStack(spacing: 14) {
             PosterImage(url: appState.api.primaryImageURL(for: episode, maxHeight: 180))
                 .frame(width: 160, height: 90).clipped().clipShape(RoundedRectangle(cornerRadius: 8))
+                .cardHoverEffect(isActive: hovering, lift: 4, scale: 1.035)
             VStack(alignment: .leading, spacing: 5) {
                 Text(episode.name).font(.system(size: 18, weight: .semibold))
                 Text(subtitle).font(.callout).foregroundStyle(.secondary)
@@ -126,7 +128,10 @@ private struct SearchEpisodeRow: View {
             }
             Spacer()
             Image(systemName: "chevron.right").foregroundStyle(.tertiary)
-        }.padding(.vertical, 12).contentShape(Rectangle())
+        }
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .onHover { hovering = $0 }
     }
     private var subtitle: String {
         let s = episode.parentIndexNumber.map { String(format: "S%02d", $0) } ?? ""

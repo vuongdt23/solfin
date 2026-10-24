@@ -93,20 +93,6 @@ struct SolarRoundButtonStyle: ButtonStyle {
     }
 }
 
-struct SolarCardHoverGlow: View {
-    let isHovering: Bool
-    var radius: CGFloat = 180
-
-    var body: some View {
-        RoundedRectangle(cornerRadius: 21, style: .continuous)
-            .fill(RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.34), SolfinDesign.solarRed.opacity(0.18), SolfinDesign.nebulaPurple.opacity(0.22), .clear], center: .center, startRadius: 10, endRadius: radius))
-            .blur(radius: 16)
-            .padding(-14)
-            .opacity(isHovering ? 1 : 0)
-            .allowsHitTesting(false)
-    }
-}
-
 struct SolarToolbarButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

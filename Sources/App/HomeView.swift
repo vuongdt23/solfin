@@ -23,11 +23,11 @@ struct HomeView: View {
     @AppStorage("solfin.homeCardType") private var cardTypeRaw = LibraryCardType.poster.rawValue
     @AppStorage("solfin.homeLayout") private var layoutRaw = HomeLayout.cinematic.rawValue
     @AppStorage("solfin.homeHeroStyle") private var heroStyleRaw = HomeHeroStyle.full.rawValue
-    @AppStorage("solfin.homeLibraryArtworkStyle") private var libraryArtworkStyleRaw = HomeLibraryArtworkStyle.wall.rawValue
+    @AppStorage("solfin.homeLibraryArtworkStyle") private var libraryArtworkStyleRaw = HomeLibraryArtworkStyle.fan.rawValue
 
     private var layout: HomeLayout { HomeLayout.saved(layoutRaw) }
-    private var heroStyle: HomeHeroStyle { HomeHeroStyle.saved(heroStyleRaw) }
     private var libraryArtworkStyle: HomeLibraryArtworkStyle { HomeLibraryArtworkStyle.saved(libraryArtworkStyleRaw) }
+    private var heroStyle: HomeHeroStyle { HomeHeroStyle.saved(heroStyleRaw) }
     private var contentLeadingInset: CGFloat { max(contentHorizontalPadding, heroControlLeadingInset - 26) }
 
     private var cardSize: LibraryCardSize { LibraryCardSize(rawValue: cardSizeRaw) ?? .small }
@@ -195,6 +195,7 @@ struct HomeView: View {
         let effectiveFilter = filters.contains(recentFilter) ? recentFilter : .all
         let recent = HomePresentation.recent(movies: latestMovies, shows: latestShows, filter: effectiveFilter)
         if !recent.isEmpty {
+            let geometry = HomeRecentGeometry.resolve(width: availableWidth, itemCount: recent.count)
             VStack(alignment: .leading, spacing: 22) {
                 ViewThatFits(in: .horizontal) {
                     HStack {
@@ -207,9 +208,11 @@ struct HomeView: View {
                         recentFilters(filters, effective: effectiveFilter)
                     }
                 }
-                HomeEditorialComposition(items: Array(recent.prefix(3)), availableWidth: availableWidth,
-                                         context: "Recently added", posterSupport: true)
-                if recent.count > 3 { shelf("More recent additions", Array(recent.dropFirst(3))) }
+                .padding(.top, 12)
+                HomeRecentComposition(items: Array(recent.prefix(geometry.displayedCount)), geometry: geometry)
+                if recent.count > geometry.displayedCount {
+                    shelf("More recent additions", Array(recent.dropFirst(geometry.displayedCount)))
+                }
             }
         }
     }

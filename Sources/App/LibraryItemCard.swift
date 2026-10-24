@@ -54,10 +54,11 @@ struct LibraryItemCard: View {
                     .contentShape(Rectangle())
                     .overlay(alignment: .topLeading) {
                         RoundedRectangle(cornerRadius: 14)
-                            .strokeBorder(focused ? SolfinDesign.solarGold : .clear, lineWidth: 3)
+                            .strokeBorder(focused ? .white.opacity(0.5) : .clear, lineWidth: 2)
                             .allowsHitTesting(false)
                             .frame(width: imageWidth, height: imageHeight)
                     }
+                    .cardHoverEffect(isActive: active, lift: 6, scale: 1.03)
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())

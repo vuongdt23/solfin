@@ -383,7 +383,6 @@ private struct SeasonCard: View {
                 PosterImage(url: appState.api.primaryImageURL(for: season, maxHeight: 420))
                     .frame(width: 170, height: 255).clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                SolarCardHoverGlow(isHovering: hovering, radius: 160)
                 Button(action: onPlay) {
                         Image(systemName: "play.fill")
                             .font(.title2)
@@ -398,7 +397,8 @@ private struct SeasonCard: View {
                 .allowsHitTesting(hovering)
                 .animation(.easeOut(duration: 0.16), value: hovering)
             }
-            .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(selected ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: selected ? 3 : 1) }
+            .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white.opacity(selected ? 0.28 : 0.1), lineWidth: selected ? 2 : 1) }
+            .cardHoverEffect(isActive: hovering, lift: 6, scale: 1.035)
             // Keep the artwork container from expanding to the height proposed by
             // the surrounding hero stack. Without this constraint the overlay can
             // stretch into a tall, empty card while the poster remains centered.
@@ -475,7 +475,6 @@ struct EpisodeCard: View {
                         .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
                 }
                 if hovering {
-                    SolarCardHoverGlow(isHovering: hovering)
                     Button {
                         nowPlaying.play(item: episode, api: appState.api, config: appState.makePlaybackConfig()) {
                             appState.playbackError = $0
@@ -500,7 +499,8 @@ struct EpisodeCard: View {
             }
             .aspectRatio(16/9, contentMode: .fit)
             .clipped()
-            .overlay { RoundedRectangle(cornerRadius: 13).strokeBorder(hovering ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: hovering ? 2 : 1) }
+            .overlay { RoundedRectangle(cornerRadius: 13).strokeBorder(.white.opacity(0.1)) }
+            .cardHoverEffect(isActive: hovering, lift: 6, scale: 1.035)
             .shadow(color: .black.opacity(hovering ? 0.22 : 0.1), radius: hovering ? 14 : 5, y: 6)
 
             HStack(alignment: .firstTextBaseline) {
@@ -513,7 +513,6 @@ struct EpisodeCard: View {
         // Do not scale the card itself: on macOS the enlarged hit region can
         // overlap adjacent grid cells and make hover state oscillate.
         .contentShape(Rectangle()).onHover { hovering = $0 }
-        .animation(.spring(response: 0.28, dampingFraction: 0.8), value: hovering)
     }
 
     private var runtime: String? {

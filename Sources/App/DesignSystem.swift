@@ -64,6 +64,35 @@ extension View {
     func glassSurface(cornerRadius: CGFloat = 20) -> some View {
         modifier(GlassSurface(cornerRadius: cornerRadius))
     }
+
+    /// Shared, restrained lift treatment for artwork cards. Apply to the artwork
+    /// surface rather than the whole shelf cell so neighboring hover targets stay stable.
+    func cardHoverEffect(lift: CGFloat = 6, scale: CGFloat = 1.035) -> some View {
+        modifier(CardHoverEffect(isActive: nil, lift: lift, scale: scale))
+    }
+
+    func cardHoverEffect(isActive: Bool, lift: CGFloat = 6, scale: CGFloat = 1.035) -> some View {
+        modifier(CardHoverEffect(isActive: isActive, lift: lift, scale: scale))
+    }
+}
+
+private struct CardHoverEffect: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering = false
+    let isActive: Bool?
+    let lift: CGFloat
+    let scale: CGFloat
+
+    private var active: Bool { isActive ?? isHovering }
+
+    func body(content: Content) -> some View {
+        content
+            .onHover { if isActive == nil { isHovering = $0 } }
+            .offset(y: active && !reduceMotion ? -lift : 0)
+            .scaleEffect(active && !reduceMotion ? scale : 1)
+            .zIndex(active ? 1 : 0)
+            .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.78), value: active)
+    }
 }
 
 struct LoadingPosterGrid: View {

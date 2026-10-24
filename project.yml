@@ -85,6 +85,7 @@ targets:
       - path: Sources/App/HomeLayout.swift
       - path: Sources/App/HomePresentation.swift
       - path: Sources/App/HomeShelfGeometry.swift
+      - path: Sources/App/HomeRecentGeometry.swift
       - path: Sources/App/NativeHomeShelf.swift
     dependencies:
       - target: JellyfinKit

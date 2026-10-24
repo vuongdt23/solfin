@@ -75,18 +75,8 @@ struct PosterCard: View {
                     .frame(width: posterWidth, height: posterHeight)
                     .clipShape(RoundedRectangle(cornerRadius: SolfinDesign.posterRadius, style: .continuous))
                     .overlay(alignment: .bottom) { if showsPlaybackControls { progressBar } }
-                    .overlay {
-                        RoundedRectangle(cornerRadius: SolfinDesign.posterRadius, style: .continuous)
-                            .strokeBorder(hovering ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarGold, SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: hovering ? 2 : 1)
-                    }
-                if hovering {
-                    RoundedRectangle(cornerRadius: SolfinDesign.posterRadius + 8, style: .continuous)
-                        .fill(RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.32), SolfinDesign.solarRed.opacity(0.18), SolfinDesign.nebulaPurple.opacity(0.22), .clear], center: .center, startRadius: 10, endRadius: posterWidth * 0.88))
-                        .blur(radius: 16)
-                        .padding(-14)
-                        .allowsHitTesting(false)
-                        .transition(.opacity)
-                }
+                    .overlay { RoundedRectangle(cornerRadius: SolfinDesign.posterRadius, style: .continuous).strokeBorder(.white.opacity(0.1)) }
+                    .cardHoverEffect(isActive: hovering, lift: 7, scale: 1.035)
                 if hovering && showsPlaybackControls {
                     Button {
                         nowPlaying.play(item: item, api: appState.api, config: appState.makePlaybackConfig()) { appState.playbackError = $0 }
@@ -107,18 +97,12 @@ struct PosterCard: View {
             }
             .frame(width: posterWidth, height: posterHeight)
             .compositingGroup()
-            .shadow(color: SolfinDesign.solarOrange.opacity(hovering ? 0.22 : 0), radius: 24, y: 10)
-            .shadow(color: SolfinDesign.nebulaPurple.opacity(hovering ? 0.18 : 0), radius: 30, y: 14)
-            .shadow(color: .black.opacity(hovering ? 0.36 : 0.14), radius: hovering ? 18 : 6, y: hovering ? 10 : 3)
-            // Keep the card's hit area and position stable while hovering. Scaling the
-            // whole card makes neighboring cards steal hover events on macOS, which can
-            // cause the hover effect to flicker or appear on the wrong card.
+            .shadow(color: .black.opacity(hovering ? 0.3 : 0.14), radius: hovering ? 14 : 6, y: hovering ? 9 : 3)
             Text(item.name).font(.system(size: size.titleFont, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
             if let subtitle { Text(subtitle).font(.system(size: size.subtitleFont, weight: .medium)).foregroundStyle(.white.opacity(0.64)).lineLimit(1) }
         }
         .frame(width: posterWidth, alignment: .leading)
         .contentShape(Rectangle())
-        .animation(.spring(response: 0.28, dampingFraction: 0.78), value: hovering)
         .onHover { hovering = $0 }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
@@ -161,7 +145,8 @@ struct ThumbnailCard: View {
                             ?? appState.api.primaryImageURL(for: item))
                 .frame(width: size.bannerWidth, height: size.bannerHeight)
                 .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(hovering ? 0.35 : 0.1)) }
+                .cardHoverEffect(isActive: hovering, lift: 5, scale: 1.025)
+                .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.1)) }
             VStack(alignment: .leading, spacing: 5) {
                 Text(item.name).font(.headline).foregroundStyle(.white).lineLimit(2)
                 if let year = item.productionYear { Text(String(year)).font(.subheadline).foregroundStyle(.secondary) }
@@ -171,7 +156,6 @@ struct ThumbnailCard: View {
         .frame(width: size.bannerWidth, alignment: .leading)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.16), value: hovering)
     }
 }
 
@@ -219,11 +203,6 @@ struct LandscapeCard: View {
                     }
                     .allowsHitTesting(false)
                 }
-                if hovering {
-                    SolarCardHoverGlow(isHovering: true, radius: 140)
-                        .transition(.opacity)
-                        .allowsHitTesting(false)
-                }
                 if showsPlaybackControls && hovering {
                     Button {
                         nowPlaying.play(item: item, api: appState.api, config: appState.makePlaybackConfig()) { appState.playbackError = $0 }
@@ -260,18 +239,16 @@ struct LandscapeCard: View {
             }
             .frame(width: size.bannerWidth, height: size.bannerHeight)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(hovering ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarGold, SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: hovering ? 2 : 1) }
+            .overlay { RoundedRectangle(cornerRadius: 14).strokeBorder(.white.opacity(0.1)) }
+            .cardHoverEffect(isActive: hovering, lift: 6, scale: 1.03)
             .compositingGroup()
-            .shadow(color: SolfinDesign.solarOrange.opacity(hovering ? 0.22 : 0), radius: 24, y: 10)
-            .shadow(color: SolfinDesign.nebulaPurple.opacity(hovering ? 0.18 : 0), radius: 30, y: 14)
-            .shadow(color: .black.opacity(hovering ? 0.34 : 0.1), radius: hovering ? 16 : 5, y: 6)
+            .shadow(color: .black.opacity(hovering ? 0.3 : 0.1), radius: hovering ? 14 : 5, y: hovering ? 8 : 3)
             Text(item.type == "Episode" ? (item.seriesName ?? item.name) : item.name)
                 .font(.system(size: 17, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
             if let subtitle { Text(subtitle).font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.64)).lineLimit(1) }
         }
         .frame(width: size.bannerWidth, alignment: .leading)
         .contentShape(Rectangle()).onHover { hovering = $0 }
-        .animation(.spring(response: 0.28, dampingFraction: 0.8), value: hovering)
     }
 
     private var progressFraction: Double? {
@@ -327,22 +304,13 @@ struct LibraryBanner: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             LinearGradient(colors: [.clear, .black.opacity(0.68)], startPoint: .top, endPoint: .bottom)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            if hovering {
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(RadialGradient(colors: [SolfinDesign.solarOrange.opacity(0.32), SolfinDesign.solarRed.opacity(0.18), SolfinDesign.nebulaPurple.opacity(0.22), .clear], center: .center, startRadius: 20, endRadius: 180))
-                    .blur(radius: 18)
-                    .padding(-16)
-                    .transition(.opacity)
-            }
             Text(item.name).font(.title.weight(.semibold)).foregroundStyle(.white).padding(18)
         }
         .frame(width: 300, height: 155)
-        .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(hovering ? AnyShapeStyle(LinearGradient(colors: [SolfinDesign.solarGold, SolfinDesign.solarOrange, SolfinDesign.solarRed, SolfinDesign.nebulaPurple], startPoint: .topLeading, endPoint: .bottomTrailing)) : AnyShapeStyle(.white.opacity(0.1)), lineWidth: hovering ? 2 : 1) }
+        .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.1)) }
+        .cardHoverEffect(isActive: hovering, lift: 6, scale: 1.025)
         .compositingGroup()
-        .shadow(color: SolfinDesign.solarOrange.opacity(hovering ? 0.22 : 0), radius: 24, y: 10)
-        .shadow(color: SolfinDesign.nebulaPurple.opacity(hovering ? 0.16 : 0), radius: 30, y: 14)
         .onHover { hovering = $0 }
-        .animation(.spring(response: 0.28, dampingFraction: 0.8), value: hovering)
     }
 }
 
