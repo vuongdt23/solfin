@@ -241,7 +241,9 @@ struct LandscapeCard: View {
                     .animation(.easeOut(duration: 0.16), value: playButtonHovering)
                     .accessibilityLabel("\(showResumeDetails ? "Resume" : "Play") \(item.name)")
                 }
-                if showsPlaybackControls, let progressFraction {
+                // Progress remains useful when the parent supplies a persistent
+                // Play/Resume action instead of the card's hover-only control.
+                if let progressFraction {
                     VStack {
                         Spacer(minLength: 0)
                         GeometryReader { geo in

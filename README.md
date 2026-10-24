@@ -25,6 +25,16 @@ state (resume points, watched status) in sync.
 
 - **Native SwiftUI** browsing: Login → Home (Continue Watching, Next Up, library shelves)
   → library grid → item / series detail, with async-cached poster & backdrop art.
+- **Remembered Home layouts** — use the top-right **Home Layout** menu or Settings →
+  General → Home. **Cinematic** keeps the full hero carousel (the default), with an
+  optional **Compact Spotlight** split artwork/copy presentation on wider windows.
+  **Watch Now** opens a viewing lounge with a large resume feature, progress/time
+  remaining, and supporting episode tiles. **Library** opens a responsive poster
+  collage gallery, followed by mixed-scale recent additions with All/Movies/Shows
+  filters. Cinematic adds editorial discovery below its compact resume strip.
+  The layout menu appears when hovering the top 96 points of the homepage
+  (or on keyboard/accessibility focus). Card
+  type/size preferences still apply to ordinary shelves.
 - **Series → seasons → episodes** navigation with queue-based playback: starting an
   episode queues that episode and the following episodes, with next-episode autoplay on
   natural end (never on manual quit).
