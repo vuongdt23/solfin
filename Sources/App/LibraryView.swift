@@ -121,7 +121,7 @@ struct LibraryView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .buttonStyle(.plain)
-            .modifier(LibraryToolbarControl(isActive: playedFilter != .all))
+            .modifier(LibraryToolbarControl(isActive: playedFilter != .all, tracksHover: false))
             .help("Filter by watched status")
 
             Menu {
@@ -149,7 +149,7 @@ struct LibraryView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .buttonStyle(.plain)
-            .modifier(LibraryToolbarControl())
+            .modifier(LibraryToolbarControl(tracksHover: false))
             .help("Sort by \(sort.title.lowercased()) · \(sortDirectionTitle.lowercased())")
 
             Menu {
@@ -169,7 +169,7 @@ struct LibraryView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .buttonStyle(.plain)
-            .modifier(LibraryToolbarControl())
+            .modifier(LibraryToolbarControl(tracksHover: false))
             .help("Change card type and size")
             if playedFilter != .all || !query.isEmpty {
                 Button {

@@ -4,11 +4,12 @@ import SwiftUI
 /// Applied to the actual Menu/Button so the entire padded surface remains clickable.
 struct LibraryToolbarControl: ViewModifier {
     var isActive = false
+    var tracksHover = true
     @State private var hovering = false
     @Environment(\.isFocused) private var focused
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var highlighted: Bool { hovering || focused }
+    private var highlighted: Bool { tracksHover && (hovering || focused) }
 
     func body(content: Content) -> some View {
         content
@@ -39,7 +40,10 @@ struct LibraryToolbarControl: ViewModifier {
             }
             .shadow(color: SolfinDesign.solarOrange.opacity(highlighted ? 0.2 : 0), radius: 12, y: 3)
             .contentShape(RoundedRectangle(cornerRadius: 10))
-            .onHover { hovering = $0 }
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: hovering)
+            // Native Menu controls can dismiss/reopen while their trigger is being
+            // invalidated by hover-state changes. Keep menu labels visually stable;
+            // hover feedback remains enabled for ordinary buttons.
+            .onHover { if tracksHover { hovering = $0 } }
+            .animation(tracksHover && !reduceMotion ? .easeOut(duration: 0.16) : nil, value: hovering)
     }
 }
