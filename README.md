@@ -52,12 +52,13 @@ state (resume points, watched status) in sync.
   explain controls; compact timeline spacing and proportional screen-height scaling
   keep the OSC readable on 4K displays. Smaller windows move secondary actions into a
   **More controls** menu.
-  Menus support ↑/↓, Enter and Escape. The volume slider includes configured boost
-  headroom (130% by default), with a 100% reference tick. Ordinary text subtitles
-  temporarily move above visible controls; authored ASS/SSA and bitmap tracks retain
-  their positioning.
-- **External mpv, isolated config** — solfin runs mpv with its own `--config-dir`, so your
-  personal `~/.config/mpv` is never touched.
+  Menus support ↑/↓, Enter and Escape. The volume slider supports configured boost
+  above 100% (130% max by default; this is not a clipping limiter), with a reference
+  tick. Ordinary text subtitles temporarily move above visible controls; authored
+  ASS/SSA and bitmap tracks retain their positioning.
+- **External mpv, isolated config and writable state** — Solfin uses its bundled
+  `--config-dir` and directs watch-later files and mpv caches to Solfin-owned
+  Application Support directories; your personal `~/.config/mpv` is not used.
 - Launches **fullscreen**; a **Now Playing** strip in the app reflects live playback state.
 
 ## Architecture
