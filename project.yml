@@ -82,6 +82,7 @@ targets:
     platform: macOS
     sources:
       - path: Tests
+      - path: Sources/App/DetailLayout.swift
       - path: Sources/App/HomeLayout.swift
       - path: Sources/App/HomePresentation.swift
       - path: Sources/App/HomeShelfGeometry.swift

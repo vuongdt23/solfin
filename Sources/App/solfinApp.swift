@@ -16,7 +16,7 @@ struct SolfinApp: App {
             RootView().environmentObject(appState).environmentObject(nowPlaying)
                 .preferredColorScheme(.dark)
                 .background(SolfinDesign.solarBackground)
-                .frame(minWidth: 900, minHeight: 600)
+                .frame(minWidth: 600, minHeight: 480)
         }
         .windowStyle(.titleBar)
         .commands { CommandGroup(replacing: .newItem) {} }

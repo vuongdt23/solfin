@@ -20,7 +20,7 @@ struct SolarMediaLogo: View {
                 .accessibilityLabel("Logo for \(item.name)")
         } else {
             Text(item.name)
-                .font(.system(size: fallbackSize, weight: .heavy, design: .rounded))
+                .font(DetailTypography.font(fallbackSize, weight: .heavy, design: .rounded))
                 .tracking(-2.2)
                 .foregroundStyle(.white)
                 .lineLimit(2)
@@ -34,7 +34,7 @@ struct SolarContextLabel: View {
     let text: String
     var body: some View {
         Text(text.uppercased())
-            .font(.caption.weight(.bold))
+            .font(DetailTypography.font(DetailTypography.supporting, weight: .bold))
             .tracking(1.6)
             .foregroundStyle(SolfinDesign.Control.textMuted)
     }
@@ -44,7 +44,7 @@ struct SolarOfficialRatingBadge: View {
     let text: String
     var body: some View {
         Text(text)
-            .font(.callout.weight(.semibold))
+            .font(DetailTypography.font(DetailTypography.metadata, weight: .semibold))
             .foregroundStyle(.black)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -57,22 +57,23 @@ struct SolarMediaMetadata: View {
     let item: BaseItem
     var episodeCode: String? = nil
     var runtime: String? = nil
+    var wraps = false
 
     var body: some View {
-        HStack(spacing: 12) {
+        (wraps ? AnyLayout(DetailFlowLayout()) : AnyLayout(HStackLayout(spacing: 12))) {
             if let episodeCode { metadataText(episodeCode) }
             if let year = item.productionYear { metadataText(String(year)) }
             if let runtime { metadataText(runtime) }
             if let rating = item.officialRating { SolarOfficialRatingBadge(text: rating) }
             if let score = item.communityRating {
                 Label(String(format: "%.1f", score), systemImage: "star.fill")
-                    .font(.caption.weight(.semibold))
+                    .font(DetailTypography.font(DetailTypography.metadata, weight: .semibold))
                     .foregroundStyle(SolfinDesign.solarGold)
                     .accessibilityLabel("Community rating \(String(format: "%.1f", score))")
             }
             if item.userData?.played == true {
                 Image(systemName: "checkmark")
-                    .font(.caption.bold())
+                    .font(DetailTypography.font(DetailTypography.caption, weight: .bold))
                     .foregroundStyle(SolfinDesign.Control.text)
                     .accessibilityLabel("Played")
             }
@@ -81,7 +82,7 @@ struct SolarMediaMetadata: View {
 
     private func metadataText(_ text: String) -> some View {
         Text(text)
-            .font(.callout.weight(.semibold))
+            .font(DetailTypography.font(DetailTypography.metadata, weight: .semibold))
             .foregroundStyle(SolfinDesign.Control.text.opacity(0.92))
     }
 }
@@ -89,20 +90,21 @@ struct SolarMediaMetadata: View {
 struct SolarSeriesMetadata: View {
     let series: BaseItem
     let seasonCount: Int?
+    var wraps = false
 
     var body: some View {
-        HStack(spacing: 12) {
+        (wraps ? AnyLayout(DetailFlowLayout()) : AnyLayout(HStackLayout(spacing: 12))) {
             if let year = series.productionYear { metadataText(String(year)) }
             if let seasonCount { metadataText("\(seasonCount) season\(seasonCount == 1 ? "" : "s")") }
             if let rating = series.officialRating { SolarOfficialRatingBadge(text: rating) }
             if let score = series.communityRating {
                 Label(String(format: "%.1f", score), systemImage: "star.fill")
-                    .font(.callout.weight(.semibold))
+                    .font(DetailTypography.font(DetailTypography.metadata, weight: .semibold))
                     .foregroundStyle(SolfinDesign.solarGold)
             }
             if let status = series.status, !status.isEmpty {
                 Text(status)
-                    .font(.callout.weight(.semibold))
+                    .font(DetailTypography.font(DetailTypography.metadata, weight: .semibold))
                     .foregroundStyle(status.caseInsensitiveCompare("Continuing") == .orderedSame
                                      ? SolfinDesign.solarGold : SolfinDesign.Control.textMuted)
             }
@@ -111,7 +113,7 @@ struct SolarSeriesMetadata: View {
 
     private func metadataText(_ value: String) -> some View {
         Text(value)
-            .font(.callout.weight(.semibold))
+            .font(DetailTypography.font(DetailTypography.metadata, weight: .semibold))
             .foregroundStyle(SolfinDesign.Control.text.opacity(0.92))
     }
 }
@@ -121,7 +123,7 @@ struct SolarGenreRow: View {
     var body: some View {
         if !genres.isEmpty {
             Text(genres.prefix(3).joined(separator: "  ·  "))
-                .font(.callout.weight(.bold))
+                .font(DetailTypography.font(DetailTypography.metadata, weight: .bold))
                 .foregroundStyle(SolfinDesign.Control.text.opacity(0.94))
         }
     }
@@ -134,7 +136,7 @@ struct SolarHeroOverview: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 18, weight: .medium))
+            .font(DetailTypography.font(DetailTypography.body, weight: .medium))
             .lineSpacing(4)
             .foregroundStyle(SolfinDesign.Control.text.opacity(0.94))
             .lineLimit(lineLimit)
@@ -155,13 +157,22 @@ struct SolarHeroIdentity<Actions: View>: View {
     var logoHeight: CGFloat = 170
     var fallbackSize: CGFloat = 74
     var lookupDefaultLogo = true
+    var subtitle: String? = nil
+    var wrapsMetadata = false
     @ViewBuilder let actions: () -> Actions
 
     var body: some View {
         VStack(alignment: .leading, spacing: 25) {
             if let context { SolarContextLabel(text: context) }
             SolarMediaLogo(item: item, imageURL: logoURL, lookupDefaultLogo: lookupDefaultLogo, maxWidth: logoWidth, height: logoHeight, fallbackSize: fallbackSize)
-            SolarMediaMetadata(item: item, episodeCode: episodeCode, runtime: runtime)
+            if let subtitle {
+                Text(subtitle)
+                    .font(DetailTypography.font(DetailTypography.heroSubtitle, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            SolarMediaMetadata(item: item, episodeCode: episodeCode, runtime: runtime, wraps: wrapsMetadata)
             if let genres = item.genres { SolarGenreRow(genres: genres) }
             if let overview { SolarHeroOverview(text: overview) }
             actions()
