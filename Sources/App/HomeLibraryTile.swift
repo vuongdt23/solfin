@@ -346,7 +346,6 @@ struct HomeLibraryTile: View {
                           icon: icon, accent: accent)
             .frame(width: width * cell.width, height: height * cell.height)
             .clipShape(shape)
-            .overlay { shape.fill(.black.opacity(isHovered ? 0 : 0.42)) }
             .overlay {
                 shape.strokeBorder(openPosterIndex == cell.index ? .white.opacity(0.78) : .white.opacity(0.14),
                                    lineWidth: openPosterIndex == cell.index ? 2 : 1)
@@ -406,7 +405,6 @@ struct HomeLibraryTile: View {
                                  icon: icon, accent: accent)
             .frame(width: width, height: height)
             .clipShape(shape)
-            .overlay { shape.fill(.black.opacity(gallery && !isHovered ? 0.42 : 0)) }
             .overlay {
                 shape.strokeBorder(openPosterIndex == index ? .white.opacity(0.78) : .white.opacity(0.14),
                                    lineWidth: openPosterIndex == index ? 2 : 1)

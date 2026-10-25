@@ -4,6 +4,8 @@ import PlaybackEngine
 
 /// Pure selection policy shared by the compositions and their regression tests.
 enum HomePresentation {
+    static let featuredAutoAdvanceInterval: TimeInterval = 5
+
     static func unique(_ items: [BaseItem], excluding ids: Set<String> = []) -> [BaseItem] {
         var seen = ids
         return items.filter { !$0.isOffline && seen.insert($0.id).inserted }

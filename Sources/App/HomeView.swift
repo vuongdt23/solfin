@@ -573,7 +573,7 @@ private struct FeaturedMediaBar: View {
         }
         .task(id: "\(selection)-\(hovering)-\(autoAdvance)-\(reduceMotion)-\(items.map(\.id).joined(separator: ","))") {
             guard autoAdvance, !reduceMotion, !hovering, items.count > 1 else { return }
-            try? await Task.sleep(for: .seconds(10))
+            try? await Task.sleep(for: .seconds(HomePresentation.featuredAutoAdvanceInterval))
             guard !Task.isCancelled, !hovering else { return }
             next()
         }
