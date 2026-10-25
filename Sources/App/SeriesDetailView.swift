@@ -7,7 +7,7 @@ struct SeriesDetailView: View {
     let series: BaseItem
     /// Space reserved for the shell rail. Artwork remains edge-to-edge, while
     /// readable series copy starts beside the rail instead of beneath it.
-    var sidebarLeadingInset: CGFloat = 0
+    var sidebarLeadingInset: CGFloat = 64
 
     @State private var seasons: [BaseItem] = []
     @State private var selectedSeasonId: String?
@@ -16,52 +16,44 @@ struct SeriesDetailView: View {
     @State private var loadingEpisodes = true
     @State private var episodeLoadID = UUID()
     @State private var overviewExpanded = false
-    @State private var heroAvailableWidth: CGFloat = 1600
     @State private var heroPlayHovering = false
 
     var body: some View {
-        ScrollView {
-            seriesHero
+        GeometryReader { proxy in
+            let layout = DetailLayout(viewport: proxy.size, railWidth: sidebarLeadingInset)
+            ScrollView {
+                seriesHero(layout: layout)
+            }
         }
         .background(SolfinDesign.solarBackground)
         .navigationTitle(series.name)
         .task { await loadSeasons() }
     }
 
-    private var seriesHero: some View {
-        // The content owns the scrollable height. Artwork is a background layer,
-        // so its oversized 16:9 canvas can remain visible without reserving a
-        // giant block above the seasons and episodes on ultrawide displays.
-        VStack(alignment: .leading, spacing: 28) {
-            heroCopy(availableWidth: heroAvailableWidth)
-            if !seasons.isEmpty { seasonsShelf }
-            episodeHeader
-            episodeContent
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, 38 + sidebarLeadingInset)
-        .padding(.trailing, 38)
-        // Keep the series logo close to the top edge; the artwork supplies the
-        // visual breathing room instead of a large empty content offset.
-        .padding(.top, 14)
-        .padding(.bottom, 70)
-        .background {
-            GeometryReader { proxy in
-                ZStack(alignment: .top) {
-                    seriesBackdrop
-                        .frame(width: proxy.size.width,
-                               height: max(proxy.size.width * 9 / 16, 1100),
-                               alignment: .top)
-                    Color.clear
-                        .preference(key: SeriesHeroWidthKey.self, value: proxy.size.width)
-                }
-                .allowsHitTesting(false)
+    private func seriesHero(layout: DetailLayout) -> some View {
+        // Content owns scroll height. Tall windows reveal more art; short windows
+        // prioritize browsing without a fixed-height hero pushing seasons away.
+        VStack(alignment: .leading, spacing: layout.sectionSpacing) {
+            heroCopy(layout: layout)
+                .padding(.top, layout.topSpacing)
+                .frame(minHeight: layout.seriesHeroHeight, alignment: .bottomLeading)
+            if !seasons.isEmpty { seasonsShelf(layout: layout) }
+            VStack(alignment: .leading, spacing: 20) {
+                episodeHeader
+                episodeContent(layout: layout)
             }
         }
-        .background(SolfinDesign.solarBackground)
-        .onPreferenceChange(SeriesHeroWidthKey.self) { width in
-            guard width > 0, abs(width - heroAvailableWidth) > 1 else { return }
-            heroAvailableWidth = width
+        .frame(width: layout.collectionWidth, alignment: .leading)
+        .padding(.leading, layout.leadingInset)
+        .padding(.trailing, layout.trailingInset)
+        .padding(.bottom, 70)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minHeight: layout.viewport.height, alignment: .topLeading)
+        .background(alignment: .topLeading) {
+            // Preserve the oversized artwork canvas independently of the grid.
+            seriesBackdrop
+                .frame(width: layout.viewport.width, height: layout.artworkHeight, alignment: .top)
+                .allowsHitTesting(false)
         }
     }
 
@@ -100,29 +92,27 @@ struct SeriesDetailView: View {
         }
         // Preserve the oversized, overflowing artwork treatment on wide displays.
         // The readable content is inset separately, so the rail never obscures it.
-        .aspectRatio(16 / 9, contentMode: .fit)
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(false)
     }
 
-    private func heroCopy(availableWidth: CGFloat) -> some View {
-        let contentWidth = max(0, availableWidth - 76)
-        let copyWidth = min(820, max(220, contentWidth * 0.58))
+    private func heroCopy(layout: DetailLayout) -> some View {
+        let copyWidth = layout.copyWidth
         return VStack(alignment: .leading, spacing: 15) {
             SolarMediaLogo(item: series,
-                           maxWidth: min(820, max(480, copyWidth * 0.44)),
-                           height: min(230, max(150, copyWidth * 0.14)),
-                           fallbackSize: min(70, max(48, copyWidth * 0.042)))
-            SolarSeriesMetadata(series: series, seasonCount: seasonCount)
+                           maxWidth: layout.logoWidth,
+                           height: layout.logoHeight,
+                           fallbackSize: layout.titleSize)
+            SolarSeriesMetadata(series: series, seasonCount: seasonCount, wraps: true)
             if let genres = series.genres { SolarGenreRow(genres: genres) }
             if let overview = series.overview, !overview.isEmpty {
                 SolarHeroOverview(text: overview,
-                                  maxWidth: min(760, availableWidth * 0.42),
+                                  maxWidth: copyWidth,
                                   lineLimit: overviewExpanded ? nil : 3)
-                if overview.count > 380 {
+                if overview.count > 140 {
                     Button(overviewExpanded ? "Show Less" : "More") { withAnimation { overviewExpanded.toggle() } }
                         .buttonStyle(.plain)
-                        .font(.callout.weight(.semibold))
+                        .font(DetailTypography.font(DetailTypography.supporting, weight: .semibold))
                         .foregroundStyle(.white)
                 }
             }
@@ -130,7 +120,7 @@ struct SeriesDetailView: View {
                 Button { play(episode, startOver: false, queue: allQueuedEpisodes,
                               queueIndex: allQueuedEpisodes.firstIndex(where: { $0.id == episode.id })) } label: {
                     Label(playLabel(for: episode), systemImage: "play.fill")
-                        .font(.headline)
+                        .font(DetailTypography.font(DetailTypography.control, weight: .semibold))
                         .padding(.horizontal, 22).padding(.vertical, 12)
                 }
                 .buttonStyle(SolarPillButtonStyle(hovering: heroPlayHovering))
@@ -145,14 +135,14 @@ struct SeriesDetailView: View {
     }
 
 
-    private var seasonsShelf: some View {
+    private func seasonsShelf(layout: DetailLayout) -> some View {
         VStack(alignment: .leading, spacing: 13) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Seasons").font(.title2.weight(.bold))
+                    Text("Seasons").font(DetailTypography.font(DetailTypography.sectionTitle, weight: .bold))
                     if let season = selectedSeason, let summary = seasonSummary(season) {
                         Text(summary)
-                            .font(.callout)
+                            .font(DetailTypography.font(DetailTypography.supporting))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -163,6 +153,7 @@ struct SeriesDetailView: View {
                 LazyHStack(alignment: .top, spacing: 16) {
                     ForEach(seasons) { season in
                         SeasonCard(season: season, selected: season.id == selectedSeasonId,
+                                   width: layout.seasonCardWidth,
                                    onSelect: {
                                        guard selectedSeasonId != season.id else { return }
                                        selectedSeasonId = season.id
@@ -184,9 +175,9 @@ struct SeriesDetailView: View {
         HStack(alignment: .bottom) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(selectedSeason.map { "\($0.name) · Episodes" } ?? "Episodes")
-                    .font(.title2.weight(.bold))
+                    .font(DetailTypography.font(DetailTypography.sectionTitle, weight: .bold))
                 if !episodes.isEmpty {
-                    Text(episodeHeaderSummary).font(.callout).foregroundStyle(.secondary)
+                    Text(episodeHeaderSummary).font(DetailTypography.font(DetailTypography.supporting)).foregroundStyle(.secondary)
                 }
             }
             Spacer()
@@ -196,8 +187,13 @@ struct SeriesDetailView: View {
         }
     }
 
-    @ViewBuilder private var episodeContent: some View {
-        if loadingEpisodes && episodes.isEmpty { episodeSkeleton }
+    private func episodeGridColumns(_ layout: DetailLayout) -> [GridItem] {
+        Array(repeating: GridItem(.flexible(minimum: 0), spacing: 20, alignment: .top),
+              count: layout.episodeColumns)
+    }
+
+    @ViewBuilder private func episodeContent(layout: DetailLayout) -> some View {
+        if loadingEpisodes && episodes.isEmpty { episodeSkeleton(layout: layout) }
         else if let loadError, episodes.isEmpty {
             EmptyContentView(title: "Episodes unavailable", message: loadError, systemImage: "wifi.exclamationmark") {
                 Task {
@@ -208,7 +204,7 @@ struct SeriesDetailView: View {
         } else if episodes.isEmpty {
             EmptyContentView(title: "No episodes", message: "This season does not contain any episodes.")
         } else {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 330, maximum: 430), spacing: 18, alignment: .top)],
+            LazyVGrid(columns: episodeGridColumns(layout),
                       alignment: .leading, spacing: 22) {
                 ForEach(episodes) { episode in
                     ZStack(alignment: .topTrailing) {
@@ -236,12 +232,12 @@ struct SeriesDetailView: View {
         }
     }
 
-    private var episodeSkeleton: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 330, maximum: 430), spacing: 18, alignment: .top)], spacing: 22) {
+    private func episodeSkeleton(layout: DetailLayout) -> some View {
+        LazyVGrid(columns: episodeGridColumns(layout), spacing: 22) {
             ForEach(0..<6, id: \.self) { _ in
                 VStack(alignment: .leading, spacing: 10) {
                     RoundedRectangle(cornerRadius: 13).fill(.secondary.opacity(0.12)).aspectRatio(16/9, contentMode: .fit)
-                    RoundedRectangle(cornerRadius: 4).fill(.secondary.opacity(0.12)).frame(width: 220, height: 17)
+                    RoundedRectangle(cornerRadius: 4).fill(.secondary.opacity(0.12)).frame(maxWidth: 220, minHeight: 17)
                     RoundedRectangle(cornerRadius: 4).fill(.secondary.opacity(0.08)).frame(height: 12)
                 }
             }
@@ -338,40 +334,11 @@ struct SeriesDetailView: View {
     }
 }
 
-private struct SeriesHeroWidthKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
-/* Migrated to SolarMediaLogo. Kept out of feature views so all logo treatments share one component. */
-private struct FeaturedTitleView: View {
-    @EnvironmentObject private var appState: AppState
-    let item: BaseItem
-    let availableWidth: CGFloat
-
-    private var logoWidth: CGFloat { min(820, max(480, availableWidth * 0.44)) }
-    private var logoHeight: CGFloat { min(230, max(150, availableWidth * 0.14)) }
-    private var fallbackSize: CGFloat { min(70, max(48, availableWidth * 0.042)) }
-
-    var body: some View {
-        if let url = appState.api.logoImageURL(for: item, maxWidth: 1400) {
-            CachedImage(url: url, contentMode: .fit)
-                .frame(width: logoWidth, height: logoHeight, alignment: .leading)
-        } else { fallback }
-    }
-    private var fallback: some View {
-        Text(item.name).font(.system(size: fallbackSize, weight: .bold, design: .rounded)).tracking(-1.4)
-            .foregroundStyle(.white).lineLimit(2).frame(maxWidth: min(860, availableWidth * 0.48), alignment: .leading)
-    }
-}
-
 private struct SeasonCard: View {
     @EnvironmentObject private var appState: AppState
     let season: BaseItem
     let selected: Bool
+    let width: CGFloat
     let onSelect: () -> Void
     let onPlay: () -> Void
     @State private var hovering = false
@@ -381,7 +348,7 @@ private struct SeasonCard: View {
         VStack(alignment: .leading, spacing: 8) {
             ZStack {
                 PosterImage(url: appState.api.primaryImageURL(for: season, maxHeight: 420))
-                    .frame(width: 170, height: 255).clipped()
+                    .frame(width: width, height: width * 1.5).clipped()
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 Button(action: onPlay) {
                         Image(systemName: "play.fill")
@@ -402,11 +369,11 @@ private struct SeasonCard: View {
             // Keep the artwork container from expanding to the height proposed by
             // the surrounding hero stack. Without this constraint the overlay can
             // stretch into a tall, empty card while the poster remains centered.
-            .frame(width: 170, height: 255)
-            Text(season.name).font(.system(size: 17, weight: selected ? .semibold : .regular)).foregroundStyle(.white).lineLimit(1)
-            if let count = season.childCount { Text("\(count) episodes").font(.caption).foregroundStyle(.white.opacity(0.58)) }
+            .frame(width: width, height: width * 1.5)
+            Text(season.name).font(DetailTypography.font(DetailTypography.cardTitle, weight: selected ? .semibold : .regular)).foregroundStyle(.white).lineLimit(1)
+            if let count = season.childCount { Text("\(count) episodes").font(DetailTypography.font(DetailTypography.supporting)).foregroundStyle(.white.opacity(0.78)) }
         }
-        .frame(width: 170, alignment: .leading)
+        .frame(width: width, alignment: .leading)
         .contentShape(Rectangle())
         .onTapGesture(perform: onSelect)
         .onHover { hovering = $0 }
@@ -439,7 +406,7 @@ private struct WatchedToggle: View {
     var body: some View {
         Button { action(!isPlayed) } label: {
             Image(systemName: isPlayed ? "checkmark.circle.fill" : "circle")
-                .font(.title3.weight(.semibold))
+                .font(DetailTypography.font(DetailTypography.cardTitle, weight: .semibold))
                 .foregroundStyle(isPlayed ? SolfinDesign.solarGold : .white.opacity(0.9))
                 .shadow(color: .black.opacity(0.55), radius: 5)
                 .frame(width: 34, height: 34)
@@ -504,11 +471,11 @@ struct EpisodeCard: View {
             .shadow(color: .black.opacity(hovering ? 0.22 : 0.1), radius: hovering ? 14 : 5, y: 6)
 
             HStack(alignment: .firstTextBaseline) {
-                Text(episodeTitle).font(.system(size: 17, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+                Text(episodeTitle).font(DetailTypography.font(DetailTypography.cardTitle, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
                 Spacer()
-                if let runtime { Text(runtime).font(.caption.monospacedDigit()).foregroundStyle(.white.opacity(0.58)) }
+                if let runtime { Text(runtime).font(DetailTypography.font(DetailTypography.supporting, weight: .medium, design: .monospaced)).foregroundStyle(.white.opacity(0.72)) }
             }
-            if let overview = episode.overview { Text(overview).font(.system(size: 14, weight: .regular)).foregroundStyle(.white.opacity(0.6)).lineLimit(2).lineSpacing(2) }
+            if let overview = episode.overview { Text(overview).font(DetailTypography.font(DetailTypography.supporting, weight: .regular)).foregroundStyle(.white.opacity(0.82)).lineLimit(2).lineSpacing(3) }
         }
         // Do not scale the card itself: on macOS the enlarged hit region can
         // overlap adjacent grid cells and make hover state oscillate.

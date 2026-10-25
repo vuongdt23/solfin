@@ -7,6 +7,10 @@ final class HomePresentationTests: XCTestCase {
         return try JSONDecoder().decode(BaseItem.self, from: Data(json.utf8))
     }
 
+    func testFeaturedCarouselAutoAdvanceIntervalIsFiveSeconds() {
+        XCTAssertEqual(HomePresentation.featuredAutoAdvanceInterval, 5)
+    }
+
     func testResumeLeadPreservesServerOrderAndDeduplicatesSupporting() throws {
         let a = try item("a"), b = try item("b"), c = try item("c", type: "Episode")
         let selection = HomePresentation.watchSelection(resume: [a, b], nextUp: [a, c, c], discovery: [])

@@ -3,82 +3,11 @@ import UniformTypeIdentifiers
 import JellyfinKit
 import PlaybackEngine
 
-/// One artwork-led detail surface for every playable video.
-private struct EpisodeDetailView: View {
-    let background: (CGSize) -> AnyView
-    let still: (CGSize) -> AnyView
-    let content: (CGFloat) -> AnyView
-    let moreContent: AnyView?
-    let aura: () -> AnyView
-    let scrim: () -> AnyView
-
-    var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .top) {
-                background(proxy.size)
-                aura()
-                still(proxy.size)
-                scrim()
-
-                // Keep the episode information, still, and related episodes in one
-                // centered poster canvas. The related block is part of the hero,
-                // rather than a second section that pushes the user into a scroll.
-                content(proxy.size.width)
-                    .frame(maxWidth: 1480, maxHeight: .infinity, alignment: .center)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 42)
-
-                if let moreContent {
-                    VStack {
-                        Spacer()
-                        moreContent
-                    }
-                    .frame(maxWidth: 1480, maxHeight: .infinity, alignment: .bottomLeading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 42)
-                }
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height,
-                   alignment: .top)
-        }
-        .containerRelativeFrame(.vertical, alignment: .top) { available, _ in max(760, available - 8) }
-    }
-}
-
-private struct MovieDetailView: View {
-    let background: (CGSize) -> AnyView
-    let content: (CGFloat) -> AnyView
-    let aura: () -> AnyView
-    let scrim: () -> AnyView
-
-    var body: some View {
-        GeometryReader { proxy in
-            let bannerHeight = max(proxy.size.width * 9 / 16, 1100)
-            ZStack(alignment: .topLeading) {
-                // Let the artwork canvas extend below the movie hero's viewport,
-                // as it does on series detail. Keep the copy anchored to the
-                // visible hero so it remains in the same place as the banner grows.
-                background(CGSize(width: proxy.size.width, height: bannerHeight))
-                aura()
-                    .frame(width: proxy.size.width, height: bannerHeight, alignment: .top)
-                scrim()
-                    .frame(width: proxy.size.width, height: bannerHeight, alignment: .top)
-                content(proxy.size.width)
-                    .frame(width: proxy.size.width, height: proxy.size.height,
-                           alignment: .bottomLeading)
-            }
-            .frame(width: proxy.size.width, height: proxy.size.height,
-                   alignment: .bottomLeading)
-        }
-        .containerRelativeFrame(.vertical, alignment: .top) { available, _ in max(800, available - 8) }
-    }
-}
-
 struct ItemDetailView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var nowPlaying: NowPlaying
     let itemId: String
-    var sidebarLeadingInset: CGFloat = 106
+    var sidebarLeadingInset: CGFloat = 64
 
     @State private var item: BaseItem?
     @State private var previousEpisode: BaseItem?
@@ -101,13 +30,17 @@ struct ItemDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
-            if let item { playableDetail(item) }
-            else if let loadError {
-                EmptyContentView(title: "Details unavailable", message: loadError,
-                                 systemImage: "wifi.exclamationmark") { Task { await load() } }
-                    .padding(SolfinDesign.pagePadding)
-            } else { detailSkeleton }
+        GeometryReader { proxy in
+            let layout = DetailLayout(viewport: proxy.size, railWidth: sidebarLeadingInset)
+            ScrollView {
+                if let item { immersiveDetail(item, layout: layout) }
+                else if let loadError {
+                    EmptyContentView(title: "Details unavailable", message: loadError,
+                                     systemImage: "wifi.exclamationmark") { Task { await load() } }
+                        .padding(.leading, layout.leadingInset)
+                        .padding(.trailing, layout.trailingInset)
+                } else { detailSkeleton }
+            }
         }
         .background(SolfinDesign.solarBackground)
         .navigationTitle(item?.name ?? "Details")
@@ -121,101 +54,101 @@ struct ItemDetailView: View {
         }
     }
 
-    private func playableDetail(_ item: BaseItem) -> some View {
-        immersiveDetail(item)
-    }
-
-    @ViewBuilder private func immersiveDetail(_ item: BaseItem) -> some View {
-        if item.type == "Episode" {
-            EpisodeDetailView(
-                background: { AnyView(self.episodeBackdrop(item, size: $0)) },
-                still: { AnyView(self.episodeStill(item, size: $0)) },
-                content: { width in AnyView(detailCopy(item, availableWidth: width, episodeStyle: true)) },
-                moreContent: previousEpisode != nil || nextEpisode != nil ? AnyView(
-                    VStack(alignment: .leading, spacing: 15) {
+    private func immersiveDetail(_ item: BaseItem, layout: DetailLayout) -> some View {
+        let isEpisode = item.type == "Episode"
+        return VStack(alignment: .leading, spacing: layout.sectionSpacing) {
+            if isEpisode {
+                episodeContent(item, layout: layout)
+                    .padding(.top, layout.topSpacing)
+                    .padding(.bottom, layout.sectionSpacing)
+                    .frame(minHeight: max(0, layout.viewport.height - 200), alignment: .center)
+                if previousEpisode != nil || nextEpisode != nil {
+                    VStack(alignment: .leading, spacing: 16) {
                         Text("More from \(item.seriesName ?? "this series")")
-                            .font(.title2.weight(.semibold))
-                        adjacentEpisodeSection
+                            .font(DetailTypography.font(DetailTypography.sectionTitle, weight: .semibold))
+                        adjacentEpisodeSection(width: layout.contentWidth)
                     }
-                    .padding(.horizontal, 42)
-                    .padding(.top, 0)
-                    .padding(.bottom, 34)
-                ) : nil,
-                aura: { AnyView(solarAura) },
-                scrim: { AnyView(cinematicScrim) }
-            )
-        } else {
-            MovieDetailView(
-                background: { AnyView(self.backdrop(item, size: $0)) },
-                content: { width in AnyView(movieCopy(item, availableWidth: width)) },
-                aura: { AnyView(solarAura) },
-                scrim: { AnyView(movieScrim) }
-            )
-        }
-    }
-
-    private func movieCopy(_ item: BaseItem, availableWidth: CGFloat) -> some View {
-        let width = max(280, availableWidth - sidebarLeadingInset - 48)
-        let wide = width >= 1250
-        return Group {
-            if wide {
-                HStack(alignment: .bottom, spacing: 56) {
-                    movieIdentityAndOverview(item, width: min(900, width * 0.56))
-                    moviePlaybackOptions(item)
-                        .frame(width: min(640, width * 0.38))
                 }
             } else {
-                VStack(alignment: .leading, spacing: 24) {
-                    movieIdentityAndOverview(item, width: min(1000, width))
-                    moviePlaybackOptions(item)
-                }
+                movieCopy(item, layout: layout)
+                    .padding(.top, layout.topSpacing)
             }
         }
-        .frame(maxWidth: 1600, alignment: .leading)
-        .padding(.leading, sidebarLeadingInset)
-        .padding(.trailing, 48)
-        .padding(.top, 32)
-        .padding(.bottom, 48)
-    }
-
-    private func movieIdentityAndOverview(_ item: BaseItem, width: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 20) {
-            identity(item, availableWidth: width + sidebarLeadingInset + 42)
-            overview(item)
-            playbackError
+        .frame(width: layout.contentWidth, alignment: .leading)
+        .padding(.leading, layout.leadingInset)
+        .padding(.trailing, layout.trailingInset)
+        .padding(.bottom, 40)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(minHeight: layout.viewport.height, alignment: isEpisode ? .topLeading : .bottomLeading)
+        .background(alignment: .topLeading) {
+            // Background geometry never dictates the scrollable content height.
+            // The original art can overflow while expanded text stays in flow.
+            GeometryReader { proxy in
+                let size = CGSize(width: layout.viewport.width, height: max(layout.artworkHeight, proxy.size.height))
+                ZStack {
+                    if isEpisode { episodeBackdrop(item, size: size) }
+                    else { backdrop(item, size: size) }
+                    solarAura
+                    if isEpisode { cinematicScrim } else { movieScrim }
+                }
+                .frame(width: size.width, height: size.height)
+                .allowsHitTesting(false)
+            }
         }
-        .frame(width: width, alignment: .leading)
     }
 
-    private func moviePlaybackOptions(_ item: BaseItem) -> some View {
+    private func movieCopy(_ item: BaseItem, layout: DetailLayout) -> some View {
+        let columns = layout.usesColumns
+        return (columns ? AnyLayout(HStackLayout(alignment: .bottom, spacing: layout.columnGap))
+                        : AnyLayout(VStackLayout(alignment: .leading, spacing: 24))) {
+            VStack(alignment: .leading, spacing: 20) {
+                identity(item, layout: layout)
+                overview(item)
+                playbackError
+            }
+            .frame(width: layout.copyWidth, alignment: .leading)
+            playbackOptions(item)
+                .frame(width: layout.secondaryWidth, alignment: .leading)
+        }
+    }
+
+    private func episodeContent(_ item: BaseItem, layout: DetailLayout) -> some View {
+        Group {
+            if layout.usesColumns {
+                HStack(alignment: .center, spacing: layout.columnGap) {
+                    VStack(alignment: .leading, spacing: 20) {
+                        identity(item, layout: layout)
+                        overview(item)
+                        playbackError
+                        playbackOptions(item)
+                    }
+                    .frame(width: layout.copyWidth, alignment: .leading)
+                    episodeStill(item, layout: layout)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .frame(width: layout.collectionWidth, alignment: .leading)
+            } else {
+                VStack(alignment: .leading, spacing: 24) {
+                    identity(item, layout: layout)
+                    episodeStill(item, layout: layout)
+                    overview(item)
+                    playbackError
+                    playbackOptions(item)
+                }
+                .frame(width: layout.copyWidth, alignment: .leading)
+            }
+        }
+    }
+
+    private func playbackOptions(_ item: BaseItem) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            trackPanel(item)
+            trackPanel(item, episodeStyle: item.type == "Episode")
             detailActions(item)
         }
-        .frame(maxWidth: 1000, alignment: .leading)
-    }
-
-    private func detailCopy(_ item: BaseItem, availableWidth: CGFloat = 1280,
-                            episodeStyle: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            identity(item, availableWidth: availableWidth)
-            overview(item)
-            playbackError
-            if episodeStyle {
-                trackPanel(item, episodeStyle: true)
-                detailActions(item)
-            }
-        }
-        .frame(maxWidth: 1280, alignment: .leading)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, episodeStyle ? 42 : sidebarLeadingInset)
-        .padding(.trailing, 42)
-        .padding(.top, episodeStyle ? 12 : 42)
-        .padding(.bottom, episodeStyle ? 12 : 32)
     }
 
     @ViewBuilder private func backdrop(_ item: BaseItem, size: CGSize) -> some View {
-        let bannerHeight = max(size.width * 9 / 16, 1100)
+        let bannerHeight = size.height
         if let url = backdropURL(item) {
             ZStack {
                 Color.black
@@ -279,39 +212,21 @@ struct ItemDetailView: View {
         }
     }
 
-    private func episodeStill(_ item: BaseItem, size: CGSize) -> some View {
+    private func episodeStill(_ item: BaseItem, layout: DetailLayout) -> some View {
         let stillURL = appState.api.episodeArtworkURL(for: item, maxWidth: 1600)
-        let width = min(980, max(520, size.width * 0.48))
         let aspect = max(1.25, min(2.0, item.primaryImageAspectRatio ?? (16.0 / 9.0)))
-        let height = min(size.height * 0.58, width / aspect)
-        let shape = RoundedRectangle(cornerRadius: 30, style: .continuous)
+        let width = layout.episodeStillWidth(aspectRatio: aspect)
+        let height = width / aspect
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
 
-        return HStack {
-            Spacer()
-            ZStack {
-                // A soft duplicate gives the artwork a diffused border instead of
-                // a hard rectangular cutout against the blurred backdrop.
-                CachedImage(url: stillURL)
-                    .frame(width: width + 24, height: height + 24)
-                    .blur(radius: 18)
-                    .opacity(0.28)
-                    .mask(shape.fill(.white))
-
-                CachedImage(url: stillURL)
-                    .frame(width: width, height: height)
-                    // Blur the alpha boundary itself so no crisp rectangular
-                    // edge remains around the still.
-                    .mask {
-                        shape
-                            .fill(.white)
-                            .blur(radius: 18)
-                    }
-                    .opacity(0.94)
+        return CachedImage(url: stillURL, contentMode: .fill)
+            .frame(width: width, height: height)
+            .clipShape(shape)
+            .overlay {
+                shape.strokeBorder(.white.opacity(0.18), lineWidth: 1)
             }
-            .padding(.trailing, max(32, size.width * 0.06))
-        }
-        // Match the still's vertical center to the title / controls block.
-        .frame(maxHeight: .infinity, alignment: .center)
+            .shadow(color: .black.opacity(0.3), radius: 24, y: 14)
+            .accessibilityLabel("Still from \(item.name)")
     }
 
     private var movieScrim: some View {
@@ -333,7 +248,7 @@ struct ItemDetailView: View {
         ZStack {
             LinearGradient(colors: [.black.opacity(0.08), .clear, .black.opacity(0.18)],
                            startPoint: .top, endPoint: .bottom)
-            LinearGradient(colors: [.black.opacity(0.18), .clear, .black.opacity(0.08)],
+            LinearGradient(colors: [.black.opacity(0.5), .clear, .black.opacity(0.08)],
                            startPoint: .leading, endPoint: .trailing)
         }
     }
@@ -348,25 +263,22 @@ struct ItemDetailView: View {
         .blendMode(.screen)
     }
 
-    private func identity(_ item: BaseItem, availableWidth: CGFloat) -> some View {
+    private func identity(_ item: BaseItem, layout: DetailLayout) -> some View {
         let isEpisode = item.type == "Episode"
-        let contentWidth = max(240, availableWidth - sidebarLeadingInset - 42)
-        let logoWidth = min(1000, contentWidth)
-        let logoHeight = min(240, max(120, contentWidth * 0.22))
-        let titleSize = isEpisode ? min(88, max(58, availableWidth * 0.052))
-            : min(72, max(36, contentWidth * 0.052))
         let seriesLogo = isEpisode ? episodeSeriesLogoURL(item) : nil
         return SolarHeroIdentity(
             item: item,
-            context: isEpisode ? nil : contextTitle(item),
+            context: isEpisode ? (seriesLogo == nil ? item.seriesName : nil) : contextTitle(item),
             episodeCode: isEpisode ? episodeCode(item) : nil,
             runtime: runtime(item),
             overview: nil,
             logoURL: seriesLogo,
-            logoWidth: isEpisode ? min(280, max(180, availableWidth * 0.20)) : logoWidth,
-            logoHeight: isEpisode ? 54 : logoHeight,
-            fallbackSize: titleSize,
-            lookupDefaultLogo: !isEpisode
+            logoWidth: isEpisode && seriesLogo != nil ? min(280, layout.copyWidth) : layout.logoWidth,
+            logoHeight: isEpisode ? 72 : layout.logoHeight,
+            fallbackSize: layout.titleSize,
+            lookupDefaultLogo: !isEpisode,
+            subtitle: isEpisode && seriesLogo != nil ? item.name : nil,
+            wrapsMetadata: true
         ) {
             actions(item)
         }
@@ -374,7 +286,7 @@ struct ItemDetailView: View {
 
     private func actions(_ item: BaseItem) -> some View {
         let isWaitingForLaunch = pendingPlayAction != nil
-        return HStack(spacing: 10) {
+        return DetailFlowLayout(spacing: 10) {
             playButton(item, action: .primary, title: playLabel(item), systemImage: "play.fill",
                        isPrimary: true, isBusy: pendingPlayAction == .primary && isWaitingForLaunch,
                        hovering: primaryPlayButtonHovering)
@@ -410,7 +322,7 @@ struct ItemDetailView: View {
                 }
                 Text(isBusy ? "Starting…" : title)
             }
-            .font(.callout.weight(.semibold))
+            .font(DetailTypography.font(DetailTypography.control, weight: .semibold))
             .padding(.horizontal, isPrimary ? 20 : 16)
             .frame(height: item.type == "Episode" ? 42 : 48)
             .contentShape(Capsule())
@@ -423,15 +335,15 @@ struct ItemDetailView: View {
         if let overview = item.overview, !overview.isEmpty {
             VStack(alignment: .leading, spacing: 7) {
                 Text(overview)
-                    .font(.system(size: item.type == "Episode" ? 16 : 18, weight: .regular))
+                    .font(DetailTypography.font(item.type == "Episode" ? DetailTypography.supporting : DetailTypography.body))
                     .foregroundStyle(.white.opacity(0.9))
                     .lineSpacing(5)
                     .multilineTextAlignment(.leading)
                     .lineLimit(overviewExpanded ? nil : (item.type == "Episode" ? 3 : 5))
                     .frame(maxWidth: 760, alignment: .leading)
-                if overview.count > 200 {
+                if overview.count > 140 {
                     Button(overviewExpanded ? "Show Less" : "More") { withAnimation { overviewExpanded.toggle() } }
-                        .buttonStyle(.plain).font(.caption.weight(.semibold)).foregroundStyle(.white)
+                        .buttonStyle(.plain).font(DetailTypography.font(DetailTypography.supporting, weight: .semibold)).foregroundStyle(.white)
                 }
             }.frame(maxWidth: 760, alignment: .leading)
                 .padding(.top, 1)
@@ -439,10 +351,16 @@ struct ItemDetailView: View {
     }
 
     private func detailActions(_ item: BaseItem) -> some View {
-        HStack(spacing: 10) {
-            Button { showSubtitleImporter = true } label: { Label("Upload subtitle", systemImage: "arrow.up.doc") }.buttonStyle(.bordered).tint(.white)
-            Button { showMediaInfo = true } label: { Label("Media info", systemImage: "info.circle") }.buttonStyle(.bordered).tint(.white)
-            if let uploadMessage { Text(uploadMessage).font(.caption).foregroundStyle(.white.opacity(0.75)) }
+        DetailFlowLayout(spacing: 10) {
+            Button { showSubtitleImporter = true } label: {
+                Label("Upload subtitle", systemImage: "arrow.up.doc")
+                    .font(DetailTypography.font(DetailTypography.control, weight: .medium))
+            }.buttonStyle(.bordered).tint(.white)
+            Button { showMediaInfo = true } label: {
+                Label("Media info", systemImage: "info.circle")
+                    .font(DetailTypography.font(DetailTypography.control, weight: .medium))
+            }.buttonStyle(.bordered).tint(.white)
+            if let uploadMessage { Text(uploadMessage).font(DetailTypography.font(DetailTypography.supporting)).foregroundStyle(.white.opacity(0.75)) }
         }
         .fileImporter(isPresented: $showSubtitleImporter, allowedContentTypes: [.text, .data], allowsMultipleSelection: false) { result in
             guard case .success(let urls) = result, let url = urls.first else { return }
@@ -466,7 +384,7 @@ struct ItemDetailView: View {
         if !audio.isEmpty || !video.isEmpty || !subtitles.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
                 Text("PLAYBACK OPTIONS")
-                    .font(.caption2.weight(.bold)).tracking(1.4)
+                    .font(DetailTypography.font(DetailTypography.trackHeading, weight: .bold)).tracking(1.4)
                     .foregroundStyle(.white.opacity(0.58))
                     .padding(.horizontal, 16).padding(.vertical, 9)
                 Divider().overlay(.white.opacity(0.1))
@@ -500,9 +418,10 @@ struct ItemDetailView: View {
                           tracks: [(id: Int, stream: MediaStream)], includesOff: Bool) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 14, weight: .medium))
+                .font(DetailTypography.font(DetailTypography.metadata, weight: .medium))
                 .frame(width: 24).foregroundStyle(.white.opacity(0.72))
-            Text(title).font(.callout.weight(.medium)).foregroundStyle(.white.opacity(0.84))
+            Text(title).font(DetailTypography.font(DetailTypography.metadata, weight: .medium)).foregroundStyle(.white.opacity(0.84))
+                .fixedSize()
             Spacer(minLength: 4)
             Menu {
                 if includesOff { Button("Off") { selection.wrappedValue = -1 }.foregroundStyle(.white) }
@@ -516,11 +435,12 @@ struct ItemDetailView: View {
             } label: {
                 HStack(spacing: 12) {
                     Text(selectedTrackLabel(selection.wrappedValue, tracks: tracks, includesOff: includesOff))
-                        .font(.callout)
+                        .font(DetailTypography.font(DetailTypography.metadata))
                         .multilineTextAlignment(.trailing)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(DetailTypography.font(DetailTypography.micro, weight: .bold))
                 }
                 .foregroundStyle(.white.opacity(0.94))
                 .tint(.white)
@@ -533,11 +453,14 @@ struct ItemDetailView: View {
             .menuStyle(.borderlessButton)
             .tint(.white)
             .frame(maxWidth: 560, alignment: .trailing)
+            .help(selectedTrackLabel(selection.wrappedValue, tracks: tracks, includesOff: includesOff))
         }.padding(.horizontal, 16).padding(.vertical, 7)
     }
 
-    private var adjacentEpisodeSection: some View {
-        HStack(alignment: .top, spacing: 18) {
+    private func adjacentEpisodeSection(width: CGFloat) -> some View {
+        let columns = width >= 760
+        return (columns ? AnyLayout(HStackLayout(alignment: .top, spacing: 18))
+                        : AnyLayout(VStackLayout(alignment: .leading, spacing: 18))) {
             if let previousEpisode { adjacentCard(previousEpisode, label: "Previous Episode") }
             if let nextEpisode { adjacentCard(nextEpisode, label: "Next Episode") }
         }
@@ -546,11 +469,11 @@ struct ItemDetailView: View {
         NavigationLink(value: episode) {
             HStack(spacing: 14) {
                 PosterImage(url: appState.api.primaryImageURL(for: episode, maxHeight: 180))
-                    .frame(width: 170, height: 96).clipped().clipShape(RoundedRectangle(cornerRadius: 9))
+                    .frame(width: 132, height: 74).clipped().clipShape(RoundedRectangle(cornerRadius: 9))
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(label.uppercased()).font(.caption2.weight(.bold)).tracking(1).foregroundStyle(.secondary)
-                    Text(episode.name).font(.headline).lineLimit(2)
-                    Text(episodeCode(episode)).font(.caption).foregroundStyle(.secondary)
+                    Text(label.uppercased()).font(DetailTypography.font(DetailTypography.micro, weight: .bold)).tracking(1).foregroundStyle(.secondary)
+                    Text(episode.name).font(DetailTypography.font(DetailTypography.cardTitle, weight: .semibold)).lineLimit(2)
+                    Text(episodeCode(episode)).font(DetailTypography.font(DetailTypography.supporting)).foregroundStyle(.secondary)
                 }
             }
             .padding(12)
@@ -561,7 +484,7 @@ struct ItemDetailView: View {
 
     @ViewBuilder private var playbackError: some View {
         if let error = appState.playbackError {
-            Label(error, systemImage: "exclamationmark.circle.fill").font(.callout).foregroundStyle(.red).padding(12)
+            Label(error, systemImage: "exclamationmark.circle.fill").font(DetailTypography.font(DetailTypography.supporting)).foregroundStyle(.red).padding(12)
                 .background(.black.opacity(0.36), in: RoundedRectangle(cornerRadius: 10))
         }
     }
@@ -569,7 +492,7 @@ struct ItemDetailView: View {
     private var detailSkeleton: some View {
         VStack(spacing: 26) {
             Spacer()
-            RoundedRectangle(cornerRadius: 8).fill(.secondary.opacity(0.12)).frame(width: 520, height: 110)
+            RoundedRectangle(cornerRadius: 8).fill(.secondary.opacity(0.12)).frame(maxWidth: 520, minHeight: 110)
             RoundedRectangle(cornerRadius: 12).fill(.secondary.opacity(0.08)).frame(maxWidth: 900, minHeight: 150)
             Spacer()
         }.frame(maxWidth: .infinity, minHeight: 720).redacted(reason: .placeholder)
