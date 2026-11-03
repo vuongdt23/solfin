@@ -108,6 +108,8 @@ public extension APIClient {
     /// not Latest: TV latest results can be grouped around episodes rather than
     /// returning the series posters needed here.
     func libraryPosterItems(for library: BaseItem, excluding previousIDs: [String] = []) async throws -> [BaseItem] {
+        // Home Videos are navigable, but never a source of cinematic poster artwork.
+        guard !library.isHomeVideoLibrary else { return [] }
         let uid = try requireUser()
         let types: String
         switch library.collectionType?.lowercased() {

@@ -87,9 +87,31 @@ public struct BaseItem: Codable, Sendable, Identifiable, Hashable {
     /// Jellyfin keeps missing filesystem items in its library index as Offline.
     public var isOffline: Bool { locationType?.caseInsensitiveCompare("Offline") == .orderedSame }
 
+    /// Whether Jellyfin classifies this item as a navigable directory/library.
+    public var isFolder: Bool { type == "Folder" || type == "CollectionFolder" }
+
+    /// Videos supported by Solfin's video playback pipeline.
+    public var isPlayableVideo: Bool {
+        guard !isOffline else { return false }
+        return ["Video", "Movie", "Episode"].contains(type ?? "")
+    }
+
+    public var isHomeVideoLibrary: Bool {
+        collectionType?.caseInsensitiveCompare("homevideos") == .orderedSame
+    }
+
     /// Only actual media should appear as playable cards in a library grid.
     public var isBrowsableMedia: Bool {
-        !isOffline && type != "Folder" && type != "CollectionFolder"
+        !isOffline && !isFolder
+    }
+
+    /// Home Video intentionally supports only folders and playable video items.
+    public func isVisibleChild(in kind: LibraryBrowseKind) -> Bool {
+        guard !isOffline else { return false }
+        switch kind {
+        case .homeVideos: return isFolder || isPlayableVideo
+        case .movies, .shows, .generic: return isBrowsableMedia
+        }
     }
 
     enum CodingKeys: String, CodingKey {
@@ -131,6 +153,22 @@ public struct BaseItem: Codable, Sendable, Identifiable, Hashable {
 
     public func hash(into hasher: inout Hasher) { hasher.combine(id) }
     public static func == (lhs: BaseItem, rhs: BaseItem) -> Bool { lhs.id == rhs.id }
+}
+
+public enum LibraryBrowseKind: Sendable, Hashable {
+    case movies
+    case shows
+    case homeVideos
+    case generic
+
+    public init(collectionType: String?) {
+        switch collectionType?.lowercased() {
+        case "movies": self = .movies
+        case "tvshows": self = .shows
+        case "homevideos": self = .homeVideos
+        default: self = .generic
+        }
+    }
 }
 
 public struct UserItemData: Codable, Sendable, Hashable {

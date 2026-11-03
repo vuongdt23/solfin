@@ -30,7 +30,7 @@ final class APIClientMockTests: XCTestCase {
         XCTAssertEqual(session.serverURL, base)
     }
 
-    func testItemsDropsOfflineEntriesAndFoldersFromLibraryResults() async throws {
+    func testItemsReturnsOfflineEntriesAndFoldersForCallerFiltering() async throws {
         MockURLProtocol.handler = { request in
             let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
             XCTAssertTrue(query.first(where: { $0.name == "Fields" })?.value?.contains("LocationType") == true)
@@ -43,6 +43,22 @@ final class APIClientMockTests: XCTestCase {
         XCTAssertEqual(response.items.map(\.id), ["available", "missing", "folder"])
         XCTAssertEqual(response.totalRecordCount, 3)
         XCTAssertEqual(response.items.filter(\.isBrowsableMedia).map(\.id), ["available"])
+    }
+
+    func testHomeVideoFolderQueryRequestsUnfilteredDirectChildren() async throws {
+        MockURLProtocol.handler = { request in
+            let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            func value(_ name: String) -> String? { query.first { $0.name == name }?.value }
+            XCTAssertEqual(value("ParentId"), "folder")
+            XCTAssertEqual(value("Recursive"), "false")
+            XCTAssertNil(value("IncludeItemTypes"))
+            XCTAssertEqual(value("SortBy"), "SortName")
+            XCTAssertEqual(value("SortOrder"), "Ascending")
+            return (200, Data(#"{"Items":[{"Id":"child","Name":"Child","Type":"Folder"}],"TotalRecordCount":1}"#.utf8))
+        }
+        let response = try await makeClient(authed: true).items(parentId: "folder", limit: 60,
+                                                                 sortBy: "SortName", sortOrder: "Ascending")
+        XCTAssertEqual(response.items.map(\.id), ["child"])
     }
 
     func testLibrarySearchKeepsScopeFiltersSortAndPagination() async throws {
@@ -310,6 +326,14 @@ final class APIClientMockTests: XCTestCase {
             let posters = try await makeClient(authed: true).libraryPosterItems(for: library)
             XCTAssertTrue(posters.isEmpty)
         }
+    }
+
+    func testHomeVideoLibraryDoesNotFetchDecorativePosters() async throws {
+        MockURLProtocol.handler = { _ in XCTFail("Home Videos must not request collage artwork"); return (500, Data()) }
+        let library = try JSONDecoder().decode(BaseItem.self, from: Data(
+            #"{"Id":"home","Name":"Home","CollectionType":"homevideos"}"#.utf8))
+        let posters = try await makeClient(authed: true).libraryPosterItems(for: library)
+        XCTAssertTrue(posters.isEmpty)
     }
 
     func testLibraryPosterPreviewPrefersDifferentTitlesOnReload() async throws {

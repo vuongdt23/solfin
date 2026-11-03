@@ -2,6 +2,40 @@ import Foundation
 import JellyfinKit
 import PlaybackEngine
 
+enum HomeLibraryPresentation: Equatable {
+    case decorative
+    case simple
+    case hidden
+}
+
+struct LibraryPresentationCapabilities: Equatable {
+    let homePresentation: HomeLibraryPresentation
+    let contributesToDiscovery: Bool
+    let loadsDecorativeArtwork: Bool
+    let appearsInNavigation: Bool
+
+    static func forCollectionType(_ collectionType: String?) -> Self {
+        switch collectionType?.lowercased() {
+        case "movies", "tvshows":
+            return .init(homePresentation: .decorative, contributesToDiscovery: true,
+                         loadsDecorativeArtwork: true, appearsInNavigation: true)
+        case "homevideos":
+            return .init(homePresentation: .simple, contributesToDiscovery: false,
+                         loadsDecorativeArtwork: false, appearsInNavigation: true)
+        default:
+            // Unknown collections may be browsable, but must never be treated as cinematic media.
+            return .init(homePresentation: .simple, contributesToDiscovery: false,
+                         loadsDecorativeArtwork: false, appearsInNavigation: true)
+        }
+    }
+}
+
+extension BaseItem {
+    var presentationCapabilities: LibraryPresentationCapabilities {
+        LibraryPresentationCapabilities.forCollectionType(collectionType)
+    }
+}
+
 /// Pure selection policy shared by the compositions and their regression tests.
 enum HomePresentation {
     static let featuredAutoAdvanceInterval: TimeInterval = 5

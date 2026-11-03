@@ -9,6 +9,8 @@ struct HomeView: View {
 
     @StateObject private var data = HomeData()
     private var views: [BaseItem] { data.views }
+    private var decorativeLibraries: [BaseItem] { views.filter { $0.presentationCapabilities.homePresentation == .decorative } }
+    private var simpleLibraries: [BaseItem] { views.filter { $0.presentationCapabilities.homePresentation == .simple } }
     private var libraryPosters: [String: [BaseItem]] { data.libraryPosters }
     private var resume: [BaseItem] { data.resume }
     private var nextUp: [BaseItem] { data.nextUp }
@@ -148,7 +150,8 @@ struct HomeView: View {
                                          context: "From your library")
                     }
                     recentlyAddedShelves
-                    if !views.isEmpty { librariesSection(availableWidth: availableWidth) }
+                    if !decorativeLibraries.isEmpty { librariesSection(availableWidth: availableWidth) }
+                    else if !simpleLibraries.isEmpty { simpleLibrariesSection }
                 }
             case .watchNow:
                 let selection = HomePresentation.watchSelection(resume: resume, nextUp: nextUp,
@@ -166,11 +169,14 @@ struct HomeView: View {
                                                                     excluding: selectedIDs.union(resume.map(\.id))),
                                      width: availableWidth, context: "Explore your library")
                 }
-                if !views.isEmpty && selection.lead == nil { LibraryGalleryHomeView(libraries: views, posters: libraryPosters, availableWidth: availableWidth, artworkStyle: libraryArtworkStyle) }
+                if !decorativeLibraries.isEmpty && selection.lead == nil { LibraryGalleryHomeView(libraries: decorativeLibraries, posters: libraryPosters, availableWidth: availableWidth, artworkStyle: libraryArtworkStyle) }
+                if !simpleLibraries.isEmpty && decorativeLibraries.isEmpty { simpleLibrariesSection }
                 recentlyAddedShelves
-                if !views.isEmpty && selection.lead != nil { librariesSection(availableWidth: availableWidth) }
+                if !decorativeLibraries.isEmpty && selection.lead != nil { librariesSection(availableWidth: availableWidth) }
+                else if !simpleLibraries.isEmpty && selection.lead != nil { simpleLibrariesSection }
             case .library:
-                if !views.isEmpty { LibraryGalleryHomeView(libraries: views, posters: libraryPosters, availableWidth: availableWidth, artworkStyle: libraryArtworkStyle) }
+                if !decorativeLibraries.isEmpty { LibraryGalleryHomeView(libraries: decorativeLibraries, posters: libraryPosters, availableWidth: availableWidth, artworkStyle: libraryArtworkStyle) }
+                if !simpleLibraries.isEmpty { simpleLibrariesSection }
                 recentCollection(availableWidth: availableWidth)
                 watchingShelves
             }
@@ -275,7 +281,7 @@ struct HomeView: View {
             sectionHeading("Your Libraries", detail: "Browse all")
             HorizontalWheelScrollView {
                 LazyHStack(spacing: 22) {
-                    ForEach(views) { view in
+                    ForEach(decorativeLibraries) { view in
                         HomeLibraryTile(item: view, posters: libraryPosters[view.id] ?? [], width: tileWidth, artworkStyle: libraryArtworkStyle)
                     }
                 }.padding(.vertical, 8).padding(.horizontal, 2)
@@ -284,9 +290,19 @@ struct HomeView: View {
     }
 
     @ViewBuilder
+    private var simpleLibrariesSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HomeSectionTitle(title: "Your Libraries", eyebrow: "Ready to browse")
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 260), spacing: 16)], alignment: .leading, spacing: 16) {
+                ForEach(simpleLibraries) { SimpleHomeLibraryTile(item: $0) }
+            }
+        }
+    }
+
+    @ViewBuilder
     private func destination(for item: BaseItem) -> some View {
         if item.type == "Series" { SeriesDetailView(series: item) }
-        else if item.collectionType != nil || item.type == "CollectionFolder" { LibraryView(parent: item) }
+        else if item.collectionType != nil || item.isFolder { LibraryView(parent: item, browseKind: LibraryBrowseKind(collectionType: item.collectionType)) }
         else { ItemDetailView(itemId: item.id) }
     }
 
