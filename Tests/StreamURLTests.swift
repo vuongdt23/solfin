@@ -133,7 +133,33 @@ final class StreamURLTests: XCTestCase {
         XCTAssertFalse(try decodeItem(#"{"Id":"movie3","Name":"Unknown Location"}"#).isOffline)
         XCTAssertFalse(offline.isBrowsableMedia)
         XCTAssertTrue(available.isBrowsableMedia)
+        let folder = try decodeItem(#"{"Id":"folder","Name":"Empty folder","Type":"Folder"}"#)
+        let root = try decodeItem(#"{"Id":"root","Name":"Root","Type":"CollectionFolder"}"#)
+        XCTAssertTrue(folder.isFolder)
+        XCTAssertTrue(root.isFolder)
+        XCTAssertFalse(folder.isPlayableVideo)
         XCTAssertFalse(try decodeItem(#"{"Id":"folder","Name":"Empty folder","Type":"Folder"}"#).isBrowsableMedia)
+    }
+
+    func testHomeVideoBrowsePolicyIncludesFoldersAndVideosButNotPhotosOrOfflineRows() throws {
+        let kind = LibraryBrowseKind(collectionType: "HOMEVIDEOS")
+        let folder = try decodeItem(#"{"Id":"folder","Name":"Folder","Type":"Folder"}"#)
+        let video = try decodeItem(#"{"Id":"video","Name":"Video","Type":"Video","MediaType":"Video"}"#)
+        let movie = try decodeItem(#"{"Id":"movie","Name":"Movie","Type":"Movie"}"#)
+        let episode = try decodeItem(#"{"Id":"episode","Name":"Episode","Type":"Episode"}"#)
+        let photo = try decodeItem(#"{"Id":"photo","Name":"Photo","Type":"Photo"}"#)
+        let album = try decodeItem(#"{"Id":"album","Name":"Album","Type":"PhotoAlbum"}"#)
+        let offline = try decodeItem(#"{"Id":"offline","Name":"Offline","Type":"Video","LocationType":"Offline"}"#)
+
+        XCTAssertTrue(folder.isVisibleChild(in: kind))
+        XCTAssertTrue(video.isPlayableVideo)
+        XCTAssertTrue(video.isVisibleChild(in: kind))
+        XCTAssertTrue(movie.isPlayableVideo)
+        XCTAssertTrue(episode.isPlayableVideo)
+        XCTAssertFalse(photo.isVisibleChild(in: kind))
+        XCTAssertFalse(album.isVisibleChild(in: kind))
+        XCTAssertFalse(offline.isPlayableVideo)
+        XCTAssertFalse(offline.isVisibleChild(in: kind))
     }
 
     func testSetPlayedUsesPlayedItemsEndpointAndMethod() async throws {

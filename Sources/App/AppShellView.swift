@@ -142,7 +142,7 @@ struct AppShellView: View {
         if item.type == "Series" {
             SeriesDetailView(series: item, sidebarLeadingInset: sidebarWidth)
         }
-        else if item.collectionType != nil || item.type == "CollectionFolder" { LibraryView(parent: item) }
+        else if item.collectionType != nil || item.isFolder { LibraryView(parent: item, browseKind: LibraryBrowseKind(collectionType: item.collectionType)) }
         else { ItemDetailView(itemId: item.id, sidebarLeadingInset: sidebarWidth) }
     }
 
@@ -154,6 +154,7 @@ struct AppShellView: View {
         switch library.collectionType?.lowercased() {
         case "movies": return "film"
         case "tvshows": return "tv"
+        case "homevideos": return "video"
         default: return "rectangle.stack"
         }
     }

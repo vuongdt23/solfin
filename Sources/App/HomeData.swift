@@ -37,7 +37,11 @@ final class HomeData: ObservableObject {
         async let featuredResult = capture { try await api.featuredItems() }
         let results = await [viewsResult, resumeResult, nextResult, moviesResult, showsResult, featuredResult]
         guard refreshID == requestID, appState.session?.id == currentSession else { return }
-        if case .success(let value) = results[0] { views = value }
+        if case .success(let value) = results[0] {
+            views = value
+            let decorativeIDs = Set(value.filter { $0.presentationCapabilities.loadsDecorativeArtwork }.map(\.id))
+            libraryPosters = libraryPosters.filter { decorativeIDs.contains($0.key) }
+        }
         if case .success(let value) = results[1] { resume = HomePresentation.unique(value) }
         if case .success(let value) = results[2] { nextUp = HomePresentation.unique(value) }
         if case .success(let value) = results[3] { latestMovies = HomePresentation.unique(value) }
@@ -52,7 +56,7 @@ final class HomeData: ObservableObject {
 
         let history = appState.libraryPosterHistory
         await withTaskGroup(of: (String, [BaseItem]?).self) { group in
-            for library in views {
+            for library in views where library.presentationCapabilities.loadsDecorativeArtwork {
                 let previous = history["\(currentSession ?? "")-\(library.id)"] ?? []
                 group.addTask {
                     (library.id, try? await api.libraryPosterItems(for: library, excluding: previous))

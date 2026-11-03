@@ -7,6 +7,24 @@ final class HomePresentationTests: XCTestCase {
         return try JSONDecoder().decode(BaseItem.self, from: Data(json.utf8))
     }
 
+    func testLibraryCapabilitiesKeepHomeVideosOutOfDecorativeDiscovery() {
+        let movies = LibraryPresentationCapabilities.forCollectionType("movies")
+        let shows = LibraryPresentationCapabilities.forCollectionType("TVSHOWS")
+        let homeVideos = LibraryPresentationCapabilities.forCollectionType("HomeVideos")
+        let unknown = LibraryPresentationCapabilities.forCollectionType("futureType")
+
+        XCTAssertEqual(movies.homePresentation, .decorative)
+        XCTAssertTrue(movies.contributesToDiscovery)
+        XCTAssertTrue(movies.loadsDecorativeArtwork)
+        XCTAssertEqual(shows.homePresentation, .decorative)
+        XCTAssertEqual(homeVideos.homePresentation, .simple)
+        XCTAssertFalse(homeVideos.contributesToDiscovery)
+        XCTAssertFalse(homeVideos.loadsDecorativeArtwork)
+        XCTAssertTrue(homeVideos.appearsInNavigation)
+        XCTAssertNotEqual(unknown.homePresentation, .decorative)
+        XCTAssertFalse(unknown.loadsDecorativeArtwork)
+    }
+
     func testFeaturedCarouselAutoAdvanceIntervalIsFiveSeconds() {
         XCTAssertEqual(HomePresentation.featuredAutoAdvanceInterval, 5)
     }

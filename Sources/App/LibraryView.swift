@@ -4,9 +4,18 @@ import JellyfinKit
 struct LibraryView: View {
     @EnvironmentObject private var appState: AppState
     let parent: BaseItem
+    var browseKind: LibraryBrowseKind? = nil
+
+    private var effectiveBrowseKind: LibraryBrowseKind {
+        browseKind ?? LibraryBrowseKind(collectionType: parent.collectionType)
+    }
+    private var isHomeVideos: Bool { effectiveBrowseKind == .homeVideos }
+    private var folderItems: [BaseItem] { items.filter(\.isFolder) }
+    private var mediaItems: [BaseItem] { items.filter { !$0.isFolder } }
 
     @State private var items: [BaseItem] = []
     @State private var totalCount: Int?
+    @State private var receivedUnsupportedItems = false
     @State private var serverStartIndex = 0
     @State private var loadError: String?
     @State private var isLoading = false
@@ -34,11 +43,15 @@ struct LibraryView: View {
                         EmptyContentView(title: "Library unavailable", message: loadError,
                                          systemImage: "wifi.exclamationmark") { reload() }
                     } else if items.isEmpty {
-                        EmptyContentView(title: query.isEmpty && playedFilter == .all ? "Nothing here" : "No matching titles",
-                                         message: query.isEmpty
+                        EmptyContentView(title: isHomeVideos
+                                         ? (receivedUnsupportedItems ? "No supported videos or folders" : query.isEmpty ? "Nothing here" : "No matching items")
+                                         : query.isEmpty && playedFilter == .all ? "Nothing here" : "No matching titles",
+                                         message: isHomeVideos
+                                         ? (receivedUnsupportedItems ? "This folder has no supported videos or folders." : "Add videos or folders to this library.")
+                                         : query.isEmpty
                                          ? "Try changing the watched filter, or add titles to this library."
                                          : "No titles match \"\(query)\" in this library. Try another search or watched filter.",
-                                         systemImage: query.isEmpty ? "film" : "magnifyingglass")
+                                         systemImage: query.isEmpty ? (isHomeVideos ? "folder" : "film") : "magnifyingglass")
                     } else {
                         itemGrid
                         if hasMore {
@@ -101,7 +114,7 @@ struct LibraryView: View {
                 .font(.largeTitle.weight(.bold))
                 .foregroundStyle(.white)
             if let count = totalCount {
-                Text(query.isEmpty ? "\(count) titles" : "\(count) results")
+                Text(query.isEmpty ? "\(count) \(isHomeVideos ? "items" : "titles")" : "\(count) results")
                     .font(.callout.weight(.medium))
                     .foregroundStyle(.white.opacity(0.52))
             }
@@ -111,6 +124,7 @@ struct LibraryView: View {
 
     private var libraryControls: some View {
         HStack(spacing: 10) {
+            if !isHomeVideos {
             Menu {
                 Picker("Watched", selection: playedFilterBinding) {
                     ForEach(PlayedFilter.allCases) { Text($0.title).tag($0) }
@@ -171,7 +185,8 @@ struct LibraryView: View {
             .buttonStyle(.plain)
             .modifier(LibraryToolbarControl(tracksHover: false))
             .help("Change card type and size")
-            if playedFilter != .all || !query.isEmpty {
+            }
+            if !isHomeVideos && (playedFilter != .all || !query.isEmpty) {
                 Button {
                     filterText = ""
                     playedFilterRaw = PlayedFilter.all.rawValue
@@ -207,13 +222,14 @@ struct LibraryView: View {
     }
 
     private var sort: LibrarySort {
+        guard !isHomeVideos else { return .name }
         let stored = LibrarySort(rawValue: sortRaw) ?? .name
         return availableSorts.contains(stored) ? stored : .name
     }
     private var playedFilter: PlayedFilter { PlayedFilter(rawValue: playedFilterRaw) ?? .all }
     private var query: String { filterText.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var cardSize: LibraryCardSize { LibraryCardSize(rawValue: cardSizeRaw) ?? .small }
-    private var cardType: LibraryCardType { LibraryCardType(rawValue: cardTypeRaw) ?? .poster }
+    private var cardType: LibraryCardType { isHomeVideos ? .thumbnail : LibraryCardType(rawValue: cardTypeRaw) ?? .poster }
     private var density: LibraryDensity { LibraryDensity(size: cardSize) }
     private var playedFilterBinding: Binding<PlayedFilter> {
         Binding(get: { playedFilter }, set: { playedFilterRaw = $0.rawValue })
@@ -226,12 +242,31 @@ struct LibraryView: View {
     }
     @ViewBuilder
     private var itemGrid: some View {
-        LazyVGrid(columns: columns, alignment: .leading, spacing: density.spacing) { itemLinks }
+        if isHomeVideos {
+            VStack(alignment: .leading, spacing: 28) {
+                if !folderItems.isEmpty {
+                    if !mediaItems.isEmpty { Text("Folders").font(.title2.bold()).foregroundStyle(.white) }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 340, maximum: 420), spacing: 22)], alignment: .leading, spacing: 22) {
+                        ForEach(folderItems) { item in
+                            NavigationLink(destination: LibraryView(parent: item, browseKind: effectiveBrowseKind)) {
+                                FolderCard(item: item)
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                }
+                if !mediaItems.isEmpty {
+                    if !folderItems.isEmpty { Text("Videos").font(.title2.bold()).foregroundStyle(.white) }
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: density.spacing) { mediaLinks }
+                }
+            }
+        } else {
+            LazyVGrid(columns: columns, alignment: .leading, spacing: density.spacing) { mediaLinks }
+        }
     }
 
     @ViewBuilder
-    private var itemLinks: some View {
-        ForEach(items) { item in
+    private var mediaLinks: some View {
+        ForEach(isHomeVideos ? mediaItems : items) { item in
             LibraryItemCard(item: item, cardType: cardType, size: cardSize)
         }
     }
@@ -249,7 +284,7 @@ struct LibraryView: View {
     private func reload() { Task { await reloadAndWait() } }
     private func reloadAndWait(debounce: Bool = false) async {
         let token = UUID(); generation = token
-        items = []; totalCount = nil; serverStartIndex = 0; hasMore = true; recentSeriesLoaded = false; loadError = nil
+        items = []; totalCount = nil; receivedUnsupportedItems = false; serverStartIndex = 0; hasMore = true; recentSeriesLoaded = false; loadError = nil
         // A canceled request must not keep the next generation locked in loading.
         isLoading = true
         if debounce {
@@ -266,7 +301,7 @@ struct LibraryView: View {
         guard !isLoading, hasMore, expected == generation else { return }
         isLoading = true; loadError = nil
         do {
-            if sort == .recentEpisodes {
+            if sort == .recentEpisodes && effectiveBrowseKind == .shows {
                 guard !recentSeriesLoaded else { hasMore = false; isLoading = false; return }
                 let activeSeries = try await appState.api.recentlyActiveSeries(parentId: parent.id,
                                                                                limit: nil,
@@ -280,17 +315,18 @@ struct LibraryView: View {
                 hasMore = false
             } else {
                 let itemTypes: String?
-                switch parent.collectionType?.lowercased() {
-                case "movies": itemTypes = "Movie"
-                case "tvshows": itemTypes = "Series"
-                default: itemTypes = nil
+                switch effectiveBrowseKind {
+                case .movies: itemTypes = "Movie"
+                case .shows: itemTypes = "Series"
+                case .homeVideos, .generic: itemTypes = nil
                 }
                 let response = try await appState.api.items(
                     parentId: parent.id, startIndex: serverStartIndex, limit: pageSize,
-                    sortBy: sort.apiValue, sortOrder: sortAscending ? "Ascending" : "Descending",
-                    includeItemTypes: itemTypes, filters: playedFilter.apiValue, searchTerm: query)
+                    sortBy: sort.apiValue, sortOrder: isHomeVideos ? "Ascending" : sortAscending ? "Ascending" : "Descending",
+                    includeItemTypes: itemTypes, filters: isHomeVideos ? nil : playedFilter.apiValue, searchTerm: query)
                 guard expected == generation, !Task.isCancelled else { return }
-                let availableItems = response.items.filter(\.isBrowsableMedia)
+                let availableItems = response.items.filter { $0.isVisibleChild(in: effectiveBrowseKind) }
+                if isHomeVideos && availableItems.count != response.items.count { receivedUnsupportedItems = true }
                 items.append(contentsOf: availableItems.filter { candidate in !items.contains(where: { $0.id == candidate.id }) })
                 serverStartIndex += response.items.count
                 totalCount = response.totalRecordCount
@@ -301,7 +337,12 @@ struct LibraryView: View {
             guard expected == generation, !Task.isCancelled else { return }
             loadError = error.localizedDescription
         }
-        if expected == generation { isLoading = false }
+        if expected == generation {
+            isLoading = false
+            // Unsupported rows still consume server pages. Continue until visible rows
+            // arrive or pagination completes so a photo-only first page isn't a false empty state.
+            if items.isEmpty && hasMore && loadError == nil { Task { await loadNextPage(token: expected) } }
+        }
     }
 }
 
