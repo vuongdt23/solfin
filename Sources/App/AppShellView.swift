@@ -14,6 +14,7 @@ struct AppShellView: View {
     @State private var libraries: [BaseItem] = []
     @State private var searchText = ""
     @State private var detailPath: [BaseItem] = []
+    @State private var navigationStackIdentity = UUID()
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var sidebarExpanded = false
 
@@ -23,6 +24,10 @@ struct AppShellView: View {
                 destinationView
                     .navigationDestination(for: BaseItem.self) { destination(for: $0) }
             }
+            // Recreate the stack when changing sidebar destinations. View-based
+            // links (used to browse nested Home Video folders) are not represented
+            // in `detailPath`, so clearing that path alone cannot pop them.
+            .id(navigationStackIdentity)
             // LibraryView uses a quiet, uniform canvas. Matching the shell canvas
             // here prevents a gradient/star-field seam at the rail boundary.
             .background(isLibraryScreen ? AnyView(SolfinDesign.spaceBlack)
@@ -67,6 +72,7 @@ struct AppShellView: View {
             detailPath.removeAll()
             selection = .home
             libraries = []
+            navigationStackIdentity = UUID()
         }
         .onReceive(NotificationCenter.default.publisher(for: .solfinShowHome)) { _ in navigate(to: .home) }
         .onReceive(NotificationCenter.default.publisher(for: .solfinShowSearch)) { _ in navigate(to: .search) }
@@ -117,6 +123,7 @@ struct AppShellView: View {
     private func navigate(to destination: AppDestination) {
         detailPath.removeAll()
         selection = destination
+        navigationStackIdentity = UUID()
     }
 
     @ViewBuilder
