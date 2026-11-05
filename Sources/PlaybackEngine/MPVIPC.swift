@@ -11,6 +11,7 @@ public final class MPVIPC {
     private var readThread: Thread?
     private var nextRequestId = 1
     private let idLock = NSLock()
+    private var commandHandler: (([Any], Int) -> Void)?
 
     /// Called on a background thread for every decoded message from mpv.
     public var onMessage: (([String: Any]) -> Void)?
@@ -19,6 +20,11 @@ public final class MPVIPC {
 
     public init(socketPath: String) {
         self.socketPath = socketPath
+    }
+
+    init(commandHandler: @escaping ([Any], Int) -> Void) {
+        self.socketPath = ""
+        self.commandHandler = commandHandler
     }
 
     /// Poll for the socket to appear (mpv creates it a beat after launch), then connect.
@@ -123,6 +129,10 @@ public final class MPVIPC {
         nextRequestId += 1
         idLock.unlock()
 
+        if let commandHandler {
+            commandHandler(args, requestId)
+            return requestId
+        }
         guard let line = Self.encodeCommand(args, requestId: requestId) else { return requestId }
         writeQueue.async { [weak self] in
             guard let self, self.fd >= 0 else { return }
