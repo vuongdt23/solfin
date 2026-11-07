@@ -58,8 +58,13 @@ public final class PlaybackController {
     private var needsApplySubtitleSelection = false
     private var pendingExternalSubtitleURLs: [Int: String] = [:]
     private var loadingExternalSubtitleIndexes: Set<Int> = []
+    private var externalSubtitleRequests: [Int: Int] = [:]
+    private var isFileLoaded = false
+    // A late initial IPC connection can miss file-loaded. A non-nil time-pos
+    // snapshot also proves the initial file is loaded, even when paused.
+    private var canRecoverInitialFileLoaded = true
 
-    private let queue = DispatchQueue(label: "dev.solfin.playback.controller")
+    let queue = DispatchQueue(label: "dev.solfin.playback.controller")
     private var positionSeconds: Double = 0
     private var durationSeconds: Double = 0
     private var isPaused = false
@@ -121,6 +126,14 @@ public final class PlaybackController {
             }
         }
         self.autoplayQueuedItems = autoplayQueuedItems
+    }
+
+    /// Internal initializer for deterministic IPC lifecycle tests, without launching mpv.
+    convenience init(api: APIClient, item: BaseItem, plan: DirectPlayPlan, ipc: MPVIPC) {
+        self.init(api: api, item: item, config: Config())
+        self.plan = plan
+        prepareTrackMaps(for: plan)
+        self.ipc = ipc
     }
 
     // MARK: - Lifecycle
@@ -317,6 +330,8 @@ public final class PlaybackController {
         isPaused = false
         naturalEnd = false
         hasStartedPlayback = false
+        isFileLoaded = false
+        canRecoverInitialFileLoaded = false
         suppressReplacementEndFile = suppressCurrentEndFile
         setState(.starting)
         emitMediaInfo()
@@ -382,18 +397,29 @@ public final class PlaybackController {
             return
         }
         SolfinLog.info("mpv IPC connected in \(Int(Date().timeIntervalSince(connectStarted) * 1000))ms", category: .mpv)
-        ipc.observeProperty("time-pos", id: timePosId)
-        ipc.observeProperty("pause", id: pauseId)
-        ipc.observeProperty("duration", id: durationId)
-        ipc.observeProperty("seekable", id: seekableId)
-        ipc.observeProperty("track-list", id: trackListId)
-        self.ipc = ipc
-
-        queue.async { self.configureInitialTrackSelectionsLocked() }
+        queue.async {
+            self.ipc = ipc
+            // Install IPC before subscribing: snapshots/events can arrive immediately.
+            self.configureInitialTrackSelectionsLocked()
+            ipc.observeProperty("time-pos", id: self.timePosId)
+            ipc.observeProperty("pause", id: self.pauseId)
+            ipc.observeProperty("duration", id: self.durationId)
+            ipc.observeProperty("seekable", id: self.seekableId)
+            ipc.observeProperty("track-list", id: self.trackListId)
+        }
     }
 
-    private func handle(_ msg: [String: Any]) {
+    func handle(_ msg: [String: Any]) {
         queue.async {
+            guard !self.didReportStopped else { return }
+            if let requestID = Self.intValue(msg["request_id"]),
+               let streamIndex = self.externalSubtitleRequests.removeValue(forKey: requestID) {
+                if let error = msg["error"] as? String, error != "success" {
+                    self.loadingExternalSubtitleIndexes.remove(streamIndex)
+                    SolfinLog.error("mpv sub-add failed item=\(self.plan?.itemId ?? "unknown") stream=\(streamIndex) request=\(requestID) error=\(error)", category: .mpv)
+                }
+                return
+            }
             guard let event = msg["event"] as? String else { return }
             switch event {
             case "property-change":
@@ -401,6 +427,9 @@ public final class PlaybackController {
                 switch id {
                 case self.timePosId:
                     if let pos = Self.doubleValue(msg["data"]) {
+                        if self.canRecoverInitialFileLoaded, !self.isFileLoaded {
+                            self.markFileLoadedLocked()
+                        }
                         self.positionSeconds = pos
                         // time-pos can arrive before the first frame is displayed. Keep
                         // the UI in the launch state until mpv's playback-restart event,
@@ -438,7 +467,7 @@ public final class PlaybackController {
                 // This runs for both the initial file and files introduced by
                 // queue transitions. Reapply the resolved plan because queued
                 // items have different stream indexes and sidecar URLs.
-                self.configureInitialTrackSelectionsLocked()
+                self.markFileLoadedLocked()
             case "playback-restart":
                 if !self.hasStartedPlayback {
                     SolfinLog.info("mpv playback became ready via playback-restart", category: .mpv)
@@ -500,6 +529,12 @@ public final class PlaybackController {
         return lhs == rhs
     }
 
+    private func markFileLoadedLocked() {
+        isFileLoaded = true
+        canRecoverInitialFileLoaded = false
+        configureInitialTrackSelectionsLocked()
+    }
+
     /// Must be called on `queue`.
     private func configureInitialTrackSelectionsLocked() {
         if !didRequestAudioSelection {
@@ -535,6 +570,8 @@ public final class PlaybackController {
         externalSubtitleTrackIDs.removeAll()
         pendingExternalSubtitleURLs.removeAll()
         loadingExternalSubtitleIndexes.removeAll()
+        externalSubtitleRequests.removeAll()
+        isFileLoaded = false
         hasStartedPlayback = false
         requestedAudioStreamIndex = nil
         requestedVideoStreamIndex = nil
@@ -571,7 +608,7 @@ public final class PlaybackController {
     }
 
     private func applyRequestedAudioSelection() {
-        guard needsApplyAudioSelection,
+        guard isFileLoaded, needsApplyAudioSelection,
               let ipc,
               let requestedAudioStreamIndex,
               let mpvID = audioTrackIDs[requestedAudioStreamIndex] else { return }
@@ -580,7 +617,7 @@ public final class PlaybackController {
     }
 
     private func applyRequestedVideoSelection() {
-        guard needsApplyVideoSelection,
+        guard isFileLoaded, needsApplyVideoSelection,
               let ipc,
               let requestedVideoStreamIndex,
               let mpvID = videoTrackIDs[requestedVideoStreamIndex] else { return }
@@ -589,7 +626,7 @@ public final class PlaybackController {
     }
 
     private func applyRequestedSubtitleSelection() {
-        guard needsApplySubtitleSelection, let ipc else { return }
+        guard isFileLoaded, needsApplySubtitleSelection, let ipc else { return }
         guard let id = requestedSubtitleStreamIndex else {
             ipc.setProperty("sid", "no")
             needsApplySubtitleSelection = false
@@ -607,14 +644,17 @@ public final class PlaybackController {
     /// Load one external subtitle on demand. `sub-add auto` does not disturb the
     /// current selection; the track-list observer discovers mpv's new ID.
     private func loadExternalSubtitle(streamIndex: Int) {
-        guard externalSubtitleTrackIDs[streamIndex] == nil,
+        guard isFileLoaded, let ipc,
+              externalSubtitleTrackIDs[streamIndex] == nil,
               !loadingExternalSubtitleIndexes.contains(streamIndex),
               let subtitle = plan?.externalSubtitles.first(where: {
                   $0.streamIndex == streamIndex
               }) else { return }
         loadingExternalSubtitleIndexes.insert(streamIndex)
-        ipc?.addSubtitle(url: subtitle.url.absoluteString,
-                         title: subtitle.title, language: subtitle.language)
+        let requestID = ipc.addSubtitle(url: subtitle.url.absoluteString,
+                                        title: subtitle.title, language: subtitle.language)
+        externalSubtitleRequests[requestID] = streamIndex
+        SolfinLog.debug("mpv sub-add item=\(plan?.itemId ?? "unknown") stream=\(streamIndex) request=\(requestID) url=\(SolfinLog.redactedURL(subtitle.url))", category: .mpv)
     }
 
     private func updateExternalSubtitleTracks(from value: Any?) {
@@ -628,6 +668,7 @@ public final class PlaybackController {
                   })?.key else { continue }
             externalSubtitleTrackIDs[streamIndex] = mpvID
             loadingExternalSubtitleIndexes.remove(streamIndex)
+            SolfinLog.debug("mpv external subtitle mapped stream=\(streamIndex) sid=\(mpvID)", category: .mpv)
         }
         if needsApplySubtitleSelection {
             applyRequestedSubtitleSelection()
